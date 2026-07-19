@@ -1,0 +1,27 @@
+[package]
+name = "origami-app"
+description = "Origami desktop client (Tauri shell)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+default-run = "origami"
+
+[[bin]]
+name = "origami"
+path = "src/main.rs"
+
+[lib]
+name = "origami_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+origami-core.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

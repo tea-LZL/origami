@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Origami
+Comment=A fast, offline-first email client
+Exec=origami %u
+Icon=origami
+Terminal=false
+Categories=Network;Email;
+Keywords=email;mail;imap;
+MimeType=x-scheme-handler/mailto;
+StartupWMClass=dev.origami.mail

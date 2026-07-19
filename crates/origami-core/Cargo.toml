@@ -1,0 +1,26 @@
+[package]
+name = "origami-core"
+description = "Origami mail core: backend abstraction, sync engine, local store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+# Protocol layer: pimalaya io-* crates, git-pinned (see docs/adr/0002-backend-trait.md).
+io-imap = { git = "https://github.com/pimalaya/io-imap", rev = "f57418aebc1491cdc0aed4135d5627f3349370db", default-features = false, features = ["client", "rustls-ring", "scram"] }
+io-smtp = { version = "0.2", default-features = false, features = ["client", "rustls-ring", "scram"] }
+pimalaya-stream = { version = "0.1", default-features = false, features = ["std", "rustls-ring"] }
+
+mail-parser = "0.11"
+rfc2047-decoder = "1"
+secrecy = "0.10"
+toml = "0.8"
+url = "2"
+uuid = { version = "1", features = ["v7", "serde"] }

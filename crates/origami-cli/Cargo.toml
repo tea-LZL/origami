@@ -1,0 +1,12 @@
+[package]
+name = "origami-cli"
+description = "Origami debug CLI (dogfooding + sync diagnostics)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+origami-core.workspace = true
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

@@ -1,0 +1,14 @@
+/target
+**/*.rs.bk
+
+# Node / UI
+node_modules
+/ui/dist
+
+# Tauri generated
+crates/origami-app/gen
+crates/origami-app/target
+
+# Logs / OS
+*.log
+.DS_Store

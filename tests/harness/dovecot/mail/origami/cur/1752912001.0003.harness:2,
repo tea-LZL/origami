@@ -1,0 +1,18 @@
+From: Newsletter <news@example.com>
+To: Origami User <origami@localhost>
+Subject: Weekly digest
+Date: Sun, 19 Jul 2026 08:00:00 +0000
+Message-ID: <digest-3@example.com>
+Content-Type: multipart/alternative; boundary=harness-boundary
+
+--harness-boundary
+Content-Type: text/plain; charset=utf-8
+
+Your weekly digest (plain part).
+
+--harness-boundary
+Content-Type: text/html; charset=utf-8
+
+<html><body><p>Your weekly <b>digest</b> (HTML part).</p></body></html>
+
+--harness-boundary--

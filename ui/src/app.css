@@ -1,0 +1,101 @@
+/* ============================================================
+   Origami design tokens — derived from the branding CI sheet
+   (blue folded-paper bird on paper white / deep navy).
+   ============================================================ */
+
+:root {
+  /* Origami blue ramp (facets of the bird) */
+  --blue-50: #eff5ff;
+  --blue-100: #dbe8fe;
+  --blue-200: #bfd7fe;
+  --blue-300: #93bbfd;
+  --blue-400: #6094fa;
+  --blue-500: #2b6cf6; /* primary — the bird's body blue */
+  --blue-600: #1d55e0;
+  --blue-700: #1a44be;
+  --blue-800: #1b3a99;
+  --blue-900: #1b347a;
+  --blue-950: #142252;
+
+  /* Semantic tokens (light = default paper theme) */
+  --accent: var(--blue-500);
+  --accent-hover: var(--blue-600);
+  --accent-active: var(--blue-700);
+  --accent-fg: #ffffff;
+
+  --bg: #fafbff; /* paper white */
+  --bg-raised: #ffffff;
+  --bg-sunken: #f1f4fb;
+  --fg: #141d33;
+  --fg-muted: #5a6480;
+  --fg-subtle: #8a96b3;
+  --border: #dde4f2;
+
+  --danger: #e5484d;
+
+  /* Shape & motion — folded-paper motif */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --titlebar-height: 40px;
+  --transition-fast: 120ms ease;
+  --transition-med: 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Typography */
+  --font-ui:
+    "Inter", "SF Pro Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1526; /* deep navy night */
+    --bg-raised: #151f38;
+    --bg-sunken: #0a101f;
+    --fg: #e8eeff;
+    --fg-muted: #9aa8cc;
+    --fg-subtle: #66739b;
+    --border: #24304f;
+    --accent: var(--blue-400);
+    --accent-hover: var(--blue-300);
+    --accent-active: var(--blue-200);
+    --accent-fg: var(--blue-950);
+  }
+}
+
+/* ------------------------------------------------------------
+   Base reset
+   ------------------------------------------------------------ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}

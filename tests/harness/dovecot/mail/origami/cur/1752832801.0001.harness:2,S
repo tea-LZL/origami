@@ -1,0 +1,10 @@
+From: Alice Anders <alice@example.org>
+To: Origami User <origami@localhost>
+Subject: Welcome to Origami
+Date: Sat, 18 Jul 2026 10:00:00 +0000
+Message-ID: <welcome-1@example.org>
+Content-Type: text/plain; charset=utf-8
+
+Hello from the Origami test harness.
+
+This message is seeded into the Dovecot maildir.

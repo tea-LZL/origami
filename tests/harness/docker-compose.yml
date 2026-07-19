@@ -1,0 +1,21 @@
+services:
+  dovecot:
+    image: dovecot/dovecot:2.3.21
+    container_name: origami-test-dovecot
+    ports:
+      - "10143:143" # IMAP (plaintext, local testing only)
+    volumes:
+      - ./dovecot/dovecot.conf:/etc/dovecot/dovecot.conf:ro
+      - ./dovecot/mail:/mail:rw
+
+  greenmail:
+    image: greenmail/standalone:2.0.1
+    container_name: origami-test-greenmail
+    ports:
+      - "30025:3025" # SMTP
+      - "30143:3143" # IMAP (for send round-trip tests)
+    environment:
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.setup.test.all
+        -Dgreenmail.hostname=0.0.0.0
+        -Dgreenmail.auth.disabled=false
