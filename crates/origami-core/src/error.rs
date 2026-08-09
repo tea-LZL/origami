@@ -19,6 +19,9 @@ pub enum Error {
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
+
+    #[error("store error: {0}")]
+    Store(#[from] rusqlite::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

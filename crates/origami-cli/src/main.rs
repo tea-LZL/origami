@@ -27,6 +27,16 @@ enum Commands {
         #[command(subcommand)]
         command: EnvelopeCommands,
     },
+    /// Synchronize an account into the local store
+    Sync {
+        /// Account id (defaults to the default account)
+        account: Option<String>,
+    },
+    /// Full-text search in the local store
+    Search {
+        /// FTS5 query (e.g. "digest", "from:alice")
+        query: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -163,7 +173,58 @@ async fn main() -> anyhow::Result<()> {
                 );
             }
         }
+
+        Commands::Sync { account } => {
+            let (id, account) = config.account(account.as_deref())?;
+            let data_dir = data_dir()?;
+            let store = origami_core::store::Store::open(&data_dir.join("db.sqlite3"))?;
+            let blobs = origami_core::blob::BlobStore::open(&data_dir.join("blobs"))?;
+            let engine = origami_core::sync::SyncEngine::new(store.clone(), blobs);
+
+            println!("syncing account `{id}`…");
+            let results = engine.sync_account(id, account).await?;
+            for (folder, stats) in &results {
+                println!(
+                    "  {folder:20} +{} added ~{} changed -{} removed",
+                    stats.added, stats.changed, stats.removed
+                );
+            }
+
+            // Print local folder overview after sync.
+            let account_db_id = store.upsert_account(id, &account.name, &account.email)?;
+            for folder in store.list_folders(&account_db_id)? {
+                println!(
+                    "  {:20} {:>6} total {:>6} unread (local)",
+                    folder.name, folder.total, folder.unread
+                );
+            }
+        }
+
+        Commands::Search { query } => {
+            let store = origami_core::store::Store::open(&data_dir()?.join("db.sqlite3"))?;
+            let hits = store.search(&query, 50)?;
+            if hits.is_empty() {
+                println!("no results for `{query}`");
+            }
+            for envelope in hits {
+                let from = envelope
+                    .from
+                    .first()
+                    .map(|a| a.name.clone().unwrap_or_else(|| a.addr.clone()))
+                    .unwrap_or_default();
+                println!("{:20.20} | {}", from, envelope.subject);
+            }
+        }
     }
 
     Ok(())
+}
+
+/// XDG data dir for Origami (~/.local/share/origami).
+fn data_dir() -> anyhow::Result<std::path::PathBuf> {
+    if let Ok(dir) = std::env::var("XDG_DATA_HOME") {
+        return Ok(std::path::PathBuf::from(dir).join("origami"));
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    Ok(std::path::PathBuf::from(home).join(".local/share/origami"))
 }

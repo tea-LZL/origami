@@ -11,9 +11,23 @@ Local Docker harness for live protocol tests.
 
 ```sh
 docker compose -f tests/harness/docker-compose.yml up -d
+
+# IMAP tests against Dovecot
 ORIGAMI_TEST_IMAP=1 cargo test -p origami-core --test imap_harness
+ORIGAMI_TEST_IMAP=1 cargo test -p origami-core --test sync_harness
+
+# SMTP + IMAP receive against GreenMail
+ORIGAMI_TEST_SMTP=1 cargo test -p origami-core --test send_e2e
+
+# All live tests (separate --test flags — Cargo doesn't accept pipe patterns)
+ORIGAMI_TEST_IMAP=1 ORIGAMI_TEST_SMTP=1 \
+  cargo test -p origami-core \
+    --test imap_harness \
+    --test sync_harness \
+    --test send_e2e
+
 docker compose -f tests/harness/docker-compose.yml down
 ```
 
-The integration tests are no-ops unless `ORIGAMI_TEST_IMAP` is set, so a
+The integration tests are no-ops unless `ORIGAMI_TEST_IMAP` (or `ORIGAMI_TEST_SMTP`) is set, so a
 plain `cargo test` (and CI without Docker) stays green.

@@ -1,4 +1,31 @@
-use serde::Serialize;
+//! Tauri commands: the UI ↔ core bridge. All commands read from the
+//! local store (never blocking on IMAP); network actions go through
+//! short-lived backend sessions while background sync keeps the store
+//! fresh (see docs/PLAN.md §Architecture).
+
+use origami_core::compose::{Draft, DraftAttachment};
+use origami_core::config::{
+    AccountConfig, ImapConfig, NotificationConfig, NotificationFolderScope, NotificationPreview,
+    QuietHours, SmtpConfig,
+};
+use origami_core::message::{AttachmentMeta, MessageHeaders, MimePart, ParsedMessage};
+use origami_core::model::{Envelope, Flag, Mailbox, MailboxRole, OutboxEntry, OutboxOp};
+use origami_core::oauth::{OAuthProvider, OAuthTokens};
+use origami_core::provider_hints;
+use origami_core::smtp::OrigamiSmtp;
+use origami_core::{MailBackend, SmtpSender};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use tauri::State;
+
+use crate::oauth_flow;
+use crate::state::{self, AppState};
+
+type CmdResult<T> = Result<T, String>;
+
+fn err<E: std::fmt::Display>(e: E) -> String {
+    e.to_string()
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -14,5 +41,1604 @@ pub fn app_info() -> AppInfo {
         name: "Origami",
         core_version: origami_core::version(),
         shell_version: env!("CARGO_PKG_VERSION"),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountDto {
+    /// Config id (TOML key).
+    pub id: String,
+    /// App-owned database UUID.
+    pub db_id: String,
+    pub name: String,
+    pub email: String,
+    pub has_imap: bool,
+    pub has_smtp: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MailboxDto {
+    pub id: String,
+    pub account_id: String,
+    pub name: String,
+    pub role: MailboxRole,
+    pub total: u32,
+    pub unread: u32,
+    pub source_ids: Vec<String>,
+}
+
+fn collapse_folders(folders: Vec<Mailbox>) -> Vec<MailboxDto> {
+    let mut logical = Vec::with_capacity(folders.len());
+    for folder in folders {
+        if folder.role != MailboxRole::Sent {
+            logical.push(MailboxDto {
+                id: folder.id.clone(),
+                account_id: folder.account_id.clone(),
+                name: folder.name,
+                role: folder.role,
+                total: folder.total,
+                unread: folder.unread,
+                source_ids: vec![folder.id],
+            });
+            continue;
+        }
+
+        if let Some(group) = logical.iter_mut().find(|group: &&mut MailboxDto| {
+            group.account_id == folder.account_id && group.role == MailboxRole::Sent
+        }) {
+            group.total += folder.total;
+            group.unread += folder.unread;
+            group.source_ids.push(folder.id.clone());
+            if sent_folder_preference(&folder.name) < sent_folder_preference(&group.name) {
+                group.id = folder.id;
+                group.name = folder.name;
+            }
+        } else {
+            logical.push(MailboxDto {
+                id: folder.id.clone(),
+                account_id: folder.account_id,
+                name: folder.name,
+                role: MailboxRole::Sent,
+                total: folder.total,
+                unread: folder.unread,
+                source_ids: vec![folder.id],
+            });
+        }
+    }
+
+    for group in &mut logical {
+        if group.role == MailboxRole::Sent {
+            group.source_ids.sort();
+            if let Some(index) = group.source_ids.iter().position(|id| id == &group.id) {
+                group.source_ids.swap(0, index);
+            }
+        }
+    }
+    logical
+}
+
+fn sent_folder_preference(name: &str) -> u8 {
+    if name.eq_ignore_ascii_case("[gmail]/sent mail") {
+        0
+    } else if name.eq_ignore_ascii_case("sent") {
+        1
+    } else {
+        2
+    }
+}
+
+fn folder_sort_key(folder: &MailboxDto) -> (u8, String, String) {
+    let role_order = match folder.role {
+        MailboxRole::Inbox => 0,
+        MailboxRole::Sent => 1,
+        MailboxRole::Drafts => 2,
+        MailboxRole::Archive => 3,
+        MailboxRole::Junk => 4,
+        MailboxRole::Trash => 5,
+        MailboxRole::Other => 6,
+    };
+    (role_order, folder.name.clone(), folder.account_id.clone())
+}
+
+#[tauri::command]
+pub fn list_accounts(state: State<'_, AppState>) -> CmdResult<Vec<AccountDto>> {
+    let config = state.read_config();
+    let mut out = Vec::new();
+    for (id, account) in &config.accounts {
+        let db_id = state
+            .store
+            .upsert_account(id, &account.name, &account.email)
+            .map_err(err)?;
+        out.push(AccountDto {
+            id: id.clone(),
+            db_id,
+            name: account.name.clone(),
+            email: account.email.clone(),
+            has_imap: account.imap.is_some(),
+            has_smtp: account.smtp.is_some(),
+        });
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub fn list_folders(
+    state: State<'_, AppState>,
+    account_db_id: Option<String>,
+) -> CmdResult<Vec<MailboxDto>> {
+    match account_db_id {
+        Some(id) => Ok(collapse_folders(
+            state.store.list_folders(&id).map_err(err)?,
+        )),
+        None => {
+            let config = state.read_config();
+            let mut all = Vec::new();
+            for (config_id, account) in &config.accounts {
+                let db_id = state
+                    .store
+                    .upsert_account(config_id, &account.name, &account.email)
+                    .map_err(err)?;
+                all.extend(state.store.list_folders(&db_id).map_err(err)?);
+            }
+            let mut all = collapse_folders(all);
+            // INBOX first, then role order, then the rest by name.
+            all.sort_by_key(folder_sort_key);
+            Ok(all)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn create_folder(
+    state: State<'_, AppState>,
+    account_id: String,
+    name: String,
+) -> CmdResult<()> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("folder name is required".to_string());
+    }
+    let (_, account) = state.account(Some(&account_id)).map_err(err)?;
+    let backend = state.backend(&account_id).await.map_err(err)?;
+    backend.create_mailbox(name).await.map_err(err)?;
+    let account_db_id = state
+        .store
+        .upsert_account(&account_id, &account.name, &account.email)
+        .map_err(err)?;
+    state
+        .store
+        .upsert_folder(&account_db_id, name, MailboxRole::Other)
+        .map_err(err)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn rename_folder(
+    state: State<'_, AppState>,
+    folder_id: String,
+    name: String,
+) -> CmdResult<()> {
+    if state.store.folder_role(&folder_id).map_err(err)? != Some(MailboxRole::Other) {
+        return Err("special folders cannot be renamed".to_string());
+    }
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("folder name is required".to_string());
+    }
+    let (account_id, _, mailbox) = state.resolve_folder(&folder_id).map_err(err)?;
+    let backend = state.backend(&account_id).await.map_err(err)?;
+    backend.rename_mailbox(&mailbox, name).await.map_err(err)?;
+    state.store.rename_folder(&folder_id, name).map_err(err)
+}
+
+#[tauri::command]
+pub async fn delete_folder(state: State<'_, AppState>, folder_id: String) -> CmdResult<()> {
+    if state.store.folder_role(&folder_id).map_err(err)? != Some(MailboxRole::Other) {
+        return Err("special folders cannot be deleted".to_string());
+    }
+    let (account_id, _, mailbox) = state.resolve_folder(&folder_id).map_err(err)?;
+    let backend = state.backend(&account_id).await.map_err(err)?;
+    backend.delete_mailbox(&mailbox).await.map_err(err)?;
+    state.store.delete_folder(&folder_id).map_err(err)
+}
+
+#[tauri::command]
+pub fn list_envelopes(
+    state: State<'_, AppState>,
+    folder_id: String,
+    page: u32,
+    page_size: u32,
+) -> CmdResult<Vec<Envelope>> {
+    let source_ids = state.store.folder_source_ids(&folder_id).map_err(err)?;
+    state
+        .store
+        .list_envelopes_in_folders(&source_ids, page, page_size)
+        .map_err(err)
+}
+
+#[tauri::command]
+pub fn list_unified_inbox(
+    state: State<'_, AppState>,
+    page: u32,
+    page_size: u32,
+) -> CmdResult<Vec<Envelope>> {
+    state.store.list_unified_inbox(page, page_size).map_err(err)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageDto {
+    pub envelope: Envelope,
+    pub text: Option<String>,
+    pub html: Option<String>,
+    pub headers: MessageHeaders,
+    pub attachments: Vec<AttachmentMeta>,
+    pub parts: Vec<MimePart>,
+    pub parse_warnings: Vec<String>,
+}
+
+/// Fetch normalized display data (or fall back to a full body) for display.
+#[tauri::command]
+pub async fn get_message(
+    state: State<'_, AppState>,
+    folder_id: String,
+    server_uid: u32,
+) -> CmdResult<MessageDto> {
+    let (account_config_id, _account_db_id, mailbox) =
+        state.resolve_folder(&folder_id).map_err(err)?;
+    let parsed: ParsedMessage = match state
+        .store
+        .parsed_message(&folder_id, server_uid)
+        .map_err(err)?
+    {
+        Some(parsed) => parsed,
+        None => {
+            if let Some(hash) = state.store.blob_hash(&folder_id, server_uid).map_err(err)? {
+                let raw = state.engine.blobs().get(&hash).map_err(err)?;
+                state
+                    .engine
+                    .cache_parsed_message(&folder_id, server_uid, &hash, &raw)
+                    .map_err(err)?
+            } else {
+                let backend = state.backend(&account_config_id).await.map_err(err)?;
+                match backend.fetch_display_message(&mailbox, server_uid).await {
+                    Ok(display) => match state
+                        .engine
+                        .cache_display_message(&folder_id, server_uid, &display)
+                    {
+                        Ok(parsed) => parsed,
+                        Err(_) => {
+                            let hash = state
+                                .engine
+                                .ensure_body(&backend, &folder_id, &mailbox, server_uid)
+                                .await
+                                .map_err(err)?;
+                            let raw = state.engine.blobs().get(&hash).map_err(err)?;
+                            state
+                                .engine
+                                .cache_parsed_message(&folder_id, server_uid, &hash, &raw)
+                                .map_err(err)?
+                        }
+                    },
+                    Err(_) => {
+                        let hash = state
+                            .engine
+                            .ensure_body(&backend, &folder_id, &mailbox, server_uid)
+                            .await
+                            .map_err(err)?;
+                        let raw = state.engine.blobs().get(&hash).map_err(err)?;
+                        state
+                            .engine
+                            .cache_parsed_message(&folder_id, server_uid, &hash, &raw)
+                            .map_err(err)?
+                    }
+                }
+            }
+        }
+    };
+
+    let envelope = state
+        .store
+        .get_envelope(&folder_id, server_uid)
+        .map_err(err)?
+        .ok_or("envelope not found")?;
+
+    Ok(MessageDto {
+        envelope,
+        text: parsed.text,
+        html: parsed.html,
+        headers: parsed.headers,
+        attachments: parsed.attachments,
+        parts: parsed.parts,
+        parse_warnings: parsed.parse_warnings,
+    })
+}
+
+/// Decoded bytes of one attachment (base64 for IPC transport).
+#[tauri::command]
+pub async fn get_attachment(
+    state: State<'_, AppState>,
+    folder_id: String,
+    server_uid: u32,
+    index: usize,
+) -> CmdResult<String> {
+    use base64::Engine;
+    let (account_config_id, _account_db_id, mailbox) =
+        state.resolve_folder(&folder_id).map_err(err)?;
+    let parsed = state
+        .store
+        .parsed_message(&folder_id, server_uid)
+        .map_err(err)?
+        .ok_or("message not opened yet")?;
+    let attachment = parsed
+        .attachments
+        .get(index)
+        .ok_or("attachment not found")?;
+    let bytes = if let Some(hash) = state.store.blob_hash(&folder_id, server_uid).map_err(err)? {
+        let raw = state.engine.blobs().get(&hash).map_err(err)?;
+        origami_core::message::attachment_bytes(&raw, index).ok_or("attachment not found")?
+    } else {
+        let backend = state.backend(&account_config_id).await.map_err(err)?;
+        backend
+            .fetch_attachment_section(&mailbox, server_uid, &attachment.part_path)
+            .await
+            .map_err(err)?
+    };
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+/// Replace a message's flags; immediate when online, queued otherwise.
+#[tauri::command]
+pub async fn store_flags(
+    state: State<'_, AppState>,
+    folder_id: String,
+    server_uid: u32,
+    flags: Vec<Flag>,
+) -> CmdResult<()> {
+    let (account_config_id, account_db_id, mailbox) =
+        state.resolve_folder(&folder_id).map_err(err)?;
+
+    if let Ok(backend) = state.backend(&account_config_id).await {
+        if backend
+            .store_flags(&mailbox, server_uid, &flags)
+            .await
+            .is_ok()
+        {
+            state
+                .store
+                .update_flags(&folder_id, server_uid, &flags)
+                .map_err(err)?;
+            return Ok(());
+        }
+    }
+
+    state
+        .engine
+        .queue_store_flags(&account_db_id, &folder_id, &mailbox, server_uid, &flags)
+        .map_err(err)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlagUpdateDto {
+    server_uid: u32,
+    flags: Vec<Flag>,
+}
+
+/// Apply a same-folder batch using one backend session. Retryable
+/// failures are queued individually and reflected in SQLite immediately.
+#[tauri::command]
+pub async fn store_flags_batch(
+    state: State<'_, AppState>,
+    folder_id: String,
+    updates: Vec<FlagUpdateDto>,
+) -> CmdResult<()> {
+    let (account_config_id, account_db_id, mailbox) =
+        state.resolve_folder(&folder_id).map_err(err)?;
+    let backend = state.backend(&account_config_id).await.ok();
+
+    for update in updates {
+        let stored = if let Some(backend) = &backend {
+            backend
+                .store_flags(&mailbox, update.server_uid, &update.flags)
+                .await
+                .is_ok()
+        } else {
+            false
+        };
+
+        if stored {
+            state
+                .store
+                .update_flags(&folder_id, update.server_uid, &update.flags)
+                .map_err(err)?;
+        } else {
+            state
+                .engine
+                .queue_store_flags(
+                    &account_db_id,
+                    &folder_id,
+                    &mailbox,
+                    update.server_uid,
+                    &update.flags,
+                )
+                .map_err(err)?;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeywordUpdateDto {
+    server_uid: u32,
+    flags: Vec<Flag>,
+    keywords: Vec<String>,
+}
+
+/// Replace message keywords while preserving the supplied system flags.
+#[tauri::command]
+pub async fn store_keywords_batch(
+    state: State<'_, AppState>,
+    folder_id: String,
+    updates: Vec<KeywordUpdateDto>,
+) -> CmdResult<()> {
+    let (account_config_id, account_db_id, mailbox) =
+        state.resolve_folder(&folder_id).map_err(err)?;
+    let backend = state.backend(&account_config_id).await.ok();
+
+    for update in updates {
+        let stored = if let Some(backend) = &backend {
+            backend
+                .store_flags_and_keywords(
+                    &mailbox,
+                    update.server_uid,
+                    &update.flags,
+                    Some(&update.keywords),
+                )
+                .await
+                .is_ok()
+        } else {
+            false
+        };
+        if stored {
+            state
+                .store
+                .update_flags(&folder_id, update.server_uid, &update.flags)
+                .map_err(err)?;
+            state
+                .store
+                .update_keywords(&folder_id, update.server_uid, &update.keywords)
+                .map_err(err)?;
+        } else {
+            state
+                .engine
+                .queue_store_keywords(
+                    &account_db_id,
+                    &folder_id,
+                    &mailbox,
+                    update.server_uid,
+                    &update.flags,
+                    &update.keywords,
+                )
+                .map_err(err)?;
+        }
+    }
+    Ok(())
+}
+
+/// Move a same-folder UID batch and remove the source rows optimistically.
+/// Network failures are persisted in the outbox for replay.
+#[tauri::command]
+pub async fn move_messages(
+    state: State<'_, AppState>,
+    folder_id: String,
+    destination_folder_id: String,
+    server_uids: Vec<u32>,
+) -> CmdResult<()> {
+    let (account_config_id, account_db_id, source_mailbox) =
+        state.resolve_folder(&folder_id).map_err(err)?;
+    let (destination_account_id, _, destination_mailbox) =
+        state.resolve_folder(&destination_folder_id).map_err(err)?;
+    if destination_account_id != account_config_id {
+        return Err("messages cannot be moved between accounts".to_string());
+    }
+
+    let moved = if let Ok(backend) = state.backend(&account_config_id).await {
+        backend
+            .move_messages(&source_mailbox, &destination_mailbox, &server_uids)
+            .await
+            .is_ok()
+    } else {
+        false
+    };
+    if !moved {
+        state
+            .engine
+            .queue_move_messages(
+                &account_db_id,
+                &source_mailbox,
+                &destination_mailbox,
+                &server_uids,
+            )
+            .map_err(err)?;
+    }
+    for uid in server_uids {
+        state
+            .store
+            .delete_message_by_uid(&folder_id, uid)
+            .map_err(err)?;
+    }
+    Ok(())
+}
+
+/// Permanently delete and expunge a same-folder UID batch. Offline
+/// requests are persisted before local rows are removed.
+#[tauri::command]
+pub async fn delete_messages(
+    state: State<'_, AppState>,
+    folder_id: String,
+    server_uids: Vec<u32>,
+) -> CmdResult<()> {
+    let (account_config_id, account_db_id, mailbox) =
+        state.resolve_folder(&folder_id).map_err(err)?;
+    let deleted = if let Ok(backend) = state.backend(&account_config_id).await {
+        backend
+            .delete_messages(&mailbox, &server_uids)
+            .await
+            .is_ok()
+    } else {
+        false
+    };
+    if !deleted {
+        state
+            .engine
+            .queue_delete_messages(&account_db_id, &mailbox, &server_uids)
+            .map_err(err)?;
+    }
+    for uid in server_uids {
+        state
+            .store
+            .delete_message_by_uid(&folder_id, uid)
+            .map_err(err)?;
+    }
+    Ok(())
+}
+
+// ------------------------------------------------------------------
+// Account management & onboarding
+// ------------------------------------------------------------------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderHintDto {
+    pub description: Option<String>,
+    pub imap_host: Option<String>,
+    pub imap_port: Option<u16>,
+    pub smtp_host: Option<String>,
+    pub smtp_port: Option<u16>,
+    pub auth: String,
+    pub oauth_provider: Option<String>,
+}
+
+/// Resolve known defaults for an email address domain.
+#[tauri::command]
+pub fn provider_hints(email: String) -> ProviderHintDto {
+    let domain = email.rsplit_once('@').map(|(_, d)| d).unwrap_or("");
+    let oauth = OAuthProvider::from_domain(&email);
+    match provider_hints::for_domain(domain.to_lowercase().as_str()) {
+        Some(p) => ProviderHintDto {
+            description: Some(p.description.to_string()),
+            imap_host: Some(p.imap.0.to_string()),
+            imap_port: Some(p.imap.1),
+            smtp_host: Some(p.smtp.0.to_string()),
+            smtp_port: Some(p.smtp.1),
+            auth: if oauth.is_some() {
+                "xoauth2".to_string()
+            } else {
+                "login".to_string()
+            },
+            oauth_provider: oauth.map(|p| {
+                match p {
+                    OAuthProvider::Google => "google",
+                    OAuthProvider::Microsoft => "microsoft",
+                }
+                .to_string()
+            }),
+        },
+        None => ProviderHintDto {
+            description: None,
+            imap_host: None,
+            imap_port: None,
+            smtp_host: None,
+            smtp_port: None,
+            auth: "login".to_string(),
+            oauth_provider: oauth.map(|p| {
+                match p {
+                    OAuthProvider::Google => "google",
+                    OAuthProvider::Microsoft => "microsoft",
+                }
+                .to_string()
+            }),
+        },
+    }
+}
+
+/// Launch the OAuth PKCE flow and return tokens.
+#[tauri::command]
+pub async fn oauth_sign_in(
+    app: tauri::AppHandle,
+    provider: String,
+    client_id: String,
+    client_secret: Option<String>,
+) -> CmdResult<OAuthTokens> {
+    let p = match provider.as_str() {
+        "google" => OAuthProvider::Google,
+        "microsoft" => OAuthProvider::Microsoft,
+        _ => return Err(format!("unknown oauth provider: {provider}")),
+    };
+    oauth_flow::run_oauth_flow(&app, p, &client_id, client_secret.as_deref())
+        .await
+        .map_err(err)
+}
+
+/// Look up the OAuth client credentials for a provider from the
+/// `[oauth]` config section. The frontend calls this before starting a
+/// sign-in so credentials never appear in UI code.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthClientConfig {
+    pub client_id: String,
+    pub client_secret: Option<String>,
+}
+
+#[tauri::command]
+pub fn oauth_client_id(
+    state: State<'_, AppState>,
+    provider: String,
+) -> CmdResult<OAuthClientConfig> {
+    let oauth = &state.read_config().oauth;
+    match provider.as_str() {
+        "google" => Ok(OAuthClientConfig {
+            client_id: oauth
+                .google_client_id
+                .clone()
+                .ok_or_else(|| "no `oauth.google_client_id` in config".to_string())?,
+            client_secret: oauth.google_client_secret.clone(),
+        }),
+        "microsoft" => Ok(OAuthClientConfig {
+            client_id: oauth
+                .microsoft_client_id
+                .clone()
+                .ok_or_else(|| "no `oauth.microsoft_client_id` in config".to_string())?,
+            client_secret: oauth.microsoft_client_secret.clone(),
+        }),
+        _ => Err(format!("unknown oauth provider: {provider}")),
+    }
+}
+
+/// Persist a new account: store secrets in the keyring, append to
+/// config TOML, populate the store row immediately so the UI sees it,
+/// and return an `AccountDto` for the caller to append to the list
+/// (the in-memory `AppState.config` is stale until the next restart).
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn add_account(
+    state: State<'_, AppState>,
+    account_id: String,
+    name: String,
+    email: String,
+    imap_host: Option<String>,
+    imap_port: Option<u16>,
+    smtp_host: Option<String>,
+    smtp_port: Option<u16>,
+    auth: String,
+    username: String,
+    password: Option<String>,
+    oauth_access_token: Option<String>,
+    oauth_refresh_token: Option<String>,
+) -> CmdResult<AccountDto> {
+    let auth_mech = match auth.as_str() {
+        "login" => origami_core::config::AuthMechanism::Login,
+        "plain" => origami_core::config::AuthMechanism::Plain,
+        "xoauth2" => origami_core::config::AuthMechanism::Xoauth2,
+        "oauthbearer" => origami_core::config::AuthMechanism::Oauthbearer,
+        _ => return Err(format!("unknown auth: {auth}")),
+    };
+
+    // Capture before moves for the DTO we'll return at the end.
+    let (has_imap, has_smtp) = (imap_host.is_some(), smtp_host.is_some());
+    let (dto_name, dto_email) = (name.clone(), email.clone());
+
+    let imap = imap_host.map(|host| ImapConfig {
+        host,
+        port: imap_port,
+        tls: true,
+        starttls: false,
+        auth: auth_mech,
+        username: username.clone(),
+        secret: None, // filled below
+    });
+
+    let smtp = smtp_host.map(|host| SmtpConfig {
+        host,
+        port: smtp_port,
+        tls: true,
+        starttls: false,
+        auth: auth_mech,
+        username: username.clone(),
+        secret: None,
+    });
+
+    // Store the secret in the keyring and reference it in the config.
+    let secret_value = if let Some(tok) = oauth_access_token {
+        tok
+    } else if let Some(pw) = password {
+        pw
+    } else {
+        return Err("password or oauth token required".to_string());
+    };
+
+    origami_core::config::write_keyring_secret(&account_id, &secret_value).map_err(err)?;
+    // Also store the refresh token for OAuth accounts.
+    if let Some(refresh) = oauth_refresh_token {
+        origami_core::config::write_keyring_secret(&format!("{account_id}-refresh"), &refresh)
+            .map_err(err)?;
+    }
+
+    let imap_with_secret = imap.map(|mut i| {
+        i.secret = Some(origami_core::config::Secret::Keyring {
+            entry: account_id.clone(),
+        });
+        i
+    });
+    let smtp_with_secret = smtp.map(|mut s| {
+        s.secret = Some(origami_core::config::Secret::Keyring {
+            entry: account_id.clone(),
+        });
+        s
+    });
+
+    // Clone values for the DTO before they're moved into AccountConfig.
+    let mut config = state.read_config();
+    let is_default = config.accounts.is_empty();
+
+    let account = AccountConfig {
+        name,
+        email,
+        default: is_default,
+        imap: imap_with_secret,
+        smtp: smtp_with_secret,
+    };
+
+    config.accounts.insert(account_id.clone(), account.clone());
+    state.save_config(&config).map_err(err)?;
+
+    // Insert the account row into the store so the UI's folder/envelope
+    // queries work immediately (otherwise they wait for the sync task
+    // to start, which races with the UI navigating to the new account).
+    let db_id = state
+        .store
+        .upsert_account(
+            &account_id,
+            &config.accounts[&account_id].name,
+            &config.accounts[&account_id].email,
+        )
+        .map_err(err)?;
+
+    let dto = AccountDto {
+        id: account_id.clone(),
+        db_id,
+        name: dto_name,
+        email: dto_email,
+        has_imap,
+        has_smtp,
+    };
+
+    // Start the account's managed sync loop so initial import continues
+    // in the background and subsequent new mail is watched.
+    let account = config.accounts.get(&account_id).unwrap().clone();
+    state.start_account_sync(account_id, account);
+
+    Ok(dto)
+}
+
+/// Remove an account: stop its sync loop, delete its keyring secrets,
+/// remove it from the config TOML, and return the remaining accounts
+/// so the UI can refresh.
+#[tauri::command]
+pub async fn remove_account(
+    state: State<'_, AppState>,
+    account_id: String,
+) -> CmdResult<Vec<AccountDto>> {
+    // Stop the running sync loop first (clean shutdown).
+    state.stop_account_sync(&account_id);
+
+    // Wipe keyring secrets for this account.
+    let _ = origami_core::config::delete_keyring_secret(&account_id);
+    let _ = origami_core::config::delete_keyring_secret(&format!("{account_id}-refresh"));
+
+    // Remove from the config TOML.
+    let mut config = state.read_config();
+    config.accounts.remove(&account_id);
+    state.save_config(&config).map_err(err)?;
+
+    // Clear per-account error and return the new list.
+    state.clear_account_error(&account_id);
+
+    let mut out = Vec::new();
+    for (id, account) in &config.accounts {
+        let db_id = state
+            .store
+            .upsert_account(id, &account.name, &account.email)
+            .map_err(err)?;
+        out.push(AccountDto {
+            id: id.clone(),
+            db_id,
+            name: account.name.clone(),
+            email: account.email.clone(),
+            has_imap: account.imap.is_some(),
+            has_smtp: account.smtp.is_some(),
+        });
+    }
+    Ok(out)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountStatusDto {
+    state: &'static str,
+    error: Option<String>,
+    pending_operations: u32,
+}
+
+#[tauri::command]
+pub fn account_statuses(
+    state: State<'_, AppState>,
+) -> CmdResult<HashMap<String, AccountStatusDto>> {
+    let config = state.read_config();
+    let errors = state.account_errors_snapshot();
+    let syncing = state.syncing_accounts_snapshot();
+    let mut statuses = HashMap::new();
+    for (id, account) in &config.accounts {
+        let db_id = state
+            .store
+            .upsert_account(id, &account.name, &account.email)
+            .map_err(err)?;
+        let error = errors.get(id).cloned();
+        let phase = if error.is_some() {
+            "error"
+        } else if syncing.contains(id) {
+            "syncing"
+        } else {
+            "online"
+        };
+        statuses.insert(
+            id.clone(),
+            AccountStatusDto {
+                state: phase,
+                error,
+                pending_operations: state.store.outbox_count(&db_id).map_err(err)?,
+            },
+        );
+    }
+    Ok(statuses)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutboxSummaryDto {
+    id: i64,
+    kind: &'static str,
+    detail: String,
+    created_at: i64,
+    attempts: u32,
+    last_error: Option<String>,
+}
+
+#[tauri::command]
+pub fn list_outbox(
+    state: State<'_, AppState>,
+    account_id: String,
+) -> CmdResult<Vec<OutboxSummaryDto>> {
+    let (_, account) = state.account(Some(&account_id)).map_err(err)?;
+    let account_db_id = state
+        .store
+        .upsert_account(&account_id, &account.name, &account.email)
+        .map_err(err)?;
+    let entries = state.store.outbox_list(&account_db_id).map_err(err)?;
+    Ok(entries.into_iter().map(summarize_outbox_entry).collect())
+}
+
+fn summarize_outbox_entry(entry: OutboxEntry) -> OutboxSummaryDto {
+    let (kind, detail) = match entry.op {
+        OutboxOp::StoreFlags {
+            mailbox,
+            server_uid,
+            ..
+        } => (
+            "Message update",
+            format!("Update message {server_uid} in {mailbox}"),
+        ),
+        OutboxOp::MoveMessages {
+            source_mailbox,
+            destination_mailbox,
+            server_uids,
+        } => (
+            "Move",
+            format!(
+                "Move {} {} from {source_mailbox} to {destination_mailbox}",
+                server_uids.len(),
+                if server_uids.len() == 1 {
+                    "message"
+                } else {
+                    "messages"
+                }
+            ),
+        ),
+        OutboxOp::DeleteMessages {
+            mailbox,
+            server_uids,
+        } => (
+            "Delete",
+            format!(
+                "Delete {} {} from {mailbox}",
+                server_uids.len(),
+                if server_uids.len() == 1 {
+                    "message"
+                } else {
+                    "messages"
+                }
+            ),
+        ),
+        OutboxOp::SendMessage { .. } => ("Send", "Send a queued message".into()),
+        OutboxOp::AppendSent { .. } => ("Sent copy", "Save a copy in Sent".into()),
+    };
+    OutboxSummaryDto {
+        id: entry.id,
+        kind,
+        detail,
+        created_at: entry.created_at,
+        attempts: entry.attempts,
+        last_error: entry.last_error,
+    }
+}
+
+#[tauri::command]
+pub async fn retry_outbox(state: State<'_, AppState>, account_id: String) -> CmdResult<()> {
+    let (_, account) = state.account(Some(&account_id)).map_err(err)?;
+    state
+        .engine
+        .sync_account(&account_id, &account)
+        .await
+        .map_err(err)?;
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationSettingsDto {
+    preview: String,
+    folder_scope: String,
+    quiet_hours: Option<QuietHoursDto>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuietHoursDto {
+    start: String,
+    end: String,
+}
+
+impl From<NotificationConfig> for NotificationSettingsDto {
+    fn from(settings: NotificationConfig) -> Self {
+        Self {
+            preview: match settings.preview {
+                NotificationPreview::Full => "full",
+                NotificationPreview::SenderOnly => "sender_only",
+                NotificationPreview::Hidden => "hidden",
+            }
+            .into(),
+            folder_scope: match settings.folder_scope {
+                NotificationFolderScope::All => "all",
+                NotificationFolderScope::Inbox => "inbox",
+            }
+            .into(),
+            quiet_hours: settings.quiet_hours.map(|hours| QuietHoursDto {
+                start: hours.start,
+                end: hours.end,
+            }),
+        }
+    }
+}
+
+#[tauri::command]
+pub fn get_notification_settings(state: State<'_, AppState>) -> CmdResult<NotificationSettingsDto> {
+    Ok(state.read_config().notifications.into())
+}
+
+#[tauri::command]
+pub fn update_notification_settings(
+    state: State<'_, AppState>,
+    settings: NotificationSettingsDto,
+) -> CmdResult<()> {
+    let notifications = NotificationConfig {
+        preview: match settings.preview.as_str() {
+            "full" => NotificationPreview::Full,
+            "sender_only" => NotificationPreview::SenderOnly,
+            "hidden" => NotificationPreview::Hidden,
+            value => return Err(format!("unknown notification preview: {value}")),
+        },
+        folder_scope: match settings.folder_scope.as_str() {
+            "all" => NotificationFolderScope::All,
+            "inbox" => NotificationFolderScope::Inbox,
+            value => return Err(format!("unknown notification folder scope: {value}")),
+        },
+        quiet_hours: settings.quiet_hours.map(|hours| QuietHours {
+            start: hours.start,
+            end: hours.end,
+        }),
+    };
+    notifications.validate().map_err(err)?;
+    let mut config = state.read_config();
+    config.notifications = notifications;
+    state.save_config(&config).map_err(err)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountSettingsDto {
+    name: String,
+    email: String,
+    imap_host: Option<String>,
+    imap_port: Option<u16>,
+    smtp_host: Option<String>,
+    smtp_port: Option<u16>,
+    username: Option<String>,
+    auth: Option<String>,
+    oauth_provider: Option<String>,
+}
+
+#[tauri::command]
+pub fn get_account_settings(
+    state: State<'_, AppState>,
+    account_id: String,
+) -> CmdResult<AccountSettingsDto> {
+    let (_, account) = state.account(Some(&account_id)).map_err(err)?;
+    let mechanism = account
+        .imap
+        .as_ref()
+        .map(|imap| imap.auth)
+        .or_else(|| account.smtp.as_ref().map(|smtp| smtp.auth));
+    let auth = mechanism.map(|mechanism| {
+        match mechanism {
+            origami_core::config::AuthMechanism::Login => "login",
+            origami_core::config::AuthMechanism::Plain => "plain",
+            origami_core::config::AuthMechanism::Xoauth2 => "xoauth2",
+            origami_core::config::AuthMechanism::Oauthbearer => "oauthbearer",
+        }
+        .to_string()
+    });
+    let oauth_provider = mechanism
+        .filter(|mechanism| {
+            matches!(
+                mechanism,
+                origami_core::config::AuthMechanism::Xoauth2
+                    | origami_core::config::AuthMechanism::Oauthbearer
+            )
+        })
+        .and_then(|_| OAuthProvider::from_domain(&account.email))
+        .map(|provider| match provider {
+            OAuthProvider::Google => "google".to_string(),
+            OAuthProvider::Microsoft => "microsoft".to_string(),
+        });
+    Ok(AccountSettingsDto {
+        name: account.name,
+        email: account.email,
+        imap_host: account.imap.as_ref().map(|imap| imap.host.clone()),
+        imap_port: account.imap.as_ref().and_then(|imap| imap.port),
+        smtp_host: account.smtp.as_ref().map(|smtp| smtp.host.clone()),
+        smtp_port: account.smtp.as_ref().and_then(|smtp| smtp.port),
+        username: account
+            .imap
+            .as_ref()
+            .map(|imap| imap.username.clone())
+            .or_else(|| account.smtp.as_ref().map(|smtp| smtp.username.clone())),
+        auth,
+        oauth_provider,
+    })
+}
+
+/// Reconnect / update an existing account: stop the old sync loop,
+/// replace the config entry, and start a fresh loop.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn update_account(
+    state: State<'_, AppState>,
+    account_id: String,
+    name: Option<String>,
+    email: Option<String>,
+    imap_host: Option<String>,
+    imap_port: Option<u16>,
+    smtp_host: Option<String>,
+    smtp_port: Option<u16>,
+    auth: Option<String>,
+    username: Option<String>,
+    password: Option<String>,
+    oauth_access_token: Option<String>,
+    oauth_refresh_token: Option<String>,
+) -> CmdResult<()> {
+    let mut config = state.read_config();
+    let existing = config
+        .accounts
+        .get_mut(&account_id)
+        .ok_or_else(|| format!("account `{account_id}` not found"))?;
+
+    if let Some(n) = name {
+        existing.name = n;
+    }
+    if let Some(e) = email {
+        existing.email = e;
+    }
+    if let Some(u) = username {
+        if let Some(imap) = &mut existing.imap {
+            imap.username = u.clone();
+        }
+        if let Some(smtp) = &mut existing.smtp {
+            smtp.username = u;
+        }
+    }
+    if let Some(a) = auth {
+        let mech = match a.as_str() {
+            "login" => origami_core::config::AuthMechanism::Login,
+            "plain" => origami_core::config::AuthMechanism::Plain,
+            "xoauth2" => origami_core::config::AuthMechanism::Xoauth2,
+            "oauthbearer" => origami_core::config::AuthMechanism::Oauthbearer,
+            _ => return Err(format!("unknown auth: {a}")),
+        };
+        if let Some(imap) = &mut existing.imap {
+            imap.auth = mech;
+        }
+        if let Some(smtp) = &mut existing.smtp {
+            smtp.auth = mech;
+        }
+    }
+    if let Some(h) = imap_host {
+        if let Some(imap) = &mut existing.imap {
+            imap.host = h;
+        }
+    }
+    if let Some(p) = imap_port {
+        if let Some(imap) = &mut existing.imap {
+            imap.port = Some(p);
+        }
+    }
+    if let Some(h) = smtp_host {
+        if let Some(smtp) = &mut existing.smtp {
+            smtp.host = h;
+        }
+    }
+    if let Some(p) = smtp_port {
+        if let Some(smtp) = &mut existing.smtp {
+            smtp.port = Some(p);
+        }
+    }
+
+    match (oauth_access_token, oauth_refresh_token) {
+        (Some(access), Some(refresh)) => {
+            let is_oauth = existing.imap.as_ref().is_some_and(|imap| {
+                matches!(
+                    imap.auth,
+                    origami_core::config::AuthMechanism::Xoauth2
+                        | origami_core::config::AuthMechanism::Oauthbearer
+                )
+            });
+            if !is_oauth {
+                return Err("OAuth tokens can only update an OAuth account".into());
+            }
+            if access.trim().is_empty() || refresh.trim().is_empty() {
+                return Err("OAuth reauthentication returned an empty token".into());
+            }
+            origami_core::config::write_keyring_secret(&format!("{account_id}-refresh"), &refresh)
+                .map_err(err)?;
+            origami_core::config::write_keyring_secret(&account_id, &access).map_err(err)?;
+            if let Some(imap) = &mut existing.imap {
+                imap.secret = Some(origami_core::config::Secret::Keyring {
+                    entry: account_id.clone(),
+                });
+            }
+            if let Some(smtp) = &mut existing.smtp {
+                smtp.secret = Some(origami_core::config::Secret::Keyring {
+                    entry: account_id.clone(),
+                });
+            }
+        }
+        (None, None) => {}
+        _ => return Err("OAuth access and refresh tokens must be updated together".into()),
+    }
+
+    // Update the keyring secret if a new password is given.
+    if let Some(pw) = password {
+        origami_core::config::write_keyring_secret(&account_id, &pw).map_err(err)?;
+    }
+
+    state.save_config(&config).map_err(err)?;
+
+    // Restart the sync loop with the new credentials.
+    state.stop_account_sync(&account_id);
+    state.clear_account_error(&account_id);
+    let account = config.accounts.get(&account_id).unwrap().clone();
+    state.start_account_sync(account_id, account);
+
+    Ok(())
+}
+
+/// Trigger an immediate one-shot sync of an account (or all).
+#[tauri::command]
+pub async fn sync_now(state: State<'_, AppState>, account_id: Option<String>) -> CmdResult<()> {
+    if let Some(id) = account_id {
+        let (_, account) = state.account(Some(&id)).map_err(err)?;
+        state
+            .engine
+            .sync_account(&id, &account)
+            .await
+            .map_err(err)?;
+    } else {
+        let config = state.read_config();
+        for (id, account) in &config.accounts {
+            state.engine.sync_account(id, account).await.map_err(err)?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn search(
+    state: State<'_, AppState>,
+    query: String,
+    limit: Option<u32>,
+) -> CmdResult<Vec<Envelope>> {
+    state.store.search(&query, limit.unwrap_or(50)).map_err(err)
+}
+
+#[tauri::command]
+pub fn search_page(
+    state: State<'_, AppState>,
+    query: String,
+    page: u32,
+    page_size: u32,
+) -> CmdResult<Vec<Envelope>> {
+    state
+        .store
+        .search_page(&query, page, page_size)
+        .map_err(err)
+}
+
+#[tauri::command]
+pub fn list_saved_searches(
+    state: State<'_, AppState>,
+) -> CmdResult<Vec<origami_core::model::SavedSearch>> {
+    state.store.list_saved_searches().map_err(err)
+}
+
+#[tauri::command]
+pub fn save_search(
+    state: State<'_, AppState>,
+    name: String,
+    query: String,
+) -> CmdResult<origami_core::model::SavedSearch> {
+    if name.trim().is_empty() || query.trim().is_empty() {
+        return Err("saved search name and query are required".to_string());
+    }
+    state
+        .store
+        .save_search(name.trim(), query.trim())
+        .map_err(err)
+}
+
+#[tauri::command]
+pub fn delete_saved_search(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    state.store.delete_saved_search(&id).map_err(err)
+}
+
+#[tauri::command]
+pub fn list_correspondents(
+    state: State<'_, AppState>,
+    limit: Option<u32>,
+) -> CmdResult<Vec<origami_core::model::Correspondent>> {
+    state
+        .store
+        .list_correspondents(limit.unwrap_or(200))
+        .map_err(err)
+}
+
+#[tauri::command]
+pub fn save_composer_draft(state: State<'_, AppState>, draft: serde_json::Value) -> CmdResult<()> {
+    state
+        .store
+        .save_draft("composer", &serde_json::to_string(&draft).map_err(err)?)
+        .map_err(err)
+}
+
+#[tauri::command]
+pub fn load_composer_draft(state: State<'_, AppState>) -> CmdResult<Option<serde_json::Value>> {
+    state
+        .store
+        .load_draft("composer")
+        .map_err(err)?
+        .map(|json| serde_json::from_str(&json).map_err(err))
+        .transpose()
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PersistedComposerDraft {
+    account_id: Option<String>,
+    draft: PersistedDraftFields,
+    #[serde(default)]
+    attachments: Vec<PersistedAttachment>,
+    #[serde(default)]
+    threading: PersistedThreading,
+}
+
+#[derive(Deserialize)]
+struct PersistedDraftFields {
+    to: String,
+    cc: String,
+    bcc: String,
+    subject: String,
+    html: String,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PersistedThreading {
+    in_reply_to: Option<String>,
+    references: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PersistedAttachment {
+    name: String,
+    mime: String,
+    data_base64: String,
+}
+
+fn draft_recipients(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|address| !address.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+#[tauri::command]
+pub async fn sync_composer_draft(state: State<'_, AppState>) -> CmdResult<()> {
+    let Some(json) = state.store.load_draft("composer").map_err(err)? else {
+        return Ok(());
+    };
+    let saved: PersistedComposerDraft = serde_json::from_str(&json).map_err(err)?;
+    if saved.draft.to.trim().is_empty()
+        && saved.draft.cc.trim().is_empty()
+        && saved.draft.bcc.trim().is_empty()
+        && saved.draft.subject.trim().is_empty()
+        && saved.draft.html.replace("<p></p>", "").trim().is_empty()
+        && saved.attachments.is_empty()
+    {
+        return Ok(());
+    }
+    let (account_id, account) = state.account(saved.account_id.as_deref()).map_err(err)?;
+    let raw = origami_core::compose::build_draft_message(&Draft {
+        from_name: Some(account.name.clone()),
+        from_addr: account.email.clone(),
+        to: draft_recipients(&saved.draft.to),
+        cc: draft_recipients(&saved.draft.cc),
+        bcc: draft_recipients(&saved.draft.bcc),
+        subject: saved.draft.subject,
+        html: saved.draft.html,
+        text: None,
+        in_reply_to: saved.threading.in_reply_to,
+        references: saved.threading.references,
+        attachments: saved
+            .attachments
+            .into_iter()
+            .map(|attachment| DraftAttachment {
+                name: attachment.name,
+                mime: attachment.mime,
+                data_base64: attachment.data_base64,
+            })
+            .collect(),
+    })
+    .map_err(err)?;
+    let backend = state.backend(&account_id).await.map_err(err)?;
+    let mailboxes = backend.list_mailboxes().await.map_err(err)?;
+    let drafts = mailboxes
+        .iter()
+        .find(|mailbox| mailbox.role == MailboxRole::Drafts)
+        .ok_or("Drafts mailbox not found")?;
+    let new_uid = backend
+        .append_message(&drafts.name, &raw, &[Flag::Draft])
+        .await
+        .map_err(err)?
+        .ok_or("Drafts server did not return APPENDUID")?;
+
+    if let Some((old_account, old_mailbox, old_uid)) =
+        state.store.draft_remote("composer").map_err(err)?
+    {
+        if let Ok(old_backend) = state.backend(&old_account).await {
+            let _ = old_backend.delete_messages(&old_mailbox, &[old_uid]).await;
+        }
+    }
+    state
+        .store
+        .set_draft_remote("composer", &account_id, &drafts.name, new_uid)
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn delete_composer_draft(state: State<'_, AppState>) -> CmdResult<()> {
+    if let Some((account_id, mailbox, uid)) = state.store.draft_remote("composer").map_err(err)? {
+        if let Ok(backend) = state.backend(&account_id).await {
+            let _ = backend.delete_messages(&mailbox, &[uid]).await;
+        }
+    }
+    state.store.delete_draft("composer").map_err(err)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendResultDto {
+    queued: bool,
+}
+
+/// Build and send a draft; appends a copy to the Sent folder. Retryable
+/// SMTP failures are persisted in the account outbox.
+#[tauri::command]
+pub async fn send_message(state: State<'_, AppState>, draft: Draft) -> CmdResult<SendResultDto> {
+    let raw = origami_core::compose::build_message(&draft).map_err(err)?;
+
+    let config = state.read_config();
+    // Find the account owning the From address (fallback: default).
+    let (account_id, account) = config
+        .accounts
+        .iter()
+        .find(|(_, a)| a.email.eq_ignore_ascii_case(&draft.from_addr))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .or_else(|| {
+            state::account_from_config(&config, None)
+                .ok()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+        })
+        .ok_or("no account configured for sending")?;
+
+    let smtp = account
+        .smtp
+        .as_ref()
+        .ok_or_else(|| format!("account `{account_id}` has no SMTP configured"))?;
+    let account_db_id = state
+        .store
+        .upsert_account(&account_id, &account.name, &account.email)
+        .map_err(err)?;
+    let sent = match OrigamiSmtp::connect(smtp).await {
+        Ok(sender) => sender.send_message(&raw).await.is_ok(),
+        Err(_) => false,
+    };
+    if !sent {
+        state
+            .engine
+            .queue_send_message(&account_db_id, &raw)
+            .map_err(err)?;
+        return Ok(SendResultDto { queued: true });
+    }
+
+    // Delivery and Sent-copy retry are independent so a failed append
+    // can never cause the SMTP message to be sent twice.
+    let mut appended = false;
+    if account.imap.is_some() {
+        if let Ok(backend) = state.backend(&account_id).await {
+            if let Ok(mailboxes) = backend.list_mailboxes().await {
+                if let Some(sent) = mailboxes
+                    .iter()
+                    .find(|m| m.role == MailboxRole::Sent)
+                    .or_else(|| mailboxes.iter().find(|m| m.name == "Sent"))
+                {
+                    appended = backend
+                        .append_message(&sent.name, &raw, &[Flag::Seen])
+                        .await
+                        .is_ok();
+                }
+            }
+        }
+    }
+    if !appended {
+        state
+            .engine
+            .queue_append_sent(&account_db_id, &raw)
+            .map_err(err)?;
+    }
+    Ok(SendResultDto { queued: false })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn outbox_summary_does_not_expose_message_payload() {
+        let payload = "U3ViamVjdDogc2VjcmV0";
+        let summary = summarize_outbox_entry(OutboxEntry {
+            id: 7,
+            account_id: "account".into(),
+            op: OutboxOp::SendMessage {
+                raw_base64: payload.into(),
+            },
+            created_at: 1,
+            attempts: 0,
+            last_error: None,
+        });
+
+        assert_eq!(summary.kind, "Send");
+        assert!(!summary.detail.contains(payload));
+    }
+
+    #[test]
+    fn collapses_sent_mailboxes_per_account_and_sums_counts() {
+        let folders = vec![
+            Mailbox {
+                id: "plain-sent".into(),
+                account_id: "account-a".into(),
+                name: "Sent".into(),
+                role: MailboxRole::Sent,
+                total: 4,
+                unread: 1,
+            },
+            Mailbox {
+                id: "gmail-sent".into(),
+                account_id: "account-a".into(),
+                name: "[Gmail]/Sent Mail".into(),
+                role: MailboxRole::Sent,
+                total: 68,
+                unread: 2,
+            },
+            Mailbox {
+                id: "inbox".into(),
+                account_id: "account-a".into(),
+                name: "INBOX".into(),
+                role: MailboxRole::Inbox,
+                total: 10,
+                unread: 3,
+            },
+            Mailbox {
+                id: "other-account-sent".into(),
+                account_id: "account-b".into(),
+                name: "Sent".into(),
+                role: MailboxRole::Sent,
+                total: 7,
+                unread: 4,
+            },
+        ];
+
+        let logical = collapse_folders(folders);
+        let sent = logical
+            .iter()
+            .find(|folder| folder.account_id == "account-a" && folder.role == MailboxRole::Sent)
+            .unwrap();
+
+        assert_eq!(logical.len(), 3);
+        assert_eq!(sent.id, "gmail-sent");
+        assert_eq!(sent.total, 72);
+        assert_eq!(sent.unread, 3);
+        assert_eq!(sent.source_ids, vec!["gmail-sent", "plain-sent"]);
+        assert_eq!(
+            logical
+                .iter()
+                .filter(|folder| folder.account_id == "account-b")
+                .count(),
+            1
+        );
     }
 }

@@ -4,11 +4,19 @@
 //! CLI (`origami-cli`) both build on top of it. See `docs/PLAN.md`.
 
 pub mod backend;
+pub mod blob;
+pub mod compose;
 pub mod config;
 pub mod error;
 pub mod imap;
+pub mod message;
 pub mod model;
+pub mod oauth;
+pub mod provider_hints;
 pub mod smtp;
+pub mod store;
+pub mod sync;
+pub mod threading;
 
 pub use backend::{MailBackend, SmtpSender};
 pub use error::{Error, Result};

@@ -7,20 +7,31 @@ license.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+base64 = "0.22"
+mail-builder = "0.4"
+mail-parser = "0.11"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rfc2047-decoder = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+secrecy = "0.10"
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.10"
 thiserror.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
+toml = "0.8"
 tracing.workspace = true
+url = "2"
+uuid = { version = "1", features = ["v7", "serde"] }
 
 # Protocol layer: pimalaya io-* crates, git-pinned (see docs/adr/0002-backend-trait.md).
 io-imap = { git = "https://github.com/pimalaya/io-imap", rev = "f57418aebc1491cdc0aed4135d5627f3349370db", default-features = false, features = ["client", "rustls-ring", "scram"] }
 io-smtp = { version = "0.2", default-features = false, features = ["client", "rustls-ring", "scram"] }
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 pimalaya-stream = { version = "0.1", default-features = false, features = ["std", "rustls-ring"] }
 
-mail-parser = "0.11"
-rfc2047-decoder = "1"
-secrecy = "0.10"
-toml = "0.8"
-url = "2"
-uuid = { version = "1", features = ["v7", "serde"] }
+[dev-dependencies]
+proptest = "1"
+tempfile = "3"

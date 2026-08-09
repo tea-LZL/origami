@@ -42,6 +42,91 @@ use crate::{Error, Result};
 pub struct Config {
     #[serde(default)]
     pub accounts: BTreeMap<String, AccountConfig>,
+    #[serde(default)]
+    pub oauth: OAuthConfig,
+    #[serde(default)]
+    pub notifications: NotificationConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NotificationConfig {
+    #[serde(default)]
+    pub preview: NotificationPreview,
+    #[serde(default)]
+    pub folder_scope: NotificationFolderScope,
+    #[serde(default)]
+    pub quiet_hours: Option<QuietHours>,
+}
+
+impl Default for NotificationConfig {
+    fn default() -> Self {
+        Self {
+            preview: NotificationPreview::Full,
+            folder_scope: NotificationFolderScope::All,
+            quiet_hours: None,
+        }
+    }
+}
+
+impl NotificationConfig {
+    pub fn validate(&self) -> Result<()> {
+        if let Some(hours) = &self.quiet_hours {
+            let start = parse_time(&hours.start)?;
+            let end = parse_time(&hours.end)?;
+            if start == end {
+                return Err(Error::Config(
+                    "quiet hours start and end must differ".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationPreview {
+    #[default]
+    Full,
+    SenderOnly,
+    Hidden,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationFolderScope {
+    #[default]
+    All,
+    Inbox,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuietHours {
+    pub start: String,
+    pub end: String,
+}
+
+/// OAuth 2.0 client credentials registered with each provider.
+///
+/// ```toml
+/// [oauth]
+/// google_client_id = "YOUR-ID.apps.googleusercontent.com"
+/// microsoft_client_id = "00000000-0000-0000-0000-000000000000"
+/// ```
+///
+/// Create these in the Google Cloud Console (Desktop application type)
+/// and Azure Portal, with `http://127.0.0.1` in the redirect URIs.
+///
+/// The client `_secret` fields are optional. PKCE (Proof Key for Code
+/// Exchange) verifies the client via the code challenge, so the secret
+/// is not required for desktop flows. Include it only when a provider's
+/// token endpoint demands it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OAuthConfig {
+    pub google_client_id: Option<String>,
+    pub google_client_secret: Option<String>,
+    pub microsoft_client_id: Option<String>,
+    pub microsoft_client_secret: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,6 +191,9 @@ pub enum Secret {
     Raw { raw: String },
     /// Shell command whose stdout is the secret (e.g. `pass show mail/work`).
     Command { command: String },
+    /// Keychain entry name; stored under `{entry}` in the OS keyring
+    /// (GNOME Keyring / KWallet via Secret Service on Linux).
+    Keyring { entry: String },
 }
 
 impl Secret {
@@ -127,8 +215,54 @@ impl Secret {
                     .map_err(|e| Error::Secret(format!("secret is not UTF-8: {e}")))?;
                 Ok(secret.trim_end_matches(['\r', '\n']).to_string())
             }
+            Secret::Keyring { entry } => {
+                let keyring = keyring::Entry::new("origami", entry)
+                    .map_err(|e| Error::Secret(format!("keyring error: {e}")))?;
+                keyring
+                    .get_password()
+                    .map_err(|e| Error::Secret(format!("cannot read keyring `{entry}`: {e}")))
+            }
         }
     }
+}
+
+/// Store a secret in the OS keyring under `origami/<entry>`.
+pub fn write_keyring_secret(entry: &str, value: &str) -> Result<()> {
+    keyring::Entry::new("origami", entry)
+        .map_err(|e| Error::Secret(e.to_string()))?
+        .set_password(value)
+        .map_err(|e| Error::Secret(e.to_string()))
+}
+
+/// Remove a keyring secret.
+pub fn delete_keyring_secret(entry: &str) -> Result<()> {
+    match keyring::Entry::new("origami", entry) {
+        Ok(e) => {
+            // keyring v3 does not expose delete; overwrite with empty.
+            let _ = e.set_password("");
+            Ok(())
+        }
+        Err(e) => {
+            if e.to_string().contains("No such interface") {
+                Ok(())
+            } else {
+                Err(Error::Secret(e.to_string()))
+            }
+        }
+    }
+}
+
+/// Save the current config to disk at the standard path, with
+/// parent-directory creation.
+pub fn save(config: &Config) -> Result<()> {
+    config.notifications.validate()?;
+    let path = config_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let raw = toml::to_string_pretty(config).map_err(|e| Error::Config(format!("toml: {e}")))?;
+    std::fs::write(&path, raw)
+        .map_err(|e| Error::Config(format!("cannot write {}: {e}", path.display())))
 }
 
 fn default_true() -> bool {
@@ -156,7 +290,31 @@ pub fn load() -> Result<Config> {
     }
     let raw = std::fs::read_to_string(&path)
         .map_err(|e| Error::Config(format!("cannot read {}: {e}", path.display())))?;
-    toml::from_str(&raw).map_err(|e| Error::Config(format!("invalid config: {e}")))
+    let config: Config =
+        toml::from_str(&raw).map_err(|e| Error::Config(format!("invalid config: {e}")))?;
+    config.notifications.validate()?;
+    Ok(config)
+}
+
+pub fn parse_time(value: &str) -> Result<u16> {
+    let (hour, minute) = value
+        .split_once(':')
+        .ok_or_else(|| Error::Config(format!("invalid time `{value}`; expected HH:MM")))?;
+    if hour.len() != 2 || minute.len() != 2 {
+        return Err(Error::Config(format!(
+            "invalid time `{value}`; expected HH:MM"
+        )));
+    }
+    let hour: u16 = hour
+        .parse()
+        .map_err(|_| Error::Config(format!("invalid hour in `{value}`")))?;
+    let minute: u16 = minute
+        .parse()
+        .map_err(|_| Error::Config(format!("invalid minute in `{value}`")))?;
+    if hour > 23 || minute > 59 {
+        return Err(Error::Config(format!("time `{value}` is out of range")));
+    }
+    Ok(hour * 60 + minute)
 }
 
 impl Config {
@@ -175,6 +333,55 @@ impl Config {
                 .or_else(|| self.accounts.iter().next())
                 .map(|(k, v)| (k.as_str(), v))
                 .ok_or_else(|| Error::Config("no accounts configured".into())),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_config_uses_compatible_notification_defaults() {
+        let config: Config = toml::from_str("[oauth]\n").unwrap();
+        assert_eq!(config.notifications, NotificationConfig::default());
+    }
+
+    #[test]
+    fn notification_settings_roundtrip() {
+        let config = Config {
+            notifications: NotificationConfig {
+                preview: NotificationPreview::Hidden,
+                folder_scope: NotificationFolderScope::Inbox,
+                quiet_hours: Some(QuietHours {
+                    start: "22:30".into(),
+                    end: "07:15".into(),
+                }),
+            },
+            ..Config::default()
+        };
+        let raw = toml::to_string(&config).unwrap();
+        let decoded: Config = toml::from_str(&raw).unwrap();
+        assert_eq!(decoded.notifications, config.notifications);
+        assert!(decoded.notifications.validate().is_ok());
+    }
+
+    #[test]
+    fn quiet_hours_reject_invalid_ranges() {
+        for (start, end) in [
+            ("9:00", "17:00"),
+            ("24:00", "07:00"),
+            ("09:60", "17:00"),
+            ("09:00", "09:00"),
+        ] {
+            let settings = NotificationConfig {
+                quiet_hours: Some(QuietHours {
+                    start: start.into(),
+                    end: end.into(),
+                }),
+                ..NotificationConfig::default()
+            };
+            assert!(settings.validate().is_err(), "accepted {start}-{end}");
         }
     }
 }

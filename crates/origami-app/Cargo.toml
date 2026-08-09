@@ -19,9 +19,18 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 origami-core.workspace = true
-tauri = { version = "2", features = [] }
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+notify-rust = "4"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
+url = "2"
+urlencoding = "2"
 serde.workspace = true
 serde_json.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

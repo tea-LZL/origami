@@ -1,0 +1,126 @@
+//! Desktop notification policy and rendering.
+
+use chrono::Timelike;
+use notify_rust::Notification;
+use origami_core::config::{
+    parse_time, NotificationConfig, NotificationFolderScope, NotificationPreview,
+};
+use origami_core::model::MailboxRole;
+
+pub fn new_mail_notification(
+    settings: &NotificationConfig,
+    folder_role: Option<MailboxRole>,
+    subject: &str,
+    from: &str,
+) {
+    let now = chrono::Local::now();
+    let minute = (now.hour() * 60 + now.minute()) as u16;
+    if !allows_folder(settings.folder_scope, folder_role) || is_quiet_at(settings, minute) {
+        return;
+    }
+    let (summary, body) = render_preview(settings.preview, subject, from);
+
+    let _ = Notification::new()
+        .appname("Origami")
+        .summary(&summary)
+        .body(&body)
+        .icon("origami")
+        .timeout(notify_rust::Timeout::Milliseconds(8000))
+        .show();
+}
+
+fn allows_folder(scope: NotificationFolderScope, role: Option<MailboxRole>) -> bool {
+    match scope {
+        NotificationFolderScope::All => true,
+        NotificationFolderScope::Inbox => role == Some(MailboxRole::Inbox),
+    }
+}
+
+fn is_quiet_at(settings: &NotificationConfig, minute: u16) -> bool {
+    let Some(hours) = &settings.quiet_hours else {
+        return false;
+    };
+    let (Ok(start), Ok(end)) = (parse_time(&hours.start), parse_time(&hours.end)) else {
+        return true;
+    };
+    if start < end {
+        minute >= start && minute < end
+    } else {
+        minute >= start || minute < end
+    }
+}
+
+fn render_preview(preview: NotificationPreview, subject: &str, from: &str) -> (String, String) {
+    let sender = if from.is_empty() { "New message" } else { from };
+    match preview {
+        NotificationPreview::Full => (
+            sender.to_string(),
+            if subject.is_empty() {
+                "(no subject)".to_string()
+            } else {
+                subject.to_string()
+            },
+        ),
+        NotificationPreview::SenderOnly => (sender.to_string(), "New message".to_string()),
+        NotificationPreview::Hidden => (
+            "New message".to_string(),
+            "Open Origami to view it".to_string(),
+        ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use origami_core::config::QuietHours;
+
+    #[test]
+    fn previews_hide_the_requested_content() {
+        let full = render_preview(NotificationPreview::Full, "Budget", "Ada");
+        assert_eq!(full, ("Ada".into(), "Budget".into()));
+
+        let sender = render_preview(NotificationPreview::SenderOnly, "Budget", "Ada");
+        assert_eq!(sender, ("Ada".into(), "New message".into()));
+
+        let hidden = render_preview(NotificationPreview::Hidden, "Budget", "Ada");
+        assert!(!hidden.0.contains("Ada"));
+        assert!(!hidden.1.contains("Budget"));
+    }
+
+    #[test]
+    fn inbox_scope_fails_closed_for_unknown_folders() {
+        assert!(allows_folder(
+            NotificationFolderScope::Inbox,
+            Some(MailboxRole::Inbox)
+        ));
+        assert!(!allows_folder(
+            NotificationFolderScope::Inbox,
+            Some(MailboxRole::Other)
+        ));
+        assert!(!allows_folder(NotificationFolderScope::Inbox, None));
+        assert!(allows_folder(NotificationFolderScope::All, None));
+    }
+
+    #[test]
+    fn quiet_hours_support_daytime_and_overnight_ranges() {
+        let mut settings = NotificationConfig {
+            quiet_hours: Some(QuietHours {
+                start: "09:00".into(),
+                end: "17:00".into(),
+            }),
+            ..NotificationConfig::default()
+        };
+        assert!(is_quiet_at(&settings, 9 * 60));
+        assert!(is_quiet_at(&settings, 16 * 60 + 59));
+        assert!(!is_quiet_at(&settings, 17 * 60));
+
+        settings.quiet_hours = Some(QuietHours {
+            start: "22:00".into(),
+            end: "07:00".into(),
+        });
+        assert!(is_quiet_at(&settings, 23 * 60));
+        assert!(is_quiet_at(&settings, 6 * 60 + 59));
+        assert!(!is_quiet_at(&settings, 7 * 60));
+        assert!(!is_quiet_at(&settings, 12 * 60));
+    }
+}
