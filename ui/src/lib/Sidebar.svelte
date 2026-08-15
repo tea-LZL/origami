@@ -148,6 +148,7 @@
 <aside class="sidebar">
   <div class="account-scroll">
     <button
+      type="button"
       class="unified"
       class:selected={app.value.unifiedInbox}
       onclick={selectUnifiedInbox}
@@ -168,6 +169,7 @@
           <span class="name">{account.name}</span>
           {#if accountError}
             <button
+              type="button"
               class="status-pill"
               aria-expanded={expandedError === account.id}
               onclick={(event) => {
@@ -181,6 +183,7 @@
             </span>
           {/if}
           <button
+            type="button"
             class="gear"
             onclick={(e) => { e.stopPropagation(); onContextMenu(e, account.id); }}
             aria-label="Account menu"
@@ -191,10 +194,10 @@
             <strong>{statusTitle(accountError)}</strong>
             <p>{statusMessage(accountError)}</p>
             <div class="status-actions">
-              <button onclick={() => reconnectAccount(account.id)} disabled={app.value.syncing}>
+              <button type="button" onclick={() => reconnectAccount(account.id)} disabled={app.value.syncing}>
                 {app.value.syncing ? "Retrying…" : "Retry"}
               </button>
-              <button onclick={() => onEditAccount(account.id)}>Settings</button>
+              <button type="button" onclick={() => onEditAccount(account.id)}>Settings</button>
             </div>
             <details>
               <summary>Technical details</summary>
@@ -203,7 +206,7 @@
           </section>
         {/if}
         {#if accountStatus?.pendingOperations}
-          <button class="outbox-status" onclick={() => app.value.outboxAccountId = account.id}>
+          <button type="button" class="outbox-status" onclick={() => app.value.outboxAccountId = account.id}>
             <span>Outbox</span>
             <strong>{accountStatus.pendingOperations}</strong>
             <small>pending {accountStatus.pendingOperations === 1 ? "operation" : "operations"}</small>
@@ -212,6 +215,7 @@
         <nav aria-label={`${account.name} folders`}>
           {#each folders as folder (folder.id)}
             <button
+              type="button"
               class="folder"
               class:selected={app.value.selectedFolderId === folder.id}
               aria-current={app.value.selectedFolderId === folder.id ? "page" : undefined}
@@ -237,7 +241,7 @@
       <div class="empty">No accounts configured.</div>
     {/if}
   </div>
-  <button class="add-account" onclick={() => onadd?.()}>+ Add account</button>
+  <button type="button" class="add-account" onclick={() => onadd?.()}>+ Add account</button>
 </aside>
 
 <!-- Context menu -->
@@ -249,21 +253,21 @@
     style:top="{contextMenu.y}px"
     role="menu"
   >
-    <button role="menuitem" onclick={() => onSyncAccount(id)}>Sync now</button>
-    <button role="menuitem" onclick={() => openCreateFolder(id)}>Create folder…</button>
-    <button role="menuitem" onclick={() => onEditAccount(id)}>Settings…</button>
-    <button role="menuitem" class="danger" onclick={() => onRemoveAccount(id)}>Remove account</button>
+    <button type="button" role="menuitem" onclick={() => onSyncAccount(id)}>Sync now</button>
+    <button type="button" role="menuitem" onclick={() => openCreateFolder(id)}>Create folder…</button>
+    <button type="button" role="menuitem" onclick={() => onEditAccount(id)}>Settings…</button>
+    <button type="button" role="menuitem" class="danger" onclick={() => onRemoveAccount(id)}>Remove account</button>
   </div>
 {/if}
 
 {#if folderMenu}
   <div class="context-menu" style:left="{folderMenu.x}px" style:top="{folderMenu.y}px" role="menu">
-    <button role="menuitem" onclick={() => {
+    <button type="button" role="menuitem" onclick={() => {
       folderName = folderMenu!.folder.name;
       folderDialog = { mode: "rename", accountId: "", folderId: folderMenu!.folder.id };
       folderMenu = null;
     }}>Rename…</button>
-    <button role="menuitem" class="danger" onclick={() => {
+    <button type="button" role="menuitem" class="danger" onclick={() => {
       folderDelete = folderMenu!.folder;
       folderMenu = null;
     }}>Delete folder</button>
@@ -271,9 +275,9 @@
 {/if}
 
 {#if folderDialog}
-  <div class="overlay" role="dialog" aria-modal="true" aria-label="Folder settings">
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="folder-dialog-title">
     <form class="dialog" onsubmit={(event) => { event.preventDefault(); submitFolder(); }}>
-      <h3>{folderDialog.mode === "create" ? "Create folder" : "Rename folder"}</h3>
+      <h3 id="folder-dialog-title">{folderDialog.mode === "create" ? "Create folder" : "Rename folder"}</h3>
       <label>Folder name <input bind:value={folderName} /></label>
       <div class="actions">
         <button type="button" onclick={() => folderDialog = null}>Cancel</button>
@@ -284,13 +288,13 @@
 {/if}
 
 {#if folderDelete}
-  <div class="overlay" role="dialog" aria-modal="true" aria-label="Delete folder">
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="delete-folder-title">
     <div class="dialog">
-      <h3>Delete {folderDelete.name}?</h3>
+      <h3 id="delete-folder-title">Delete {folderDelete.name}?</h3>
       <p>The server folder and all messages inside it will be permanently deleted.</p>
       <div class="actions">
-        <button onclick={() => folderDelete = null}>Cancel</button>
-        <button class="danger-btn" onclick={confirmFolderDelete} disabled={folderBusy}>Delete</button>
+        <button type="button" onclick={() => folderDelete = null}>Cancel</button>
+        <button type="button" class="danger-btn" onclick={confirmFolderDelete} disabled={folderBusy}>Delete</button>
       </div>
     </div>
   </div>
@@ -298,13 +302,13 @@
 
 <!-- Remove confirmation -->
 {#if showRemoveConfirm}
-  <div class="overlay" role="dialog" aria-modal="true">
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="remove-account-title">
     <div class="dialog">
-      <h3>Remove account?</h3>
+      <h3 id="remove-account-title">Remove account?</h3>
       <p>This will stop sync and delete the saved credentials. The local database is not cleared.</p>
       <div class="actions">
-        <button onclick={() => showRemoveConfirm = null}>Cancel</button>
-        <button class="danger-btn" onclick={confirmRemove}>Remove</button>
+        <button type="button" onclick={() => showRemoveConfirm = null}>Cancel</button>
+        <button type="button" class="danger-btn" onclick={confirmRemove}>Remove</button>
       </div>
     </div>
   </div>
@@ -321,14 +325,14 @@
     width: var(--sidebar-width, 260px);
     min-width: 200px;
     flex-shrink: 0;
-    background: var(--bg-raised);
+    background: linear-gradient(90deg, var(--bg-raised), color-mix(in oklab, var(--bg-raised) 94%, var(--accent)));
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
     overflow: hidden;
   }
 
-  .account-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+  .account-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
   .unified {
     width: calc(100% - 16px);
     margin: 8px;
@@ -339,12 +343,18 @@
     color: var(--fg-muted);
     font-size: 12px;
     font-weight: 750;
+    min-height: 36px;
+    transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
   }
-  .unified:hover { background: var(--bg-sunken); color: var(--fg); }
-  .unified.selected { background: color-mix(in oklab, var(--accent) 16%, transparent); color: var(--accent); }
+  .unified:hover { background: var(--bg-sunken); color: var(--fg); transform: translateX(2px); }
+  .unified.selected {
+    background: color-mix(in oklab, var(--accent) 16%, transparent);
+    color: var(--accent);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
 
   .account-group {
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
   }
 
   .account-header {
@@ -371,7 +381,7 @@
     display: inline-flex; align-items: center; gap: 4px;
     color: var(--fg-subtle); font-size: 9px; font-weight: 700; text-transform: uppercase;
   }
-  .runtime-status i { width: 5px; height: 5px; border-radius: 50%; background: var(--success, #39805c); }
+  .runtime-status i { width: 5px; height: 5px; border-radius: 50%; background: var(--success); }
   .runtime-status.syncing i { background: var(--accent); animation: status-pulse 1.2s ease-in-out infinite; }
   .outbox-status {
     width: calc(100% - 20px); display: flex; align-items: baseline; gap: 6px; margin: 0 10px 5px; padding: 5px 8px;
@@ -426,7 +436,7 @@
     border-radius: var(--radius-sm);
     font-size: 11px;
     opacity: 0;
-    transition: opacity var(--transition-fast);
+    transition: opacity var(--transition-fast), background-color var(--transition-fast), transform var(--transition-fast);
   }
   .account-header:hover .gear { opacity: 0.7; }
   .gear:focus-visible { opacity: 1; }
@@ -434,6 +444,7 @@
 
   nav { padding: 2px 8px 8px; }
   .folder {
+    position: relative;
     width: 100%;
     display: flex;
     justify-content: space-between;
@@ -442,9 +453,15 @@
     border-radius: var(--radius-sm);
     color: var(--fg);
     font-size: 12px;
+    min-height: 32px;
+    transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
   }
-  .folder:hover { background: var(--bg-sunken); }
-  .folder.selected { background: color-mix(in oklab, var(--accent) 20%, transparent); }
+  .folder:hover { background: var(--bg-sunken); transform: translateX(2px); }
+  .folder.selected {
+    background: color-mix(in oklab, var(--accent) 20%, transparent);
+    color: var(--accent);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
   .folder-name { text-align: left; }
   .counts { display: flex; gap: 6px; align-items: center; }
   .unread {
@@ -474,6 +491,7 @@
     color: var(--fg-muted);
     font-size: 12px;
     font-weight: 600;
+    min-height: 36px;
   }
   .add-account:hover { border-color: var(--accent); color: var(--accent); background: var(--bg-sunken); }
 
@@ -484,10 +502,12 @@
     background: var(--bg-raised);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    box-shadow: var(--shadow-panel);
     padding: 4px;
+    min-width: 180px;
     display: flex;
     flex-direction: column;
+    animation: surface-in var(--transition-fast) both;
   }
   .context-menu button {
     padding: 6px 14px;
@@ -495,6 +515,7 @@
     text-align: left;
     border-radius: 4px;
     color: var(--fg);
+    min-height: 32px;
   }
   .context-menu button:hover { background: var(--bg-sunken); }
   .context-menu .danger { color: var(--danger); }
@@ -503,7 +524,7 @@
   /* Confirm dialog */
   .overlay {
     position: fixed; inset: 0;
-    background: rgba(0,0,0,0.4);
+    background: var(--overlay);
     display: grid; place-items: center; z-index: 70;
   }
   .dialog {
@@ -512,7 +533,8 @@
     border-radius: var(--radius-md);
     padding: 24px;
     max-width: 380px;
-    box-shadow: 0 12px 48px rgba(0,0,0,0.35);
+    box-shadow: var(--shadow-panel);
+    animation: surface-in var(--transition-med) both;
   }
   .dialog h3 { margin: 0 0 8px; }
   .dialog p { color: var(--fg-muted); font-size: 13px; margin: 0 0 16px; }
@@ -520,6 +542,7 @@
   .dialog input {
     padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius-sm);
     background: var(--bg-sunken); color: var(--fg); font: inherit;
+    min-height: 36px;
   }
   .actions { display: flex; justify-content: flex-end; gap: 8px; }
   .actions button {
@@ -529,6 +552,6 @@
   }
   .actions button:first-child { color: var(--fg-muted); }
   .actions button:first-child:hover { background: var(--bg-sunken); }
-  .danger-btn { background: var(--danger); color: white; font-weight: 600; }
+  .danger-btn { background: var(--danger); color: var(--danger-fg); font-weight: 600; }
   .danger-btn:hover { opacity: 0.8; }
 </style>

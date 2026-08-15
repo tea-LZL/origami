@@ -104,11 +104,11 @@
 </script>
 
 {#if app.value.composerOpen}
-  <div class="overlay" role="dialog" aria-modal="true">
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="composer-title">
     <div class="composer">
       <header>
-        <h2>New message</h2>
-        <button class="close" onclick={onClose} aria-label="Close">×</button>
+        <h2 id="composer-title">New message</h2>
+        <button type="button" class="close" onclick={onClose} aria-label="Close composer">×</button>
       </header>
 
       <div class="fields">
@@ -134,13 +134,13 @@
       </div>
 
       <div class="toolbar">
-        <button onclick={() => exec("bold")} title="Bold"><b>B</b></button>
-        <button onclick={() => exec("italic")} title="Italic"><i>I</i></button>
-        <button onclick={() => exec("h2")} title="Heading">H</button>
-        <button onclick={() => exec("bulletList")} title="Bulleted list">•</button>
-        <button onclick={() => exec("orderedList")} title="Numbered list">1.</button>
-        <button onclick={() => exec("blockquote")} title="Quote">❝</button>
-        <button onclick={() => exec("code")} title="Code">{`</>`}</button>
+        <button type="button" onclick={() => exec("bold")} title="Bold"><b>B</b></button>
+        <button type="button" onclick={() => exec("italic")} title="Italic"><i>I</i></button>
+        <button type="button" onclick={() => exec("h2")} title="Heading">H</button>
+        <button type="button" onclick={() => exec("bulletList")} title="Bulleted list">•</button>
+        <button type="button" onclick={() => exec("orderedList")} title="Numbered list">1.</button>
+        <button type="button" onclick={() => exec("blockquote")} title="Quote">❝</button>
+        <button type="button" onclick={() => exec("code")} title="Code">{`</>`}</button>
         <label class="attach-button">
           Attach
           <input type="file" multiple onchange={addAttachments} />
@@ -155,7 +155,7 @@
             <span>
               <strong>{attachment.name}</strong>
               <small>{formatSize(attachment.size)}</small>
-              <button onclick={() => removeAttachment(index)} aria-label={`Remove ${attachment.name}`}>×</button>
+              <button type="button" onclick={() => removeAttachment(index)} aria-label={`Remove ${attachment.name}`}>×</button>
             </span>
           {/each}
         </div>
@@ -163,8 +163,8 @@
 
       <footer>
         <span class="draft-state">Draft saved locally</span>
-        <button class="cancel" onclick={onClose}>Close</button>
-        <button class="send" onclick={sendComposer} disabled={app.value.sending}>
+        <button type="button" class="cancel" onclick={onClose}>Close</button>
+        <button type="button" class="send" onclick={sendComposer} disabled={app.value.sending}>
           {app.value.sending ? "Sending…" : "Send"}
         </button>
       </footer>
@@ -176,7 +176,7 @@
   .overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.45);
+    background: var(--overlay);
     display: grid;
     place-items: center;
     z-index: 50;
@@ -187,7 +187,8 @@
     background: var(--bg-raised);
     border-radius: var(--radius-lg);
     border: 1px solid var(--border);
-    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.35);
+    box-shadow: var(--shadow-panel);
+    animation: surface-in var(--transition-med) both;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -218,8 +219,9 @@
     flex: 1; background: var(--bg-sunken);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    padding: 6px 8px;
+    padding: 7px 8px;
     color: var(--fg);
+    min-height: 36px;
     font: inherit;
   }
   .toolbar {
@@ -250,8 +252,16 @@
     padding: 12px 16px;
     min-height: 200px;
   }
+  .editor:focus-within { box-shadow: inset 3px 0 0 var(--accent); }
   .editor :global(.prose) { outline: none; }
   .editor :global(.prose p) { margin: 0 0 8px; }
+  @media (forced-colors: active) {
+    .editor:focus-within {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+      box-shadow: none;
+    }
+  }
   .attachments {
     padding: 8px 16px;
     border-top: 1px solid var(--border);

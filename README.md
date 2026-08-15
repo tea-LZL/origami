@@ -2,7 +2,8 @@
 
 A fast, offline-first desktop email client for Arch Linux (Wayland/Hyprland-first).
 
-See [docs/PLAN.md](docs/PLAN.md) for the master plan.
+See [MEMORY.md](MEMORY.md) for the verified project snapshot and
+[docs/PLAN.md](docs/PLAN.md) for the long-term plan.
 
 ## Develop
 

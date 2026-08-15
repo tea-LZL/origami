@@ -76,7 +76,7 @@ hides the choice).
 ## Data & Sync Engine (the reliability heart)
 
 **Storage**
-- `~/.local/share/origami/db.sqlite` — one global DB (WAL mode): `accounts`, `folders`,
+- `~/.local/share/origami/db.sqlite3` — one global DB (WAL mode): `accounts`, `folders`,
   `messages` (app-owned UUID PK; `server_uid`, `folder_id`, `message_id` header as
   attributes; RFC 8474 OBJECTID when offered), `threads` (jwz-style on
   References/In-Reply-To), `attachments` (metadata), `tags` (IMAP keywords ↔ colored
@@ -145,7 +145,7 @@ Origami/
 │  └─ origami-cli/          # thin debug CLI (sync status, reindex) — dogfooding tool
 ├─ ui/                      # Svelte 5 + Vite + TS + Tailwind(tokens) + TipTap
 │  └─ src/{lib,components,routes,stores}
-├─ packaging/arch/PKGBUILD  # AUR
+├─ packaging/arch/PKGBUILD  # planned AUR artifact; not tracked yet
 ├─ assets/                  # origami bird icons (from CI sheet), .desktop file
 ├─ tests/                   # integration: dovecot/greenmail harness, sync fixtures
 └─ docs/adr/                # our own ADRs (key ownership, backend trait, sync algo)
@@ -194,14 +194,15 @@ Post-v1: PGP (sequoia), JMAP backend, conversation view across folders, filters/
 
 # Todo Checklist
 
-## M0 — Scaffold ✅
+## M0 — Scaffold (implementation complete; CI evidence pending)
 - [x] Cargo workspace (`origami-core`, `origami-app`, `origami-cli`)
 - [x] Tauri 2 + Svelte 5 + Vite + TS UI shell (`ui/`)
 - [x] Origami design tokens (colors, typography) from CI sheet
 - [x] Frameless window + custom titlebar, `app_id = dev.origami.mail`
 - [x] App icons + `.desktop` file (origami bird)
 - [x] Dev/build verification on Hyprland (`npm run tauri dev`, release build)
-- [x] CI workflow (fmt, clippy, svelte-check, build)
+- [~] CI workflow — Rust/UI gates are tracked; this worktree fixes the branch trigger
+  and adds UI tests, while live protocol and release-artifact jobs remain pending
 
 ## M1 — Core Spine ✅
 - [x] ADR-0001: message key ownership · ADR-0002: backend trait · ADR-0003: sync algorithm
@@ -246,18 +247,17 @@ Post-v1: PGP (sequoia), JMAP backend, conversation view across folders, filters/
 - [x] Token refresh manager refreshes before sync and every 45 minutes, rotating
       provider-issued refresh tokens in the OS keyring
 
-## M5 — Polish ✅
+## M5 — Polish (daily-driver features present; release gates pending)
 - [x] Desktop notifications for new mail (notify-rust, freedesktop)
 - [x] Tags — IMAP keywords mapped to coloured badges in the thread list
 - [x] Keyboard navigation (j/k arrows, Enter, Escape, n for compose)
-- [~] Saved searches / virtual folders — schema ready, UI pending
-- [~] System tray — API surface explored; implementation pending Tauri tray API
-  investigation
-- [~] Theming polish / perf pass (10k gate) — dark/light already follows
-  `prefers-color-scheme`; perf pass and manual toggle tbd
+- [x] Saved searches / virtual folders — SQLite-backed query persistence and UI
+- [x] System tray — close-to-tray, restore/focus, and explicit quit lifecycle
+- [~] Theming polish / perf pass (10k gate) — System/Light/Dark and motion/density
+  controls are implemented; explicit performance budgets remain pending
 
 ## M6 — Ship
 - [ ] AUR PKGBUILD (`origami`, `origami-git`)
 - [ ] GitHub release workflow (artifacts, checksums)
-- [ ] .desktop + icon theme integration
+- [~] .desktop + icon assets exist; package installation/integration is unverified
 - [ ] v1.0 tag

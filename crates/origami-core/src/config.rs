@@ -36,7 +36,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, Result};
+use crate::{private_fs, Error, Result};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
@@ -258,10 +258,15 @@ pub fn save(config: &Config) -> Result<()> {
     config.notifications.validate()?;
     let path = config_path();
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+        private_fs::create_private_dir(parent).map_err(|e| {
+            Error::Config(format!(
+                "cannot secure config directory {}: {e}",
+                parent.display()
+            ))
+        })?;
     }
     let raw = toml::to_string_pretty(config).map_err(|e| Error::Config(format!("toml: {e}")))?;
-    std::fs::write(&path, raw)
+    private_fs::write_private(&path, raw.as_bytes())
         .map_err(|e| Error::Config(format!("cannot write {}: {e}", path.display())))
 }
 
@@ -288,6 +293,16 @@ pub fn load() -> Result<Config> {
     if !path.exists() {
         return Ok(Config::default());
     }
+    if let Some(parent) = path.parent() {
+        private_fs::create_private_dir(parent).map_err(|e| {
+            Error::Config(format!(
+                "cannot secure config directory {}: {e}",
+                parent.display()
+            ))
+        })?;
+    }
+    private_fs::secure_existing_file(&path)
+        .map_err(|e| Error::Config(format!("cannot secure {}: {e}", path.display())))?;
     let raw = std::fs::read_to_string(&path)
         .map_err(|e| Error::Config(format!("cannot read {}: {e}", path.display())))?;
     let config: Config =

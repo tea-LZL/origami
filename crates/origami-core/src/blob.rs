@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use crate::{Error, Result};
+use crate::{private_fs, Error, Result};
 
 #[derive(Clone)]
 pub struct BlobStore {
@@ -18,7 +18,7 @@ pub struct BlobStore {
 
 impl BlobStore {
     pub fn open(root: &Path) -> Result<Self> {
-        std::fs::create_dir_all(root)?;
+        private_fs::create_private_dir(root)?;
         Ok(Self {
             root: root.to_path_buf(),
         })
@@ -39,12 +39,12 @@ impl BlobStore {
             return Ok(hash);
         }
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
+            private_fs::create_private_dir(parent)?;
         }
         // Write-then-rename: readers never see a partial blob. A unique
         // temporary path also makes cross-folder dedupe safe concurrently.
         let tmp = path.with_file_name(format!(".{hash}.{}.tmp", uuid::Uuid::now_v7()));
-        std::fs::write(&tmp, bytes)?;
+        private_fs::write_new_private(&tmp, bytes)?;
         if let Err(error) = std::fs::rename(&tmp, &path) {
             if path.exists() {
                 let _ = std::fs::remove_file(&tmp);

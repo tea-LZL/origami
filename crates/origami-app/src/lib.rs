@@ -3,6 +3,7 @@ mod notifications;
 mod oauth_flow;
 mod state;
 
+use std::collections::HashSet;
 use tauri::Manager;
 
 #[cfg(desktop)]
@@ -112,6 +113,7 @@ pub fn run() {
             let syncing_accounts = state.syncing_accounts.clone();
             tauri::async_runtime::spawn(async move {
                 use tauri::Emitter;
+                let mut notified_messages = HashSet::new();
                 loop {
                     match events.recv().await {
                         Ok(event) => {
@@ -122,25 +124,35 @@ pub fn run() {
                                     syncing_accounts.lock().unwrap().insert(account_id.clone());
                                 }
                                 origami_core::sync::SyncEvent::NewEnvelope {
+                                    account_id,
                                     folder,
                                     envelope,
-                                    ..
                                 } => {
-                                    let from = envelope
-                                        .from
-                                        .first()
-                                        .map(|a| a.name.clone().unwrap_or_else(|| a.addr.clone()))
-                                        .unwrap_or_default();
                                     let state = handle.state::<state::AppState>();
                                     let settings = state.read_config().notifications;
                                     let folder_role =
                                         state.store.folder_role(folder).ok().flatten();
-                                    notifications::new_mail_notification(
-                                        &settings,
-                                        folder_role,
-                                        &envelope.subject,
-                                        &from,
-                                    );
+                                    let logical_id = envelope.logical_id(account_id);
+                                    if notifications::should_notify(&settings, folder_role)
+                                        && notifications::claim_notification(
+                                            &mut notified_messages,
+                                            &logical_id,
+                                        )
+                                    {
+                                        let from = envelope
+                                            .from
+                                            .first()
+                                            .map(|a| {
+                                                a.name.clone().unwrap_or_else(|| a.addr.clone())
+                                            })
+                                            .unwrap_or_default();
+                                        notifications::new_mail_notification(
+                                            &settings,
+                                            folder_role,
+                                            &envelope.subject,
+                                            &from,
+                                        );
+                                    }
                                 }
                                 origami_core::sync::SyncEvent::Error {
                                     account_id,

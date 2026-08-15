@@ -99,10 +99,10 @@ This plan turns the current prototype into a dependable daily-driver mail client
 
 ## P7 - Release quality
 
-- [ ] Add UI component and interaction tests.
+- [~] Expand UI component and interaction tests beyond the current focused suite.
 - [ ] Add Playwright daily-driver workflows.
 - [ ] Add accessibility and visual-regression checks.
 - [ ] Add cached-open, sync, search, and 10,000-row performance budgets.
-- [ ] Add hostile message HTML and external-navigation security tests.
+- [~] Expand the current sanitizer/iframe regressions into a hostile-message and navigation corpus.
 - [ ] Run Gmail, Outlook, Fastmail, Posteo, and Dovecot release checks.
-- [ ] Correct legacy milestone completion claims in `docs/PLAN.md`.
+- [~] Continue reconciling legacy milestone claims with release evidence in `docs/PLAN.md`.

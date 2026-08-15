@@ -125,6 +125,12 @@
       .join(", ") ?? "";
   }
 
+  function fromAddressText(): string {
+    return app.value.message?.envelope.from
+      .map((a) => a.addr)
+      .join(", ") ?? "";
+  }
+
   function addressText(addresses: { name: string | null; addr: string }[]): string {
     return addresses.map((address) => address.name
       ? `${address.name} <${address.addr}>`
@@ -184,7 +190,17 @@
 
 <section class="message">
   {#if app.value.messageLoading}
-    <div class="empty">Loading…</div>
+    <div class="message-loading" role="status" aria-live="polite">
+      <span class="sr-only">Loading message</span>
+      <div class="message-skeleton" aria-hidden="true">
+        <span class="skeleton skeleton-title"></span>
+        <span class="skeleton skeleton-meta"></span>
+        <span class="skeleton skeleton-rule"></span>
+        <span class="skeleton skeleton-copy wide"></span>
+        <span class="skeleton skeleton-copy"></span>
+        <span class="skeleton skeleton-copy short"></span>
+      </div>
+    </div>
   {:else if !app.value.message}
     <div class="empty">Select a message</div>
   {:else}
@@ -192,31 +208,32 @@
     {@const headers = app.value.message.headers}
     <header>
       {#if app.value.layout !== "three-pane" || app.value.selectedEnvelope}
-        <button class="back-to-messages" onclick={backToMessages}>Back to messages</button>
+        <button type="button" class="back-to-messages" onclick={backToMessages}>Back to messages</button>
       {/if}
       <div class="subject-row">
         <h1>{env.subject || "(no subject)"}</h1>
         <div class="message-actions" role="toolbar" aria-label="Message actions">
           {#if app.value.message.html && app.value.message.text}
             <div class="content-mode" role="group" aria-label="Message format">
-              <button class:active={contentMode === "html"} onclick={() => contentMode = "html"}>HTML</button>
-              <button class:active={contentMode === "text"} onclick={() => contentMode = "text"}>Text</button>
+              <button type="button" class:active={contentMode === "html"} onclick={() => contentMode = "html"}>HTML</button>
+              <button type="button" class:active={contentMode === "text"} onclick={() => contentMode = "text"}>Text</button>
             </div>
           {/if}
-          <button class:active={detailsOpen} onclick={() => detailsOpen = !detailsOpen}>Details</button>
-          <button onclick={() => openReplyComposer("reply")}>Reply</button>
-          <button onclick={() => openReplyComposer("replyAll")}>Reply all</button>
-          <button onclick={() => openReplyComposer("forward")}>Forward</button>
-          <button onclick={() => moveSelectedToRole("Archive")}>Archive</button>
-          <button onclick={() => moveSelectedToRole("Trash")}>Trash</button>
-          <button onclick={() => moveSelectedToRole("Junk")}>Junk</button>
-          <button onclick={() => setSelectedFlag("Flagged", !env.flags.includes("Flagged"))}>
+          <button type="button" class:active={detailsOpen} aria-expanded={detailsOpen} onclick={() => detailsOpen = !detailsOpen}>Details</button>
+          <button type="button" onclick={() => openReplyComposer("reply")}>Reply</button>
+          <button type="button" onclick={() => openReplyComposer("replyAll")}>Reply all</button>
+          <button type="button" onclick={() => openReplyComposer("forward")}>Forward</button>
+          <button type="button" onclick={() => moveSelectedToRole("Archive")}>Archive</button>
+          <button type="button" onclick={() => moveSelectedToRole("Trash")}>Trash</button>
+          <button type="button" onclick={() => moveSelectedToRole("Junk")}>Junk</button>
+          <button type="button" onclick={() => setSelectedFlag("Flagged", !env.flags.includes("Flagged"))}>
             {env.flags.includes("Flagged") ? "Unstar" : "Star"}
           </button>
         </div>
       </div>
       <div class="meta">
         <span class="from">{fromText()}</span>
+        {#if fromAddressText()}<span class="address" title="From address">{fromAddressText()}</span>{/if}
         <span class="date">{env.date ?? ""}</span>
       </div>
       {#if detailsOpen}
@@ -236,6 +253,7 @@
           <span>{conversation.length} messages</span>
           {#each conversation as member (member.id)}
             <button
+              type="button"
               class:current={member.id === env.id}
               onclick={() => selectEnvelopeExclusive(member)}
               title={member.subject}
@@ -289,7 +307,7 @@
         <ul>
           {#each app.value.message.attachments as att (att.index)}
             <li>
-              <button onclick={() => downloadAttachment(att.index, att.name)}>
+              <button type="button" onclick={() => downloadAttachment(att.index, att.name)}>
                 {att.name ?? `attachment-${att.index}`}
                 <small>{att.mime} · {formatBytes(att.size)}{att.inline ? " · inline" : ""}</small>
               </button>
@@ -309,14 +327,33 @@
     background: var(--bg-raised);
     overflow-y: auto;
     padding: 24px 32px;
+    scrollbar-gutter: stable;
   }
   .message > header,
-  .message > .body,
   .message > footer {
     width: 100%;
     max-width: 760px;
     margin-inline: auto;
   }
+  .message > .body {
+    width: 100%;
+    min-width: 0;
+    margin-inline: auto;
+  }
+  .message-loading {
+    width: 100%;
+    max-width: 760px;
+    margin-inline: auto;
+    padding-top: 8px;
+  }
+  .message-skeleton { display: grid; gap: 12px; }
+  .message-skeleton .skeleton { display: block; border-radius: 4px; }
+  .skeleton-title { width: min(72%, 520px); height: 22px; }
+  .skeleton-meta { width: min(46%, 340px); height: 10px; }
+  .skeleton-rule { width: 100%; height: 1px; margin: 8px 0 14px; border: 0; }
+  .skeleton-copy { width: min(76%, 560px); height: 10px; }
+  .skeleton-copy.wide { width: min(94%, 700px); }
+  .skeleton-copy.short { width: min(52%, 380px); }
   .back-to-messages {
     display: none;
     margin-bottom: 10px;
@@ -334,8 +371,8 @@
   .subject-row { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px 16px; }
   .message-actions { display: flex; max-width: 100%; gap: 4px; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; }
   .message-actions button {
-    min-height: 30px;
-    padding: 5px 8px;
+    min-height: 34px;
+    padding: 6px 9px;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: var(--bg);
@@ -343,7 +380,7 @@
     font-size: 11px;
     font-weight: 600;
   }
-  .message-actions button:hover { border-color: var(--accent); color: var(--accent); }
+  .message-actions button:hover { border-color: var(--accent); color: var(--accent); background: color-mix(in oklab, var(--accent) 6%, var(--bg)); }
   .message-actions button.active { border-color: var(--accent); color: var(--accent); background: color-mix(in oklab, var(--accent) 10%, var(--bg)); }
   .content-mode {
     display: inline-flex;
@@ -353,6 +390,7 @@
   }
   .content-mode button { border: 0; border-radius: 0; }
   .meta { color: var(--fg-muted); display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; margin-bottom: 18px; }
+  .meta .address { color: var(--fg); overflow-wrap: anywhere; user-select: text; }
   .details {
     display: grid;
     gap: 5px;

@@ -15,6 +15,7 @@ fn envelope(uid: u32, subject: &str) -> Envelope {
         }],
         to: vec![],
         date: Some("Sat, 18 Jul 2026 10:00:00 +0000".to_string()),
+        received_at: None,
         flags: vec![Flag::Seen],
         keywords: vec![],
         has_attachment: false,
@@ -22,6 +23,7 @@ fn envelope(uid: u32, subject: &str) -> Envelope {
         server_uid: Some(uid),
         message_id: Some(format!("msg-{uid}@example.org")),
         thread_id: Some(format!("thread-{uid}@example.org")),
+        sources: Vec::new(),
     }
 }
 
@@ -115,6 +117,58 @@ fn envelopes_page_newest_first() {
 }
 
 #[test]
+fn envelopes_are_ordered_by_received_date_not_insert_order() {
+    let (store, _account, folder) = setup();
+    let mut newer = envelope(1, "newer date");
+    newer.received_at = Some(300);
+    newer.date = Some("Fri, 14 Aug 2026 16:53:36 +0800".to_string());
+    let mut older = envelope(2, "older date");
+    older.received_at = Some(100);
+    older.date = Some("Wed, 13 Jan 2016 15:25:14 +0200".to_string());
+
+    // Deliberately insert newest first, then oldest, so rowid order is wrong.
+    store.upsert_envelope(&folder, &newer).unwrap();
+    store.upsert_envelope(&folder, &older).unwrap();
+
+    let messages = store.list_envelopes(&folder, 1, 10).unwrap();
+    assert_eq!(
+        messages
+            .iter()
+            .map(|message| message.subject.as_str())
+            .collect::<Vec<_>>(),
+        vec!["newer date", "older date"]
+    );
+}
+
+#[test]
+fn date_ordering_normalizes_timezone_offsets() {
+    let (store, _account, folder) = setup();
+    let mut old_khaki = envelope(1, "Old Khaki");
+    old_khaki.date = Some("Fri, 14 Aug 2026 12:32:59 +0000".to_string());
+    let mut evetech = envelope(2, "Evetech");
+    evetech.date = Some("Fri, 14 Aug 2026 09:22:40 +0000".to_string());
+    let mut deepseek = envelope(3, "DeepSeek");
+    deepseek.date = Some("Fri, 14 Aug 2026 16:53:36 +0800".to_string());
+    let mut fnb = envelope(4, "FNB");
+    fnb.date = Some("Fri, 14 Aug 2026 07:22:55 +0100".to_string());
+
+    // Insert in the reverse of the expected display order to prove the sort
+    // uses normalized instants rather than SQLite insertion order or text.
+    for message in [fnb, deepseek, evetech, old_khaki] {
+        store.upsert_envelope(&folder, &message).unwrap();
+    }
+
+    let messages = store.list_envelopes(&folder, 1, 10).unwrap();
+    assert_eq!(
+        messages
+            .iter()
+            .map(|message| message.subject.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Old Khaki", "Evetech", "DeepSeek", "FNB"]
+    );
+}
+
+#[test]
 fn search_pages_do_not_repeat_or_skip_results() {
     let (store, _account, folder) = setup();
     for uid in 1..=5 {
@@ -146,6 +200,26 @@ fn search_pages_do_not_repeat_or_skip_results() {
             .map(|message| message.server_uid.unwrap())
             .collect::<Vec<_>>(),
         vec![1]
+    );
+}
+
+#[test]
+fn search_results_are_ordered_by_received_date_not_insert_order() {
+    let (store, _account, folder) = setup();
+    let mut newer = envelope(1, "ordered newer");
+    newer.received_at = Some(300);
+    let mut older = envelope(2, "ordered older");
+    older.received_at = Some(100);
+    store.upsert_envelope(&folder, &newer).unwrap();
+    store.upsert_envelope(&folder, &older).unwrap();
+
+    let messages = store.search_page("ordered", 1, 10).unwrap();
+    assert_eq!(
+        messages
+            .iter()
+            .map(|message| message.subject.as_str())
+            .collect::<Vec<_>>(),
+        vec!["ordered newer", "ordered older"]
     );
 }
 
@@ -292,6 +366,106 @@ fn parsed_message_cache_roundtrips() {
         store.parsed_message(&folder, 11).unwrap().unwrap().text,
         parsed.text
     );
+}
+
+#[test]
+fn display_cache_is_invalidated_after_mime_selection_fix() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("db.sqlite3");
+    let (folder, uid) = {
+        let store = Store::open(&path).unwrap();
+        let (_account, folder) = {
+            let account = store
+                .upsert_account("test", "Test", "t@example.org")
+                .unwrap();
+            let folder = store
+                .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
+                .unwrap();
+            (account, folder)
+        };
+        let message = envelope(41, "cached before parser fix");
+        store.upsert_envelope(&folder, &message).unwrap();
+        store
+            .set_parsed_message(
+                &folder,
+                41,
+                &ParsedMessage {
+                    html: Some("<html><body>stale</body></html>".to_string()),
+                    ..ParsedMessage::default()
+                },
+            )
+            .unwrap();
+        (folder, 41)
+    };
+
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .pragma_update(None, "user_version", 7_i64)
+        .unwrap();
+    drop(connection);
+
+    let migrated = Store::open(&path).unwrap();
+    assert!(migrated.parsed_message(&folder, uid).unwrap().is_none());
+}
+
+#[test]
+fn recent_uncached_messages_use_received_time_and_skip_cached_rows() {
+    let (store, account, folder) = setup();
+    let mut recent = envelope(21, "recent");
+    recent.received_at = Some(1_800_000_000);
+    let mut old = envelope(22, "old");
+    old.received_at = Some(1_700_000_000);
+    let mut cached = envelope(23, "cached");
+    cached.received_at = Some(1_800_000_100);
+
+    store.upsert_envelope(&folder, &recent).unwrap();
+    store.upsert_envelope(&folder, &old).unwrap();
+    store.upsert_envelope(&folder, &cached).unwrap();
+    store
+        .set_parsed_message(&folder, 23, &ParsedMessage::default())
+        .unwrap();
+
+    let candidates = store
+        .recent_uncached_messages(&account, 1_750_000_000, 20)
+        .unwrap();
+    assert_eq!(
+        candidates
+            .iter()
+            .map(|candidate| candidate.envelope.server_uid)
+            .collect::<Vec<_>>(),
+        vec![Some(21)]
+    );
+    assert_eq!(candidates[0].mailbox, "INBOX");
+}
+
+#[test]
+fn logical_cache_lookup_reuses_a_cached_copy_from_another_folder() {
+    let (store, account, inbox) = setup();
+    let archive = store
+        .upsert_folder(&account, "Archive", MailboxRole::Archive)
+        .unwrap();
+    let primary = envelope(31, "logical cache");
+    let mut copy = envelope(32, "logical cache");
+    copy.message_id = primary.message_id.clone();
+    copy.thread_id = primary.thread_id.clone();
+    store.upsert_envelope(&inbox, &primary).unwrap();
+    store.upsert_envelope(&archive, &copy).unwrap();
+    store
+        .set_parsed_message(
+            &archive,
+            32,
+            &ParsedMessage {
+                text: Some("cached through another label".to_string()),
+                ..ParsedMessage::default()
+            },
+        )
+        .unwrap();
+
+    let parsed = store
+        .parsed_message_for_logical_message(&inbox, 31)
+        .unwrap()
+        .unwrap();
+    assert_eq!(parsed.text.as_deref(), Some("cached through another label"));
 }
 
 #[test]
@@ -463,4 +637,81 @@ fn logical_sent_sources_list_together_without_losing_mailbox_identity() {
     assert_eq!(messages[0].subject, "gmail");
     assert_eq!(messages[0].mailbox_id, gmail_sent);
     assert_eq!(messages[1].mailbox_id, sent);
+}
+
+#[test]
+fn logical_counts_deduplicate_copies_across_source_folders() {
+    let store = Store::open_in_memory().unwrap();
+    let account = store
+        .upsert_account("test", "Test", "t@example.org")
+        .unwrap();
+    let sent = store
+        .upsert_folder(&account, "Sent", MailboxRole::Sent)
+        .unwrap();
+    let gmail_sent = store
+        .upsert_folder(&account, "[Gmail]/Sent Mail", MailboxRole::Sent)
+        .unwrap();
+
+    let mut first = envelope(1, "same sent message");
+    first.message_id = Some("<same-sent@example.org>".into());
+    first.flags = vec![Flag::Seen];
+    let mut second = first.clone();
+    second.server_uid = Some(2);
+    second.flags = Vec::new();
+    store.upsert_envelope(&sent, &first).unwrap();
+    store.upsert_envelope(&gmail_sent, &second).unwrap();
+
+    let (total, unread) = store.logical_envelope_counts(&[sent, gmail_sent]).unwrap();
+    assert_eq!((total, unread), (1, 1));
+}
+
+#[test]
+fn label_copies_are_one_logical_envelope_with_one_unread_state() {
+    let store = Store::open_in_memory().unwrap();
+    let account = store
+        .upsert_account("test", "Test", "t@example.org")
+        .unwrap();
+    let inbox = store
+        .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
+        .unwrap();
+    let archive = store
+        .upsert_folder(&account, "[Gmail]/All Mail", MailboxRole::Archive)
+        .unwrap();
+    let important = store
+        .upsert_folder(&account, "[Gmail]/Important", MailboxRole::Other)
+        .unwrap();
+
+    let mut first = envelope(10, "same message");
+    first.message_id = Some("<same@example.org>".into());
+    first.flags = vec![Flag::Seen];
+    let mut second = first.clone();
+    second.server_uid = Some(20);
+    let mut third = first.clone();
+    third.server_uid = Some(30);
+    third.flags = Vec::new();
+    store.upsert_envelope(&inbox, &first).unwrap();
+    store.upsert_envelope(&archive, &second).unwrap();
+    store.upsert_envelope(&important, &third).unwrap();
+
+    let folders = vec![inbox.clone(), archive.clone(), important.clone()];
+    let messages = store.list_envelopes_in_folders(&folders, 1, 10).unwrap();
+    assert_eq!(messages.len(), 1);
+    assert!(!messages[0].flags.contains(&Flag::Seen));
+    assert_eq!(messages[0].sources.len(), 3);
+}
+
+#[test]
+fn duplicate_message_ids_in_one_folder_are_not_merged() {
+    let (store, _account, folder) = setup();
+    let mut first = envelope(40, "same metadata");
+    first.message_id = Some("<duplicated@example.org>".into());
+    let mut second = first.clone();
+    second.server_uid = Some(41);
+
+    store.upsert_envelope(&folder, &first).unwrap();
+    store.upsert_envelope(&folder, &second).unwrap();
+
+    let messages = store.list_envelopes(&folder, 1, 10).unwrap();
+    assert_eq!(messages.len(), 2);
+    assert!(messages.iter().all(|message| message.sources.len() == 1));
 }

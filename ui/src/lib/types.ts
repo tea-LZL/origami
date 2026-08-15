@@ -8,6 +8,11 @@ export interface Address {
   addr: string;
 }
 
+export interface EnvelopeSource {
+  mailboxId: string;
+  serverUid: number;
+}
+
 export interface Mailbox {
   id: string;
   accountId: string;
@@ -25,6 +30,8 @@ export interface Envelope {
   from: Address[];
   to: Address[];
   date: string | null;
+  /** Server-received time (IMAP INTERNALDATE), when available. */
+  receivedAt?: number | null;
   flags: Flag[];
   hasAttachment: boolean;
   size: number;
@@ -32,4 +39,5 @@ export interface Envelope {
   messageId: string | null;
   threadId: string | null;
   keywords: string[];
+  sources: EnvelopeSource[];
 }

@@ -170,10 +170,10 @@
     saveSearchOpen = false;
   }
 
-  // Tag colors: rotated palette for the first 8 keywords.
+  // Keep tag colors theme-owned so light and dark modes retain readable contrast.
   const TAG_PALETTE = [
-    "#2B6CF6", "#E5484D", "#3FB950", "#D8822E",
-    "#8B5CF6", "#EC4899", "#06B6D4", "#84CC16",
+    "var(--tag-blue)", "var(--tag-violet)", "var(--tag-teal)", "var(--tag-green)",
+    "var(--tag-amber)", "var(--tag-rose)",
   ];
   function tagColor(name: string): string {
     let hash = 0;
@@ -192,11 +192,12 @@
     </div>
     <div class="header-actions">
       {#if app.value.layout === "two-pane"}
-        <button class="layout-button" onclick={() => setLayout("three-pane")} title="Show folders">
+        <button type="button" class="layout-button" onclick={() => setLayout("three-pane")} title="Show folders">
           Folders
         </button>
       {/if}
       <button
+        type="button"
         class="layout-button"
         onclick={() => setLayout("reading")}
         disabled={!app.value.selectedEnvelope}
@@ -217,7 +218,7 @@
       aria-label="Search all mail"
     />
     {#if app.value.searchQuery.trim()}
-      <button onclick={() => saveSearchOpen = !saveSearchOpen} aria-label="Save search">+</button>
+      <button type="button" onclick={() => saveSearchOpen = !saveSearchOpen} aria-label="Save search">+</button>
     {/if}
   </div>
   {#if saveSearchOpen}
@@ -230,8 +231,8 @@
     <div class="saved-searches" aria-label="Saved searches">
       {#each app.value.savedSearches as saved (saved.id)}
         <span>
-          <button onclick={() => searchMessages(saved.query)} title={saved.query}>{saved.name}</button>
-          <button onclick={() => removeSavedSearch(saved.id)} aria-label={`Delete ${saved.name}`}>×</button>
+          <button type="button" onclick={() => searchMessages(saved.query)} title={saved.query}>{saved.name}</button>
+          <button type="button" onclick={() => removeSavedSearch(saved.id)} aria-label={`Delete ${saved.name}`}>×</button>
         </span>
       {/each}
     </div>
@@ -239,16 +240,16 @@
   {#if app.value.selectedMessageIds.length > 0}
     <div class="bulk-bar" role="toolbar" aria-label="Selected messages">
       <strong>{app.value.selectedMessageIds.length} selected</strong>
-      <button onclick={() => setSelectedFlag("Seen", true)}>Read</button>
-      <button onclick={() => setSelectedFlag("Seen", false)}>Unread</button>
-      <button onclick={() => setSelectedFlag("Flagged", true)}>Star</button>
-      <button onclick={() => setSelectedFlag("Flagged", false)}>Unstar</button>
-      <button onclick={() => moveSelectedToRole("Archive")}>Archive</button>
-      <button onclick={() => moveSelectedToRole("Trash")}>Trash</button>
-      <button onclick={() => moveSelectedToRole("Junk")}>Junk</button>
-      <button aria-expanded={labelsOpen} onclick={() => labelsOpen = !labelsOpen}>Labels</button>
+      <button type="button" onclick={() => setSelectedFlag("Seen", true)}>Read</button>
+      <button type="button" onclick={() => setSelectedFlag("Seen", false)}>Unread</button>
+      <button type="button" onclick={() => setSelectedFlag("Flagged", true)}>Star</button>
+      <button type="button" onclick={() => setSelectedFlag("Flagged", false)}>Unstar</button>
+      <button type="button" onclick={() => moveSelectedToRole("Archive")}>Archive</button>
+      <button type="button" onclick={() => moveSelectedToRole("Trash")}>Trash</button>
+      <button type="button" onclick={() => moveSelectedToRole("Junk")}>Junk</button>
+      <button type="button" aria-expanded={labelsOpen} onclick={() => labelsOpen = !labelsOpen}>Labels</button>
       {#if selectedFolder?.role === "Trash" && !app.value.searchQuery.trim()}
-        <button class="danger" onclick={deleteSelectedPermanently}>Delete</button>
+        <button type="button" class="danger" onclick={deleteSelectedPermanently}>Delete</button>
       {/if}
       {#if selectedFolder}
         <Select
@@ -265,10 +266,10 @@
           }}
         />
       {/if}
-       <button onclick={() => void selectAllMessages()} disabled={app.value.selectingAll}>
+       <button type="button" onclick={() => void selectAllMessages()} disabled={app.value.selectingAll}>
          {app.value.selectingAll ? "Selecting…" : "Select all"}
        </button>
-      <button class="clear" onclick={clearMessageSelection} aria-label="Clear selection">×</button>
+      <button type="button" class="clear" onclick={clearMessageSelection} aria-label="Clear selection">×</button>
     </div>
     {#if labelsOpen}
       <div class="label-editor">
@@ -279,7 +280,7 @@
         {#if selectedKeywords.length > 0}
           <div class="active-labels">
             {#each selectedKeywords as keyword}
-              <button onclick={() => setSelectedKeyword(keyword, false)} title={`Remove ${keyword}`}>
+              <button type="button" onclick={() => setSelectedKeyword(keyword, false)} title={`Remove ${keyword}`}>
                 {keyword} ×
               </button>
             {/each}
@@ -290,7 +291,19 @@
   {/if}
   <div class="list-body" aria-busy={app.value.envelopesLoading}>
     {#if app.value.envelopesLoading}
-      <div class="empty">{app.value.searching ? "Searching…" : "Loading messages…"}</div>
+      <div class="message-loading" role="status" aria-live="polite">
+        <span class="sr-only">{app.value.searching ? "Searching messages" : "Loading messages"}</span>
+        <div class="skeleton-list" aria-hidden="true">
+          {#each Array(7) as _}
+            <div class="skeleton-row">
+              <span class="skeleton skeleton-check"></span>
+              <span class="skeleton skeleton-sender"></span>
+              <span class="skeleton skeleton-date"></span>
+              <span class="skeleton skeleton-subject"></span>
+            </div>
+          {/each}
+        </div>
+      </div>
     {:else if app.value.envelopes.length === 0}
       <div class="empty">No messages here</div>
     {:else}
@@ -327,6 +340,7 @@
               {/each}
               {#if count > 1}
                 <button
+                  type="button"
                   class="thread-count"
                   onclick={(event) => toggleThread(event, item)}
                   aria-label={`${expandedThreads.includes(threadKey(item)) ? "Collapse" : "Expand"} ${count} message conversation`}
@@ -420,6 +434,13 @@
     font: inherit;
     font-size: 12px;
   }
+  @media (forced-colors: active) {
+    .search-box:focus-within {
+      outline: 2px solid Highlight;
+      outline-offset: 2px;
+      box-shadow: none;
+    }
+  }
   .search-box button { color: var(--accent); font-size: 18px; }
   .save-search { margin: 0 10px 7px; display: flex; gap: 5px; }
   .save-search input {
@@ -486,6 +507,23 @@
   }
   .active-labels { display: flex; flex-wrap: wrap; gap: 4px; }
   .list-body { position: relative; flex: 1 1 0; min-height: 0; display: flex; overflow: hidden; }
+  .message-loading { width: 100%; overflow: hidden; }
+  .skeleton-list { width: 100%; }
+  .skeleton-row {
+    height: 60px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) 52px;
+    grid-template-rows: 14px 12px;
+    gap: 7px 9px;
+    align-content: center;
+  }
+  .skeleton-check { grid-row: 1 / 3; align-self: center; width: 16px; height: 16px; border-radius: 4px; }
+  .skeleton-sender { width: min(72%, 180px); height: 10px; border-radius: 3px; }
+  .skeleton-date { justify-self: end; width: 42px; height: 8px; border-radius: 3px; }
+  .skeleton-subject { width: min(88%, 240px); height: 8px; border-radius: 3px; }
+  :global(:root[data-density="compact"]) .skeleton-row { height: 52px; padding-block: 7px; }
   .loading-more {
     position: absolute;
     left: 50%;
@@ -533,7 +571,7 @@
     border-radius: 3px;
     font-size: 10px;
     font-weight: 600;
-    color: white;
+    color: var(--tag-fg);
     margin-left: 4px;
     vertical-align: middle;
     line-height: 1.6;

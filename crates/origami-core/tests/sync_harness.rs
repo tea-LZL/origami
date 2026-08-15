@@ -240,6 +240,80 @@ async fn body_fetch_blobs_and_indexes() {
 }
 
 #[tokio::test]
+async fn recent_prefetch_caches_display_data_without_a_blob() {
+    if !enabled() {
+        return;
+    }
+    let config = test_account();
+    let backend = ImapBackend::connect("harness", &config.imap.clone().unwrap())
+        .await
+        .unwrap();
+    let mailbox = format!("OrigamiPrefetch-{}", uuid::Uuid::now_v7());
+    backend.create_mailbox(&mailbox).await.unwrap();
+    backend
+        .append_message(
+            &mailbox,
+            concat!(
+                "From: Prefetch <prefetch@example.org>\r\n",
+                "To: Origami <origami@localhost>\r\n",
+                "Date: Sat, 01 Jan 2000 00:00:00 +0000\r\n",
+                "Subject: prefetch me\r\n",
+                "Message-ID: <prefetch-me@example.org>\r\n",
+                "Content-Type: text/plain; charset=utf-8\r\n",
+                "\r\n",
+                "This body should be warm before opening.\r\n"
+            )
+            .as_bytes(),
+            &[],
+        )
+        .await
+        .unwrap();
+
+    let (engine, _dir) = engine();
+    engine.sync_account("harness", &config).await.unwrap();
+    let account = engine
+        .store()
+        .upsert_account("harness", "Harness", "origami@localhost")
+        .unwrap();
+    let folder = engine
+        .store()
+        .folder_id(&account, &mailbox)
+        .unwrap()
+        .unwrap();
+    let envelope = engine
+        .store()
+        .list_envelopes(&folder, 1, 10)
+        .unwrap()
+        .into_iter()
+        .find(|envelope| envelope.subject == "prefetch me")
+        .unwrap();
+    let uid = envelope.server_uid.unwrap();
+    assert!(
+        envelope.received_at.is_some(),
+        "IMAP INTERNALDATE is required"
+    );
+    assert!(engine
+        .store()
+        .parsed_message(&folder, uid)
+        .unwrap()
+        .is_none());
+
+    assert!(engine.prefetch_recent("harness", &config).await.unwrap() >= 1);
+    let parsed = engine
+        .store()
+        .parsed_message(&folder, uid)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        parsed.text.as_deref(),
+        Some("This body should be warm before opening.")
+    );
+    assert!(engine.store().blob_hash(&folder, uid).unwrap().is_none());
+
+    backend.delete_mailbox(&mailbox).await.unwrap();
+}
+
+#[tokio::test]
 async fn display_fetch_skips_attachment_body_until_requested() {
     if !enabled() {
         return;

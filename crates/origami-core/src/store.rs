@@ -15,10 +15,20 @@ use serde_json;
 
 use crate::message::ParsedMessage;
 use crate::model::{
-    Address, Correspondent, Envelope, Flag, Mailbox, MailboxRole, OutboxEntry, OutboxOp,
-    SavedSearch, SyncState,
+    Address, Correspondent, Envelope, EnvelopeSource, Flag, Mailbox, MailboxRole, OutboxEntry,
+    OutboxOp, SavedSearch, SyncState,
 };
-use crate::{Error, Result};
+use crate::{private_fs, Error, Result};
+
+type LogicalCacheIdentity = (
+    String,
+    Option<String>,
+    String,
+    String,
+    String,
+    Option<String>,
+    i64,
+);
 
 const SCHEMA_V1: &str = "
 CREATE TABLE accounts (
@@ -54,6 +64,7 @@ CREATE TABLE messages (
     from_json      TEXT NOT NULL DEFAULT '[]',
     to_json        TEXT NOT NULL DEFAULT '[]',
     date           TEXT,
+    received_at    INTEGER,
     size           INTEGER NOT NULL DEFAULT 0,
     flags_json     TEXT NOT NULL DEFAULT '[]',
     has_attachment INTEGER NOT NULL DEFAULT 0,
@@ -62,6 +73,7 @@ CREATE TABLE messages (
     UNIQUE(folder_id, server_uid)
 );
 CREATE INDEX idx_messages_folder ON messages(folder_id, server_uid DESC);
+CREATE INDEX idx_messages_received_at ON messages(received_at);
 
 CREATE VIRTUAL TABLE messages_fts USING fts5(
     subject, from_text, to_text, body,
@@ -96,13 +108,21 @@ pub struct Store {
     conn: Arc<Mutex<Connection>>,
 }
 
+/// A locally known message that is eligible for background body prefetch.
+#[derive(Debug, Clone)]
+pub struct PrefetchCandidate {
+    pub envelope: Envelope,
+    pub mailbox: String,
+}
+
 impl Store {
     /// Open (and migrate) the database at `path`.
     pub fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
+            private_fs::create_private_dir(parent)?;
         }
         let conn = Connection::open(path)?;
+        private_fs::secure_existing_file(path)?;
         Self::init(conn)
     }
 
@@ -201,6 +221,43 @@ impl Store {
             )?;
             conn.pragma_update(None, "user_version", 6)?;
         }
+        if version < 7 {
+            let has_col: bool = conn
+                .prepare("SELECT 1 FROM pragma_table_info('messages') WHERE name = 'received_at'")?
+                .exists([])?;
+            if !has_col {
+                conn.execute_batch("ALTER TABLE messages ADD COLUMN received_at INTEGER;")?;
+            }
+
+            let existing_dates: Vec<(String, Option<String>)> = {
+                let mut stmt = conn.prepare("SELECT id, date FROM messages")?;
+                let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()?
+            };
+            for (message_id, date) in existing_dates {
+                if let Some(received_at) = received_at_from_date(date.as_deref()) {
+                    conn.execute(
+                        "UPDATE messages SET received_at = ?2 WHERE id = ?1",
+                        params![message_id, received_at],
+                    )?;
+                }
+            }
+            conn.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_messages_received_at
+                   ON messages(received_at);",
+            )?;
+            conn.pragma_update(None, "user_version", 7)?;
+        }
+        if version < 8 {
+            // The display MIME parser previously allowed a text/plain
+            // alternative to occupy the cached HTML field before the real
+            // text/html section was visited. Parsed metadata is disposable;
+            // invalidate it once so existing messages are rebuilt with the
+            // corrected section selection. Full RFC 822 blobs are separate
+            // and remain available for local reparsing.
+            conn.execute("DELETE FROM message_cache", [])?;
+            conn.pragma_update(None, "user_version", 8)?;
+        }
         Ok(())
     }
 
@@ -280,6 +337,20 @@ impl Store {
             })
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// Count logical messages across physical folders without counting a
+    /// provider label copy more than once.
+    pub fn logical_envelope_counts(&self, folder_ids: &[String]) -> Result<(u32, u32)> {
+        if folder_ids.is_empty() {
+            return Ok((0, 0));
+        }
+        let logical = self.list_envelopes_in_folders(folder_ids, 1, u32::MAX)?;
+        let unread = logical
+            .iter()
+            .filter(|envelope| !envelope.flags.contains(&Flag::Seen))
+            .count();
+        Ok((logical.len() as u32, unread as u32))
     }
 
     /// Remove folders that were not present in a successful remote listing.
@@ -452,6 +523,9 @@ impl Store {
             .map_err(|e| Error::Backend(format!("from json: {e}")))?;
         let to_json = serde_json::to_string(&envelope.to)
             .map_err(|e| Error::Backend(format!("to json: {e}")))?;
+        let received_at = envelope
+            .received_at
+            .or_else(|| received_at_from_date(envelope.date.as_deref()));
 
         if let Some(id) = conn
             .query_row(
@@ -463,8 +537,9 @@ impl Store {
         {
             conn.execute(
                 "UPDATE messages SET subject = ?3, from_json = ?4, to_json = ?5,
-                   date = ?6, size = ?7, flags_json = ?8, keywords_json = ?10,
-                   message_id = ?9, thread_id = ?11, has_attachment = ?12
+                   date = ?6, received_at = ?13, size = ?7, flags_json = ?8,
+                   keywords_json = ?10, message_id = ?9, thread_id = ?11,
+                   has_attachment = ?12
                  WHERE id = ?1 AND folder_id = ?2",
                 params![
                     id,
@@ -479,6 +554,7 @@ impl Store {
                     keywords_json,
                     envelope.thread_id,
                     envelope.has_attachment as i64,
+                    received_at,
                 ],
             )?;
             return Ok((id, false));
@@ -488,8 +564,8 @@ impl Store {
         conn.execute(
             "INSERT INTO messages
                (id, folder_id, server_uid, message_id, thread_id, subject, from_json, to_json,
-                 date, size, flags_json, keywords_json, has_attachment)
-              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                 date, received_at, size, flags_json, keywords_json, has_attachment)
+              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 id,
                 folder_id,
@@ -500,6 +576,7 @@ impl Store {
                 from_json,
                 to_json,
                 envelope.date,
+                received_at,
                 envelope.size as i64,
                 flags_json,
                 keywords_json,
@@ -521,8 +598,8 @@ impl Store {
             let mut stmt = tx.prepare_cached(
                 "INSERT INTO messages
                    (id, folder_id, server_uid, message_id, thread_id, subject, from_json, to_json,
-                    date, size, flags_json, keywords_json, has_attachment)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                    date, received_at, size, flags_json, keywords_json, has_attachment)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
                  ON CONFLICT(folder_id, server_uid) DO UPDATE SET
                    message_id = excluded.message_id,
                    thread_id = excluded.thread_id,
@@ -530,6 +607,7 @@ impl Store {
                    from_json = excluded.from_json,
                    to_json = excluded.to_json,
                    date = excluded.date,
+                   received_at = excluded.received_at,
                    size = excluded.size,
                    flags_json = excluded.flags_json,
                    keywords_json = excluded.keywords_json,
@@ -548,6 +626,9 @@ impl Store {
                     .map_err(|error| Error::Backend(format!("from json: {error}")))?;
                 let to_json = serde_json::to_string(&envelope.to)
                     .map_err(|error| Error::Backend(format!("to json: {error}")))?;
+                let received_at = envelope
+                    .received_at
+                    .or_else(|| received_at_from_date(envelope.date.as_deref()));
                 stmt.execute(params![
                     id,
                     folder_id,
@@ -558,6 +639,7 @@ impl Store {
                     from_json,
                     to_json,
                     envelope.date,
+                    received_at,
                     envelope.size as i64,
                     flags_json,
                     keywords_json,
@@ -668,7 +750,8 @@ impl Store {
             .map_err(Into::into)
     }
 
-    /// Page envelopes from one local folder, newest first (UID order).
+    /// Page envelopes from one local folder, newest first by server-received
+    /// date, with rowid only providing deterministic ordering for ties.
     pub fn list_envelopes(
         &self,
         folder_id: &str,
@@ -679,6 +762,10 @@ impl Store {
     }
 
     /// Page envelopes from multiple physical folders as one logical view.
+    ///
+    /// The query deliberately reads all matching physical rows before applying
+    /// pagination. Provider labels are separate IMAP rows, so paginating first
+    /// would allow one logical message to occupy several page slots.
     pub fn list_envelopes_in_folders(
         &self,
         folder_ids: &[String],
@@ -690,20 +777,20 @@ impl Store {
         }
 
         let conn = self.conn()?;
-        let offset = page.max(1).saturating_sub(1).saturating_mul(page_size);
         let placeholders = vec!["?"; folder_ids.len()].join(", ");
         let statement = format!(
-            "SELECT id, folder_id, server_uid, message_id, thread_id, subject,
-                    from_json, to_json, date, size, flags_json, keywords_json, has_attachment
-               FROM messages WHERE folder_id IN ({placeholders})
-             ORDER BY server_uid DESC LIMIT ? OFFSET ?"
+            "SELECT m.id, m.folder_id, m.server_uid, m.message_id, m.thread_id, m.subject,
+                    m.from_json, m.to_json, m.date, m.received_at, m.size, m.flags_json,
+                    m.keywords_json, m.has_attachment, f.account_id
+               FROM messages m
+               JOIN folders f ON f.id = m.folder_id
+              WHERE m.folder_id IN ({placeholders})
+             ORDER BY m.received_at DESC, m.rowid DESC"
         );
-        let mut bind_values = folder_ids
+        let bind_values = folder_ids
             .iter()
             .map(|folder_id| Value::Text(folder_id.clone()))
             .collect::<Vec<_>>();
-        bind_values.push(Value::Integer(page_size as i64));
-        bind_values.push(Value::Integer(offset as i64));
         let mut stmt = conn.prepare(&statement)?;
         let rows = stmt.query_map(params_from_iter(bind_values), |r| {
             Ok((
@@ -716,13 +803,15 @@ impl Store {
                 r.get::<_, String>(6)?,
                 r.get::<_, String>(7)?,
                 r.get::<_, Option<String>>(8)?,
-                r.get::<_, i64>(9)?,
-                r.get::<_, String>(10)?,
+                r.get::<_, Option<i64>>(9)?,
+                r.get::<_, i64>(10)?,
                 r.get::<_, String>(11)?,
-                r.get::<_, i64>(12)?,
+                r.get::<_, String>(12)?,
+                r.get::<_, i64>(13)?,
+                r.get::<_, String>(14)?,
             ))
         })?;
-        let mut out = Vec::new();
+        let mut physical = Vec::new();
         for row in rows {
             let (
                 id,
@@ -734,28 +823,139 @@ impl Store {
                 from_json,
                 to_json,
                 date,
+                received_at,
                 size,
                 flags_json,
                 keywords_json,
                 has_att,
+                account_id,
             ) = row?;
-            out.push(Envelope {
+            physical.push((
+                account_id,
+                Envelope {
+                    id,
+                    mailbox_id: mailbox_id.clone(),
+                    subject,
+                    from: serde_json::from_str(&from_json).unwrap_or_default(),
+                    to: serde_json::from_str(&to_json).unwrap_or_default(),
+                    date,
+                    received_at,
+                    flags: serde_json::from_str(&flags_json).unwrap_or_default(),
+                    keywords: serde_json::from_str(&keywords_json).unwrap_or_default(),
+                    has_attachment: has_att != 0,
+                    size: size as u32,
+                    server_uid: Some(uid as u32),
+                    message_id,
+                    thread_id,
+                    sources: vec![EnvelopeSource {
+                        mailbox_id,
+                        server_uid: uid as u32,
+                    }],
+                },
+            ));
+        }
+
+        let logical = deduplicate_envelopes(physical);
+        let offset = page.max(1).saturating_sub(1).saturating_mul(page_size) as usize;
+        Ok(logical
+            .into_iter()
+            .skip(offset)
+            .take(page_size as usize)
+            .collect())
+    }
+
+    /// List recent messages whose display data is not cached locally.
+    ///
+    /// The received timestamp is populated from the normalized message date
+    /// during envelope sync and persisted separately so this query stays
+    /// indexed and does not need to parse RFC 822 dates on every sync cycle.
+    pub fn recent_uncached_messages(
+        &self,
+        account_id: &str,
+        since: i64,
+        limit: u32,
+    ) -> Result<Vec<PrefetchCandidate>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT m.id, m.folder_id, m.server_uid, m.message_id, m.thread_id, m.subject,
+                    m.from_json, m.to_json, m.date, m.received_at, m.size, m.flags_json,
+                    m.keywords_json, m.has_attachment, f.name
+               FROM messages m
+               JOIN folders f ON f.id = m.folder_id
+               LEFT JOIN message_cache c ON c.message_id = m.id
+              WHERE f.account_id = ?1
+                AND m.received_at >= ?2
+                AND m.blob_hash IS NULL
+                AND c.message_id IS NULL
+             ORDER BY m.received_at DESC, m.rowid DESC
+              LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(params![account_id, since, limit as i64], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, Option<String>>(3)?,
+                r.get::<_, Option<String>>(4)?,
+                r.get::<_, String>(5)?,
+                r.get::<_, String>(6)?,
+                r.get::<_, String>(7)?,
+                r.get::<_, Option<String>>(8)?,
+                r.get::<_, Option<i64>>(9)?,
+                r.get::<_, i64>(10)?,
+                r.get::<_, String>(11)?,
+                r.get::<_, String>(12)?,
+                r.get::<_, i64>(13)?,
+                r.get::<_, String>(14)?,
+            ))
+        })?;
+        let mut candidates = Vec::new();
+        for row in rows {
+            let (
                 id,
                 mailbox_id,
-                subject,
-                from: serde_json::from_str(&from_json).unwrap_or_default(),
-                to: serde_json::from_str(&to_json).unwrap_or_default(),
-                date,
-                flags: serde_json::from_str(&flags_json).unwrap_or_default(),
-                keywords: serde_json::from_str(&keywords_json).unwrap_or_default(),
-                has_attachment: has_att != 0,
-                size: size as u32,
-                server_uid: Some(uid as u32),
+                uid,
                 message_id,
                 thread_id,
+                subject,
+                from_json,
+                to_json,
+                date,
+                received_at,
+                size,
+                flags_json,
+                keywords_json,
+                has_attachment,
+                mailbox,
+            ) = row?;
+            candidates.push(PrefetchCandidate {
+                envelope: Envelope {
+                    id,
+                    mailbox_id: mailbox_id.clone(),
+                    subject,
+                    from: serde_json::from_str(&from_json).unwrap_or_default(),
+                    to: serde_json::from_str(&to_json).unwrap_or_default(),
+                    date,
+                    received_at,
+                    flags: serde_json::from_str(&flags_json).unwrap_or_default(),
+                    keywords: serde_json::from_str(&keywords_json).unwrap_or_default(),
+                    has_attachment: has_attachment != 0,
+                    size: size as u32,
+                    server_uid: Some(uid as u32),
+                    message_id,
+                    thread_id,
+                    sources: vec![EnvelopeSource {
+                        mailbox_id,
+                        server_uid: uid as u32,
+                    }],
+                },
+                mailbox,
             });
         }
-        Ok(out)
+        Ok(candidates)
     }
 
     /// Look up one envelope using the folder/UID unique index.
@@ -764,7 +964,7 @@ impl Store {
         let row = conn
             .query_row(
                 "SELECT id, message_id, thread_id, subject, from_json, to_json, date,
-                        size, flags_json, keywords_json, has_attachment
+                        received_at, size, flags_json, keywords_json, has_attachment
                    FROM messages WHERE folder_id = ?1 AND server_uid = ?2",
                 params![folder_id, server_uid as i64],
                 |r| {
@@ -776,10 +976,11 @@ impl Store {
                         r.get::<_, String>(4)?,
                         r.get::<_, String>(5)?,
                         r.get::<_, Option<String>>(6)?,
-                        r.get::<_, i64>(7)?,
-                        r.get::<_, String>(8)?,
+                        r.get::<_, Option<i64>>(7)?,
+                        r.get::<_, i64>(8)?,
                         r.get::<_, String>(9)?,
-                        r.get::<_, i64>(10)?,
+                        r.get::<_, String>(10)?,
+                        r.get::<_, i64>(11)?,
                     ))
                 },
             )
@@ -794,6 +995,7 @@ impl Store {
                 from_json,
                 to_json,
                 date,
+                received_at,
                 size,
                 flags_json,
                 keywords_json,
@@ -805,6 +1007,7 @@ impl Store {
                 from: serde_json::from_str(&from_json).unwrap_or_default(),
                 to: serde_json::from_str(&to_json).unwrap_or_default(),
                 date,
+                received_at,
                 flags: serde_json::from_str(&flags_json).unwrap_or_default(),
                 keywords: serde_json::from_str(&keywords_json).unwrap_or_default(),
                 has_attachment: has_attachment != 0,
@@ -812,73 +1015,47 @@ impl Store {
                 server_uid: Some(server_uid),
                 message_id,
                 thread_id,
+                sources: vec![EnvelopeSource {
+                    mailbox_id: folder_id.to_string(),
+                    server_uid,
+                }],
             },
         ))
     }
 
+    /// Load one logical envelope from its physical folder/UID references.
+    /// Missing references are ignored because a provider may expunge one
+    /// label between the list and the open operation.
+    pub fn get_envelope_from_sources(
+        &self,
+        sources: &[EnvelopeSource],
+    ) -> Result<Option<Envelope>> {
+        let mut logical = None;
+        for source in sources {
+            let Some(envelope) = self.get_envelope(&source.mailbox_id, source.server_uid)? else {
+                continue;
+            };
+            if let Some(existing) = logical.as_mut() {
+                merge_envelope_sources(existing, envelope);
+            } else {
+                logical = Some(envelope);
+            }
+        }
+        Ok(logical)
+    }
+
     /// Page all account Inbox folders as one local view.
     pub fn list_unified_inbox(&self, page: u32, page_size: u32) -> Result<Vec<Envelope>> {
-        let offset = page.max(1).saturating_sub(1).saturating_mul(page_size);
-        let conn = self.conn()?;
-        let mut stmt = conn.prepare(
-            "SELECT m.id, m.folder_id, m.server_uid, m.message_id, m.thread_id, m.subject,
-                    m.from_json, m.to_json, m.date, m.size, m.flags_json,
-                    m.keywords_json, m.has_attachment
-               FROM messages m JOIN folders f ON f.id = m.folder_id
-              WHERE f.role = 'inbox'
-              ORDER BY m.rowid DESC LIMIT ?1 OFFSET ?2",
-        )?;
-        let rows = stmt.query_map(params![page_size as i64, offset as i64], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, i64>(2)?,
-                row.get::<_, Option<String>>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, String>(5)?,
-                row.get::<_, String>(6)?,
-                row.get::<_, String>(7)?,
-                row.get::<_, Option<String>>(8)?,
-                row.get::<_, i64>(9)?,
-                row.get::<_, String>(10)?,
-                row.get::<_, String>(11)?,
-                row.get::<_, i64>(12)?,
-            ))
-        })?;
-        let mut envelopes = Vec::new();
-        for row in rows {
-            let (
-                id,
-                folder_id,
-                uid,
-                message_id,
-                thread_id,
-                subject,
-                from_json,
-                to_json,
-                date,
-                size,
-                flags_json,
-                keywords_json,
-                has_attachment,
-            ) = row?;
-            envelopes.push(Envelope {
-                id,
-                mailbox_id: folder_id,
-                subject,
-                from: serde_json::from_str(&from_json).unwrap_or_default(),
-                to: serde_json::from_str(&to_json).unwrap_or_default(),
-                date,
-                flags: serde_json::from_str(&flags_json).unwrap_or_default(),
-                keywords: serde_json::from_str(&keywords_json).unwrap_or_default(),
-                has_attachment: has_attachment != 0,
-                size: size as u32,
-                server_uid: Some(uid as u32),
-                message_id,
-                thread_id,
-            });
+        if page_size == 0 {
+            return Ok(Vec::new());
         }
-        Ok(envelopes)
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare("SELECT id FROM folders WHERE role = 'inbox'")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let folder_ids = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        drop(stmt);
+        drop(conn);
+        self.list_envelopes_in_folders(&folder_ids, page, page_size)
     }
 
     /// Record the blob hash of a fetched body and index the message in FTS.
@@ -1118,6 +1295,75 @@ impl Store {
         .transpose()
     }
 
+    /// Read cached display data from any physical copy of the same logical
+    /// message before a caller falls back to the network. Copies in the same
+    /// physical folder are intentionally excluded because duplicate Message-ID
+    /// rows in one folder are not safe to merge.
+    pub fn parsed_message_for_logical_message(
+        &self,
+        folder_id: &str,
+        server_uid: u32,
+    ) -> Result<Option<ParsedMessage>> {
+        if let Some(parsed) = self.parsed_message(folder_id, server_uid)? {
+            return Ok(Some(parsed));
+        }
+        let conn = self.conn()?;
+        let identity: Option<LogicalCacheIdentity> = conn
+            .query_row(
+                "SELECT f.account_id, m.message_id, m.subject, m.from_json, m.to_json,
+                        m.date, m.size
+                   FROM messages m
+                   JOIN folders f ON f.id = m.folder_id
+                  WHERE m.folder_id = ?1 AND m.server_uid = ?2",
+                params![folder_id, server_uid as i64],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((account_id, message_id, subject, from_json, to_json, date, size)) = identity
+        else {
+            return Ok(None);
+        };
+
+        let json: Option<String> = conn
+            .query_row(
+                "SELECT c.parsed_json
+                   FROM message_cache c
+                   JOIN messages m ON m.id = c.message_id
+                   JOIN folders f ON f.id = m.folder_id
+                  WHERE f.account_id = ?1
+                    AND m.folder_id != ?2
+                    AND (
+                        (?3 IS NOT NULL AND m.message_id = ?3 AND m.subject = ?4
+                         AND m.from_json = ?5 AND m.to_json = ?6 AND m.size = ?7)
+                        OR
+                        (?3 IS NULL AND m.subject = ?4 AND m.from_json = ?5
+                         AND m.to_json = ?6 AND m.date IS ?8 AND m.size = ?7)
+                    )
+                  ORDER BY c.cached_at DESC
+                  LIMIT 1",
+                params![
+                    account_id, folder_id, message_id, subject, from_json, to_json, size, date,
+                ],
+                |row| row.get(0),
+            )
+            .optional()?;
+        json.map(|value| {
+            serde_json::from_str(&value)
+                .map_err(|error| Error::Backend(format!("parsed message cache: {error}")))
+        })
+        .transpose()
+    }
+
     /// Reflect parsed MIME metadata in the envelope list without changing
     /// server-owned flags or the cached body.
     pub fn set_has_attachment(
@@ -1179,11 +1425,10 @@ impl Store {
     pub fn search_page(&self, query: &str, page: u32, page_size: u32) -> Result<Vec<Envelope>> {
         let conn = self.conn()?;
         let page_size = page_size.max(1);
-        let offset = page.max(1).saturating_sub(1).saturating_mul(page_size);
         let mut sql = String::from(
             "SELECT m.id, m.folder_id, m.server_uid, m.message_id, m.thread_id, m.subject,
-                    m.from_json, m.to_json, m.date, m.size, m.flags_json,
-                    m.keywords_json, m.has_attachment
+                    m.from_json, m.to_json, m.date, m.received_at, m.size, m.flags_json,
+                    m.keywords_json, m.has_attachment, a.id
                FROM messages m
                JOIN folders f ON f.id = m.folder_id
                JOIN accounts a ON a.id = f.account_id
@@ -1247,9 +1492,7 @@ impl Store {
                 }
             }
         }
-        sql.push_str(" ORDER BY m.rowid DESC LIMIT ? OFFSET ?");
-        values.push(Value::Integer(page_size as i64));
-        values.push(Value::Integer(offset as i64));
+        sql.push_str(" ORDER BY m.received_at DESC, m.rowid DESC");
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params_from_iter(values), |r| {
             Ok((
@@ -1262,13 +1505,15 @@ impl Store {
                 r.get::<_, String>(6)?,
                 r.get::<_, String>(7)?,
                 r.get::<_, Option<String>>(8)?,
-                r.get::<_, i64>(9)?,
-                r.get::<_, String>(10)?,
+                r.get::<_, Option<i64>>(9)?,
+                r.get::<_, i64>(10)?,
                 r.get::<_, String>(11)?,
-                r.get::<_, i64>(12)?,
+                r.get::<_, String>(12)?,
+                r.get::<_, i64>(13)?,
+                r.get::<_, String>(14)?,
             ))
         })?;
-        let mut out = Vec::new();
+        let mut physical = Vec::new();
         for row in rows {
             let (
                 id,
@@ -1280,28 +1525,45 @@ impl Store {
                 from_json,
                 to_json,
                 date,
+                received_at,
                 size,
-                fj,
-                kj,
-                ha,
+                flags_json,
+                keywords_json,
+                has_attachment,
+                account_id,
             ) = row?;
-            out.push(Envelope {
-                id,
-                mailbox_id: folder_id,
-                subject,
-                from: serde_json::from_str(&from_json).unwrap_or_default(),
-                to: serde_json::from_str(&to_json).unwrap_or_default(),
-                date,
-                flags: serde_json::from_str(&fj).unwrap_or_default(),
-                keywords: serde_json::from_str(&kj).unwrap_or_default(),
-                has_attachment: ha != 0,
-                size: size as u32,
-                server_uid: Some(uid as u32),
-                message_id,
-                thread_id,
-            });
+            physical.push((
+                account_id,
+                Envelope {
+                    id,
+                    mailbox_id: folder_id.clone(),
+                    subject,
+                    from: serde_json::from_str(&from_json).unwrap_or_default(),
+                    to: serde_json::from_str(&to_json).unwrap_or_default(),
+                    date,
+                    received_at,
+                    flags: serde_json::from_str(&flags_json).unwrap_or_default(),
+                    keywords: serde_json::from_str(&keywords_json).unwrap_or_default(),
+                    has_attachment: has_attachment != 0,
+                    size: size as u32,
+                    server_uid: Some(uid as u32),
+                    message_id,
+                    thread_id,
+                    sources: vec![EnvelopeSource {
+                        mailbox_id: folder_id,
+                        server_uid: uid as u32,
+                    }],
+                },
+            ));
         }
-        Ok(out)
+
+        let logical = deduplicate_envelopes(physical);
+        let offset = page.max(1).saturating_sub(1).saturating_mul(page_size) as usize;
+        Ok(logical
+            .into_iter()
+            .skip(offset)
+            .take(page_size as usize)
+            .collect())
     }
 
     pub fn list_saved_searches(&self) -> Result<Vec<SavedSearch>> {
@@ -1515,6 +1777,71 @@ impl Store {
     }
 }
 
+fn deduplicate_envelopes(physical: Vec<(String, Envelope)>) -> Vec<Envelope> {
+    let mut logical: Vec<Envelope> = Vec::new();
+    let mut groups = HashMap::<String, Vec<usize>>::new();
+
+    for (account_id, envelope) in physical {
+        let key = envelope.logical_id(&account_id);
+        let matching_group = groups.get(&key).and_then(|indices| {
+            indices.iter().copied().find(|index| {
+                !logical[*index].sources.iter().any(|existing| {
+                    envelope
+                        .sources
+                        .iter()
+                        .any(|incoming| incoming.mailbox_id == existing.mailbox_id)
+                })
+            })
+        });
+        if let Some(index) = matching_group {
+            merge_envelope_sources(&mut logical[index], envelope);
+        } else {
+            let index = logical.len();
+            logical.push(envelope);
+            groups.entry(key).or_default().push(index);
+        }
+    }
+
+    logical
+}
+
+fn merge_envelope_sources(existing: &mut Envelope, incoming: Envelope) {
+    let all_sources = existing
+        .sources
+        .iter()
+        .chain(incoming.sources.iter())
+        .cloned()
+        .collect::<HashSet<_>>();
+    existing.sources = all_sources.into_iter().collect();
+    existing.sources.sort_by(|left, right| {
+        left.mailbox_id
+            .cmp(&right.mailbox_id)
+            .then_with(|| left.server_uid.cmp(&right.server_uid))
+    });
+
+    let all_seen = existing.flags.contains(&Flag::Seen) && incoming.flags.contains(&Flag::Seen);
+    for flag in incoming.flags {
+        if flag != Flag::Seen && !existing.flags.contains(&flag) {
+            existing.flags.push(flag);
+        }
+    }
+    if all_seen {
+        if !existing.flags.contains(&Flag::Seen) {
+            existing.flags.push(Flag::Seen);
+        }
+    } else {
+        existing.flags.retain(|flag| *flag != Flag::Seen);
+    }
+
+    for keyword in incoming.keywords {
+        if !existing.keywords.contains(&keyword) {
+            existing.keywords.push(keyword);
+        }
+    }
+    existing.keywords.sort();
+    existing.has_attachment |= incoming.has_attachment;
+}
+
 /// Flatten stored address JSON into searchable text.
 fn address_text(json: &str) -> String {
     let addrs: Vec<crate::model::Address> = serde_json::from_str(json).unwrap_or_default();
@@ -1526,6 +1853,11 @@ fn address_text(json: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn received_at_from_date(date: Option<&str>) -> Option<i64> {
+    date.and_then(mail_parser::DateTime::parse_rfc822)
+        .map(|value| value.to_timestamp())
 }
 
 fn like_pattern(value: &str) -> String {

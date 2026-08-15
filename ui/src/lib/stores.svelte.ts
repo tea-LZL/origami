@@ -11,7 +11,7 @@ import {
   type Correspondent,
   type AccountStatusDto,
 } from "./api";
-import type { Envelope, Flag, Mailbox, MailboxRole } from "./types";
+import type { Envelope, EnvelopeSource, Flag, Mailbox, MailboxRole } from "./types";
 
 export type WorkspaceLayout = "three-pane" | "two-pane" | "reading";
 
@@ -446,13 +446,27 @@ export async function loadMoreEnvelopes() {
 }
 
 export async function selectEnvelope(envelope: Envelope) {
-  if (!envelope.serverUid) return;
-  const folderId = envelope.mailboxId || app.value.selectedFolderId;
-  if (!folderId) return;
+  const sources = envelopeSources(envelope);
+  const primary = sources.find((source) =>
+    source.mailboxId === envelope.mailboxId && source.serverUid === envelope.serverUid,
+  ) ?? sources[0];
+  if (!primary) return;
   const request = ++messageRequest;
   patch({ selectedEnvelope: envelope, message: null, messageLoading: true });
   try {
-    const message = await api.getMessage(folderId, envelope.serverUid);
+    let message: MessageDto | null = null;
+    let loadedSource: EnvelopeSource | null = null;
+    let lastError: unknown = null;
+    for (const source of [primary, ...sources.filter((item) => item !== primary)]) {
+      try {
+        message = await api.getMessage(source.mailboxId, source.serverUid);
+        loadedSource = source;
+        break;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (!message) throw lastError ?? new Error("message not found");
     if (
       request !== messageRequest
       || app.value.selectedEnvelope?.id !== envelope.id
@@ -460,7 +474,14 @@ export async function selectEnvelope(envelope: Envelope) {
     const attachmentState = message.attachments.length > 0;
     const messageWithAttachmentState = {
       ...message,
-      envelope: { ...message.envelope, hasAttachment: attachmentState },
+      envelope: {
+        ...message.envelope,
+        ...envelope,
+        mailboxId: (loadedSource ?? primary).mailboxId,
+        serverUid: (loadedSource ?? primary).serverUid,
+        sources,
+        hasAttachment: attachmentState,
+      },
     };
     patch({
       message: messageWithAttachmentState,
@@ -475,21 +496,18 @@ export async function selectEnvelope(envelope: Envelope) {
       const envelopes = app.value.envelopes.map((item) =>
         item.id === envelope.id ? { ...item, flags: next } : item
       );
-      const folders = app.value.folders.map((folder) =>
-        folder.sourceIds.includes(folderId) && folder.unread > 0
-          ? { ...folder, unread: folder.unread - 1 }
-          : folder
-      );
       patch({
         envelopes,
-        folders,
         message: {
           ...messageWithAttachmentState,
           envelope: { ...messageWithAttachmentState.envelope, flags: next },
         },
       });
       try {
-        await api.storeFlags(folderId, envelope.serverUid, next);
+        await Promise.all(
+          sources.map((source) => api.storeFlags(source.mailboxId, source.serverUid, next)),
+        );
+        await refreshAfterMessageAction();
       } catch (e) {
         patch({ lastError: String(e) });
       }
@@ -561,6 +579,25 @@ export async function removeSavedSearch(id: string) {
 export function selectEnvelopeExclusive(envelope: Envelope) {
   patch({ selectedMessageIds: [envelope.id], selectionAnchorId: envelope.id });
   return selectEnvelope(envelope);
+}
+
+function envelopeSources(envelope: Envelope): EnvelopeSource[] {
+  const sources = envelope.sources?.length
+    ? envelope.sources
+    : envelope.mailboxId && envelope.serverUid != null
+      ? [{ mailboxId: envelope.mailboxId, serverUid: envelope.serverUid }]
+      : [];
+  const unique = new Map<string, EnvelopeSource>();
+  for (const source of sources) {
+    unique.set(`${source.mailboxId}:${source.serverUid}`, source);
+  }
+  return [...unique.values()];
+}
+
+function folderForSource(sourceId: string): Mailbox | undefined {
+  return app.value.folders.find(
+    (folder) => folder.id === sourceId || folder.sourceIds.includes(sourceId),
+  );
 }
 
 export function toggleEnvelopeSelection(envelope: Envelope, extendRange = false) {
@@ -636,28 +673,22 @@ export async function setSelectedFlag(flag: Flag, enabled: boolean) {
   if (selected.size === 0) return;
 
   const targets = app.value.envelopes.filter(
-    (envelope) => selected.has(envelope.id) && envelope.serverUid,
+    (envelope) => selected.has(envelope.id) && envelopeSources(envelope).length > 0,
   );
   const nextFlags = (envelope: Envelope): Flag[] => enabled
     ? Array.from(new Set([...envelope.flags, flag]))
     : envelope.flags.filter((item) => item !== flag);
-  const updates = targets.map((envelope) => ({
-    serverUid: envelope.serverUid!,
-    flags: nextFlags(envelope),
-  }));
+  const updatesByFolder = new Map<string, { serverUid: number; flags: Flag[] }[]>();
+  for (const envelope of targets) {
+    for (const source of envelopeSources(envelope)) {
+      const updates = updatesByFolder.get(source.mailboxId) ?? [];
+      updates.push({ serverUid: source.serverUid, flags: nextFlags(envelope) });
+      updatesByFolder.set(source.mailboxId, updates);
+    }
+  }
   const envelopes = app.value.envelopes.map((envelope) =>
     selected.has(envelope.id) ? { ...envelope, flags: nextFlags(envelope) } : envelope
   );
-  const unreadDeltas = new Map<string, number>();
-  for (const target of targets) {
-    const before = target.flags.includes("Seen") ? 0 : 1;
-    const after = nextFlags(target).includes("Seen") ? 0 : 1;
-    unreadDeltas.set(target.mailboxId, (unreadDeltas.get(target.mailboxId) ?? 0) + after - before);
-  }
-  const folders = app.value.folders.map((folder) => ({
-    ...folder,
-    unread: Math.max(0, folder.unread + (unreadDeltas.get(folder.id) ?? 0)),
-  }));
   const message = app.value.message && selected.has(app.value.message.envelope.id)
     ? {
         ...app.value.message,
@@ -667,18 +698,13 @@ export async function setSelectedFlag(flag: Flag, enabled: boolean) {
         },
       }
     : app.value.message;
-  patch({ envelopes, folders, message });
+  patch({ envelopes, message });
 
   try {
-    const byFolder = new Map<string, typeof updates>();
-    targets.forEach((target, index) => {
-      const group = byFolder.get(target.mailboxId) ?? [];
-      group.push(updates[index]);
-      byFolder.set(target.mailboxId, group);
-    });
     await Promise.all(
-      [...byFolder].map(([folderId, folderUpdates]) => api.storeFlagsBatch(folderId, folderUpdates)),
+      [...updatesByFolder].map(([folderId, folderUpdates]) => api.storeFlagsBatch(folderId, folderUpdates)),
     );
+    await refreshAfterMessageAction();
   } catch (error) {
     patch({ lastError: String(error) });
     if (app.value.searchQuery.trim()) {
@@ -717,18 +743,21 @@ export async function setSelectedKeyword(rawKeyword: string, enabled: boolean) {
     keywords: string[];
   }[]>();
   for (const target of targets) {
-    const updates = byFolder.get(target.mailboxId) ?? [];
-    updates.push({
-      serverUid: target.serverUid!,
-      flags: target.flags,
-      keywords: nextKeywords(target),
-    });
-    byFolder.set(target.mailboxId, updates);
+    for (const source of envelopeSources(target)) {
+      const updates = byFolder.get(source.mailboxId) ?? [];
+      updates.push({
+        serverUid: source.serverUid,
+        flags: target.flags,
+        keywords: nextKeywords(target),
+      });
+      byFolder.set(source.mailboxId, updates);
+    }
   }
   try {
     await Promise.all(
       [...byFolder].map(([folderId, updates]) => api.storeKeywordsBatch(folderId, updates)),
     );
+    await refreshAfterMessageAction();
   } catch (error) {
     patch({ lastError: String(error) });
     if (app.value.searchQuery.trim()) await searchMessages(app.value.searchQuery);
@@ -740,10 +769,17 @@ function removeSelectedLocally(targets: Envelope[]) {
   const removed = new Set(targets.map((target) => target.id));
   const folderChanges = new Map<string, { total: number; unread: number }>();
   for (const target of targets) {
-    const change = folderChanges.get(target.mailboxId) ?? { total: 0, unread: 0 };
-    change.total -= 1;
-    if (!target.flags.includes("Seen")) change.unread -= 1;
-    folderChanges.set(target.mailboxId, change);
+    const displayedFolderIds = new Set<string>();
+    for (const source of envelopeSources(target)) {
+      const displayedFolderId = folderForSource(source.mailboxId)?.id ?? source.mailboxId;
+      displayedFolderIds.add(displayedFolderId);
+    }
+    for (const displayedFolderId of displayedFolderIds) {
+      const change = folderChanges.get(displayedFolderId) ?? { total: 0, unread: 0 };
+      change.total -= 1;
+      if (!target.flags.includes("Seen")) change.unread -= 1;
+      folderChanges.set(displayedFolderId, change);
+    }
   }
   patch({
     envelopes: app.value.envelopes.filter((envelope) => !removed.has(envelope.id)),
@@ -817,7 +853,9 @@ export function undoLastMessageAction() {
 
 function selectedTargets(): Envelope[] {
   const selected = new Set(app.value.selectedMessageIds);
-  return app.value.envelopes.filter((envelope) => selected.has(envelope.id) && envelope.serverUid);
+  return app.value.envelopes.filter(
+    (envelope) => selected.has(envelope.id) && envelopeSources(envelope).length > 0,
+  );
 }
 
 async function refreshAfterMessageAction() {
@@ -830,27 +868,32 @@ async function refreshAfterMessageAction() {
 
 export async function moveSelectedToFolder(destinationFolderId: string) {
   if (!destinationFolderId) return;
-  const targets = selectedTargets().filter((target) => target.mailboxId !== destinationFolderId);
+  const targets = selectedTargets();
   if (targets.length === 0) return;
   const destination = app.value.folders.find((folder) => folder.id === destinationFolderId);
   if (!destination) return;
 
-  const byFolder = new Map<string, Envelope[]>();
+  const destinationSources = new Set([destination.id, ...destination.sourceIds]);
+  const byFolder = new Map<string, Set<number>>();
   for (const target of targets) {
-    const source = app.value.folders.find((folder) => folder.id === target.mailboxId);
-    if (!source || source.accountId !== destination.accountId) {
-      patch({ lastError: "Messages cannot be moved between accounts" });
-      return;
+    for (const source of envelopeSources(target)) {
+      if (destinationSources.has(source.mailboxId)) continue;
+      const sourceFolder = folderForSource(source.mailboxId);
+      if (!sourceFolder || sourceFolder.accountId !== destination.accountId) {
+        patch({ lastError: "Messages cannot be moved between accounts" });
+        return;
+      }
+      const group = byFolder.get(source.mailboxId) ?? new Set<number>();
+      group.add(source.serverUid);
+      byFolder.set(source.mailboxId, group);
     }
-    const group = byFolder.get(target.mailboxId) ?? [];
-    group.push(target);
-    byFolder.set(target.mailboxId, group);
   }
+  if (byFolder.size === 0) return;
 
   scheduleMessageAction(`Moved ${targets.length} message${targets.length === 1 ? "" : "s"}`, targets, async () => {
     try {
-      await Promise.all([...byFolder].map(([folderId, messages]) =>
-        api.moveMessages(folderId, destinationFolderId, messages.map((message) => message.serverUid!))
+      await Promise.all([...byFolder].map(([folderId, serverUids]) =>
+        api.moveMessages(folderId, destinationFolderId, [...serverUids])
       ));
       await refreshAfterMessageAction();
     } catch (error) {
@@ -864,15 +907,17 @@ export async function moveSelectedToFolder(destinationFolderId: string) {
 export async function moveSelectedToRole(role: Extract<MailboxRole, "Archive" | "Trash" | "Junk">) {
   const targets = selectedTargets();
   if (targets.length === 0) return;
-  const byFolder = new Map<string, Envelope[]>();
+  const byFolder = new Map<string, Set<number>>();
   for (const target of targets) {
-    const group = byFolder.get(target.mailboxId) ?? [];
-    group.push(target);
-    byFolder.set(target.mailboxId, group);
+    for (const source of envelopeSources(target)) {
+      const group = byFolder.get(source.mailboxId) ?? new Set<number>();
+      group.add(source.serverUid);
+      byFolder.set(source.mailboxId, group);
+    }
   }
-  const moves: { sourceId: string; destinationId: string; messages: Envelope[] }[] = [];
-  for (const [sourceId, messages] of byFolder) {
-    const source = app.value.folders.find((folder) => folder.id === sourceId);
+  const moves: { sourceId: string; destinationId: string; serverUids: number[] }[] = [];
+  for (const [sourceId, serverUids] of byFolder) {
+    const source = folderForSource(sourceId);
     const destination = app.value.folders.find(
       (folder) => folder.accountId === source?.accountId && folder.role === role,
     );
@@ -880,19 +925,18 @@ export async function moveSelectedToRole(role: Extract<MailboxRole, "Archive" | 
       patch({ lastError: `${role} folder not found for ${source?.name ?? "this account"}` });
       return;
     }
-    if (destination.id !== sourceId) {
-      moves.push({ sourceId, destinationId: destination.id, messages });
+    if (destination.id !== sourceId && !destination.sourceIds.includes(sourceId)) {
+      moves.push({ sourceId, destinationId: destination.id, serverUids: [...serverUids] });
     }
   }
   if (moves.length === 0) return;
 
-  const movedTargets = moves.flatMap((move) => move.messages);
-  scheduleMessageAction(`${role} ${movedTargets.length} message${movedTargets.length === 1 ? "" : "s"}`, movedTargets, async () => {
+  scheduleMessageAction(`${role} ${targets.length} message${targets.length === 1 ? "" : "s"}`, targets, async () => {
     try {
       await Promise.all(moves.map((move) => api.moveMessages(
         move.sourceId,
         move.destinationId,
-        move.messages.map((message) => message.serverUid!),
+        move.serverUids,
       )));
       await refreshAfterMessageAction();
     } catch (error) {
@@ -906,17 +950,19 @@ export async function moveSelectedToRole(role: Extract<MailboxRole, "Archive" | 
 export async function deleteSelectedPermanently() {
   const targets = selectedTargets();
   if (targets.length === 0) return;
-  const byFolder = new Map<string, Envelope[]>();
+  const byFolder = new Map<string, Set<number>>();
   for (const target of targets) {
-    const group = byFolder.get(target.mailboxId) ?? [];
-    group.push(target);
-    byFolder.set(target.mailboxId, group);
+    for (const source of envelopeSources(target)) {
+      const group = byFolder.get(source.mailboxId) ?? new Set<number>();
+      group.add(source.serverUid);
+      byFolder.set(source.mailboxId, group);
+    }
   }
 
   scheduleMessageAction(`Deleted ${targets.length} message${targets.length === 1 ? "" : "s"}`, targets, async () => {
     try {
-      await Promise.all([...byFolder].map(([folderId, messages]) =>
-        api.deleteMessages(folderId, messages.map((message) => message.serverUid!))
+      await Promise.all([...byFolder].map(([folderId, serverUids]) =>
+        api.deleteMessages(folderId, [...serverUids])
       ));
       await refreshAfterMessageAction();
     } catch (error) {
@@ -954,6 +1000,10 @@ export async function openComposer(
   draft?: Partial<State["composerDraft"]>,
   threading?: Partial<State["composerThreading"]>,
 ) {
+  if (app.value.accounts.length === 0) {
+    patch({ lastNotice: "Add an account before composing a message." });
+    return;
+  }
   const folder = app.value.folders.find((item) => item.id === app.value.selectedFolderId);
   const account = app.value.accounts.find((item) => item.dbId === folder?.accountId)
     ?? app.value.accounts[0];

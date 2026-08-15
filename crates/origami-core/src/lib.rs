@@ -12,6 +12,7 @@ pub mod imap;
 pub mod message;
 pub mod model;
 pub mod oauth;
+mod private_fs;
 pub mod provider_hints;
 pub mod smtp;
 pub mod store;

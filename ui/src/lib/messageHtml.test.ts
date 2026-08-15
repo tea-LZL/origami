@@ -31,6 +31,31 @@ describe("sanitizeMessageHtml", () => {
     expect(result.html).toContain('style="font-size:16px"');
   });
 
+  it("keeps a white email surface readable when its stylesheet sets white body text", () => {
+    const result = sanitizeMessageHtml(
+      '<style>body{color:#fff;background:#fff}</style><p>Message body</p>',
+    );
+    const readableBaseline = "color:#141d33 !important;background-color:#fff !important";
+
+    expect(result.srcdoc).toContain(readableBaseline);
+    expect(result.srcdoc.lastIndexOf(readableBaseline)).toBeGreaterThan(
+      result.srcdoc.indexOf("<p>Message body</p>"),
+    );
+  });
+
+  it("keeps wide email layouts horizontally reachable instead of clipping them", () => {
+    const result = sanitizeMessageHtml(
+      '<style>html,body{width:760px;overflow:hidden}</style>'
+        + '<table style="width:1200px"><tr><td>Wide content</td></tr></table>',
+    );
+    const overflowFallback = "overflow-x:auto !important";
+
+    expect(result.srcdoc).toContain('style="width:1200px"');
+    expect(result.srcdoc.lastIndexOf(overflowFallback)).toBeGreaterThan(
+      result.srcdoc.indexOf("Wide content"),
+    );
+  });
+
   it("keeps cid resources available for the future message protocol", () => {
     const result = sanitizeMessageHtml('<img src="cid:logo@example.org" alt="Logo" />');
 

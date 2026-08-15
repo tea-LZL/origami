@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
     value: {
       layout: "three-pane",
       message: null as unknown,
+      messageLoading: false,
       envelopes: [],
       selectedEnvelope: null as unknown,
       lastError: null,
@@ -40,6 +41,7 @@ const message = {
     serverUid: 1,
     messageId: "message@example.org",
     threadId: "thread@example.org",
+    sources: [{ mailboxId: "folder-1", serverUid: 1 }],
   },
   text: "fallback",
   html: '<p>Body</p><img src="https://images.example/photo.png" />',
@@ -73,6 +75,7 @@ describe("MessageView remote content", () => {
     mocks.app.value = {
       layout: "three-pane",
       message,
+      messageLoading: false,
       envelopes: [],
       selectedEnvelope: message.envelope,
       lastError: null,
@@ -94,5 +97,21 @@ describe("MessageView remote content", () => {
     expect(frame).toHaveAttribute("sandbox", "allow-same-origin");
     expect(frame.getAttribute("srcdoc")).toContain("<p>Body</p>");
     expect(frame.getAttribute("srcdoc")).toContain("Content-Security-Policy");
+  });
+
+  it("shows the sender address in the message metadata", () => {
+    render(MessageView);
+
+    expect(screen.getByText("sender@example.org")).toBeInTheDocument();
+  });
+
+  it("announces message loading while showing a non-interactive skeleton", () => {
+    mocks.app.value.message = null;
+    mocks.app.value.messageLoading = true;
+    render(MessageView);
+
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Loading message");
+    expect(status.querySelector('[aria-hidden="true"]')).not.toBeNull();
   });
 });

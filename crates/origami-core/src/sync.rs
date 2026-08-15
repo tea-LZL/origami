@@ -10,7 +10,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
@@ -20,9 +20,9 @@ use crate::blob::BlobStore;
 use crate::config::AccountConfig;
 use crate::imap::ImapBackend;
 use crate::message::{parse as parse_message, parse_display, DisplayMessage, ParsedMessage};
-use crate::model::{Envelope, Flag, Mailbox, OutboxOp, SyncState};
+use crate::model::{Envelope, EnvelopeSource, Flag, Mailbox, OutboxOp, SyncState};
 use crate::smtp::OrigamiSmtp;
-use crate::store::Store;
+use crate::store::{PrefetchCandidate, Store};
 use crate::{Error, Result, SmtpSender};
 use base64::Engine;
 
@@ -86,6 +86,10 @@ pub enum SyncAction {
 
 type BodyLockMap = Mutex<HashMap<(String, u32), Arc<tokio::sync::Mutex<()>>>>;
 
+const PREFETCH_WINDOW: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+const PREFETCH_MAX_MESSAGES: u32 = 500;
+const PREFETCH_MAX_MESSAGE_SIZE: u32 = 8 * 1024 * 1024;
+
 /// Decide the sync action for a folder.
 ///
 /// - `stored`: local checkpoint (`None` = never synced)
@@ -134,6 +138,7 @@ pub struct SyncEngine {
     events: broadcast::Sender<SyncEvent>,
     account_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     body_locks: BodyLockMap,
+    prefetch_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl SyncEngine {
@@ -145,6 +150,7 @@ impl SyncEngine {
             events,
             account_locks: Mutex::new(HashMap::new()),
             body_locks: Mutex::new(HashMap::new()),
+            prefetch_locks: Mutex::new(HashMap::new()),
         }
     }
 
@@ -197,6 +203,99 @@ impl SyncEngine {
             });
         }
         result
+    }
+
+    /// Schedule a non-blocking warm-cache pass for messages received during
+    /// the last seven days. At most one pass runs per account at a time.
+    pub fn spawn_recent_prefetch(
+        self: &Arc<Self>,
+        account_config_id: String,
+        config: AccountConfig,
+    ) {
+        let lock = self
+            .prefetch_locks
+            .lock()
+            .unwrap()
+            .entry(account_config_id.clone())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone();
+        let engine = Arc::clone(self);
+        tokio::spawn(async move {
+            let _guard = lock.lock().await;
+            match engine.prefetch_recent(&account_config_id, &config).await {
+                Ok(cached) if cached > 0 => {
+                    tracing::debug!(account = %account_config_id, cached, "warmed recent message cache");
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::debug!(account = %account_config_id, %error, "recent message prefetch skipped");
+                }
+            }
+        });
+    }
+
+    /// Fetch and cache display-only MIME data without downloading attachment
+    /// bytes or remote resources. Failed candidates remain uncached and are
+    /// retried on the next successful synchronization pass.
+    pub async fn prefetch_recent(
+        &self,
+        account_config_id: &str,
+        config: &AccountConfig,
+    ) -> Result<u32> {
+        let imap = config
+            .imap
+            .as_ref()
+            .ok_or_else(|| Error::Config(format!("account `{account_config_id}` has no IMAP")))?;
+        let backend = ImapBackend::connect(account_config_id, imap).await?;
+        let account_db_id =
+            self.store
+                .upsert_account(account_config_id, &config.name, &config.email)?;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| Error::Backend(format!("system clock before Unix epoch: {error}")))?;
+        let since = now.as_secs().saturating_sub(PREFETCH_WINDOW.as_secs()) as i64;
+        let candidates = group_prefetch_candidates(
+            &account_db_id,
+            self.store
+                .recent_uncached_messages(&account_db_id, since, PREFETCH_MAX_MESSAGES)?,
+        );
+
+        let mut cached = 0u32;
+        for candidate in candidates {
+            if candidate.envelope.size > PREFETCH_MAX_MESSAGE_SIZE {
+                continue;
+            }
+            let Some(source) = candidate.envelope.sources.first() else {
+                continue;
+            };
+            let Some(server_uid) = candidate.envelope.server_uid else {
+                continue;
+            };
+            let display = match backend
+                .fetch_display_message(&candidate.mailbox, server_uid)
+                .await
+            {
+                Ok(display) => display,
+                Err(error) => {
+                    tracing::debug!(
+                        account = %account_config_id,
+                        mailbox = %candidate.mailbox,
+                        server_uid,
+                        %error,
+                        "display prefetch failed"
+                    );
+                    continue;
+                }
+            };
+            let fallback = format!("display:{}:{}", source.mailbox_id, source.server_uid);
+            if self
+                .cache_display_message_sources(&candidate.envelope.sources, &display, &fallback)
+                .is_ok()
+            {
+                cached += 1;
+            }
+        }
+        Ok(cached)
     }
 
     async fn sync_account_inner(
@@ -454,6 +553,28 @@ impl SyncEngine {
         server_uid: u32,
         display: &DisplayMessage,
     ) -> Result<ParsedMessage> {
+        let source = EnvelopeSource {
+            mailbox_id: folder_db_id.to_string(),
+            server_uid,
+        };
+        let fallback = format!("display:{folder_db_id}:{server_uid}");
+        self.cache_display_message_sources(&[source], display, &fallback)
+    }
+
+    /// Cache one normalized display representation for every physical source
+    /// retained by a logical message. This prevents opening a provider label
+    /// copy from causing a second network fetch.
+    pub fn cache_display_message_sources(
+        &self,
+        sources: &[EnvelopeSource],
+        display: &DisplayMessage,
+        fallback_thread_id: &str,
+    ) -> Result<ParsedMessage> {
+        if sources.is_empty() {
+            return Err(Error::Backend(
+                "display message has no physical source".into(),
+            ));
+        }
         let parsed = parse_display(display)
             .ok_or_else(|| Error::Backend("display MIME parsing failed".into()))?;
         let thread_id = parsed
@@ -462,9 +583,25 @@ impl SyncEngine {
             .first()
             .cloned()
             .or_else(|| parsed.headers.message_id.clone())
-            .unwrap_or_else(|| format!("display:{folder_db_id}:{server_uid}"));
-        self.store
-            .set_parsed_message_and_index(folder_db_id, server_uid, &parsed, &thread_id)?;
+            .unwrap_or_else(|| fallback_thread_id.to_string());
+        let mut cached_any = false;
+        for source in sources {
+            if self
+                .store
+                .set_parsed_message_and_index(
+                    &source.mailbox_id,
+                    source.server_uid,
+                    &parsed,
+                    &thread_id,
+                )
+                .is_ok()
+            {
+                cached_any = true;
+            }
+        }
+        if !cached_any {
+            return Err(Error::Backend("display cache source disappeared".into()));
+        }
         Ok(parsed)
     }
 
@@ -699,6 +836,7 @@ impl SyncEngine {
                 continue;
             }
             backoff = Duration::from_secs(1);
+            self.spawn_recent_prefetch(account_config_id.clone(), config.clone());
 
             let Some(imap) = config.imap.clone() else {
                 return;
@@ -737,6 +875,38 @@ impl SyncEngine {
             }
         }
     }
+}
+
+fn group_prefetch_candidates(
+    account_id: &str,
+    candidates: Vec<PrefetchCandidate>,
+) -> Vec<PrefetchCandidate> {
+    let mut grouped = Vec::new();
+    for candidate in candidates {
+        let key = candidate.envelope.logical_id(account_id);
+        let same_logical_message = grouped
+            .iter_mut()
+            .find(|existing: &&mut PrefetchCandidate| {
+                existing.envelope.logical_id(account_id) == key
+                    && candidate.envelope.sources.iter().all(|incoming| {
+                        existing
+                            .envelope
+                            .sources
+                            .iter()
+                            .all(|current| current.mailbox_id != incoming.mailbox_id)
+                    })
+            });
+        if let Some(existing) = same_logical_message {
+            for source in candidate.envelope.sources {
+                if !existing.envelope.sources.contains(&source) {
+                    existing.envelope.sources.push(source);
+                }
+            }
+        } else {
+            grouped.push(candidate);
+        }
+    }
+    grouped
 }
 
 /// Extract indexable plain text from a raw RFC 822 message: prefer the

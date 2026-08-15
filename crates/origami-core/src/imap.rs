@@ -694,6 +694,7 @@ impl MailBackend for ImapBackend {
                 MessageDataItemName::Uid,
                 MessageDataItemName::Flags,
                 MessageDataItemName::Envelope,
+                MessageDataItemName::InternalDate,
                 MessageDataItemName::BodyStructure,
                 MessageDataItemName::Rfc822Size,
             ]);
@@ -835,6 +836,7 @@ fn envelope_item_names() -> MacroOrMessageDataItemNames<'static> {
         MessageDataItemName::Uid,
         MessageDataItemName::Flags,
         MessageDataItemName::Envelope,
+        MessageDataItemName::InternalDate,
         MessageDataItemName::BodyStructure,
         MessageDataItemName::Rfc822Size,
         MessageDataItemName::BodyExt {
@@ -993,6 +995,7 @@ fn envelope_from(seq: u32, items: Vec<MessageDataItem<'static>>) -> Envelope {
     let mut from = Vec::new();
     let mut to = Vec::new();
     let mut date = None;
+    let mut received_at = None;
     let mut size = 0;
 
     for item in items {
@@ -1035,6 +1038,9 @@ fn envelope_from(seq: u32, items: Vec<MessageDataItem<'static>>) -> Envelope {
                 from = env.from.iter().map(address_from).collect();
                 to = env.to.iter().map(address_from).collect();
             }
+            MessageDataItem::InternalDate(value) => {
+                received_at = Some(value.as_ref().timestamp());
+            }
             MessageDataItem::Rfc822Size(n) => size = n,
             MessageDataItem::BodyStructure(body) => {
                 has_attachment = body_structure_has_attachment(&body);
@@ -1058,6 +1064,7 @@ fn envelope_from(seq: u32, items: Vec<MessageDataItem<'static>>) -> Envelope {
         from,
         to,
         date,
+        received_at,
         flags,
         keywords,
         has_attachment,
@@ -1065,6 +1072,7 @@ fn envelope_from(seq: u32, items: Vec<MessageDataItem<'static>>) -> Envelope {
         server_uid: server_uid.or(Some(seq)),
         message_id,
         thread_id,
+        sources: Vec::new(),
     }
 }
 

@@ -69,7 +69,10 @@ pub struct MailboxDto {
     pub source_ids: Vec<String>,
 }
 
-fn collapse_folders(folders: Vec<Mailbox>) -> Vec<MailboxDto> {
+fn collapse_folders_with_counts(
+    folders: Vec<Mailbox>,
+    sent_counts: &HashMap<String, (u32, u32)>,
+) -> Vec<MailboxDto> {
     let mut logical = Vec::with_capacity(folders.len());
     for folder in folders {
         if folder.role != MailboxRole::Sent {
@@ -88,21 +91,30 @@ fn collapse_folders(folders: Vec<Mailbox>) -> Vec<MailboxDto> {
         if let Some(group) = logical.iter_mut().find(|group: &&mut MailboxDto| {
             group.account_id == folder.account_id && group.role == MailboxRole::Sent
         }) {
-            group.total += folder.total;
-            group.unread += folder.unread;
+            if let Some((total, unread)) = sent_counts.get(&folder.account_id) {
+                group.total = *total;
+                group.unread = *unread;
+            } else {
+                group.total += folder.total;
+                group.unread += folder.unread;
+            }
             group.source_ids.push(folder.id.clone());
             if sent_folder_preference(&folder.name) < sent_folder_preference(&group.name) {
                 group.id = folder.id;
                 group.name = folder.name;
             }
         } else {
+            let (total, unread) = sent_counts
+                .get(&folder.account_id)
+                .copied()
+                .unwrap_or((folder.total, folder.unread));
             logical.push(MailboxDto {
                 id: folder.id.clone(),
                 account_id: folder.account_id,
                 name: folder.name,
                 role: MailboxRole::Sent,
-                total: folder.total,
-                unread: folder.unread,
+                total,
+                unread,
                 source_ids: vec![folder.id],
             });
         }
@@ -117,6 +129,30 @@ fn collapse_folders(folders: Vec<Mailbox>) -> Vec<MailboxDto> {
         }
     }
     logical
+}
+
+fn collapse_folders_for_store(
+    store: &origami_core::store::Store,
+    folders: Vec<Mailbox>,
+) -> CmdResult<Vec<MailboxDto>> {
+    let mut source_ids_by_account: HashMap<String, Vec<String>> = HashMap::new();
+    for folder in &folders {
+        if folder.role == MailboxRole::Sent {
+            source_ids_by_account
+                .entry(folder.account_id.clone())
+                .or_default()
+                .push(folder.id.clone());
+        }
+    }
+
+    let mut sent_counts = HashMap::new();
+    for (account_id, source_ids) in source_ids_by_account {
+        sent_counts.insert(
+            account_id,
+            store.logical_envelope_counts(&source_ids).map_err(err)?,
+        );
+    }
+    Ok(collapse_folders_with_counts(folders, &sent_counts))
 }
 
 fn sent_folder_preference(name: &str) -> u8 {
@@ -169,9 +205,9 @@ pub fn list_folders(
     account_db_id: Option<String>,
 ) -> CmdResult<Vec<MailboxDto>> {
     match account_db_id {
-        Some(id) => Ok(collapse_folders(
-            state.store.list_folders(&id).map_err(err)?,
-        )),
+        Some(id) => {
+            collapse_folders_for_store(&state.store, state.store.list_folders(&id).map_err(err)?)
+        }
         None => {
             let config = state.read_config();
             let mut all = Vec::new();
@@ -182,7 +218,7 @@ pub fn list_folders(
                     .map_err(err)?;
                 all.extend(state.store.list_folders(&db_id).map_err(err)?);
             }
-            let mut all = collapse_folders(all);
+            let mut all = collapse_folders_for_store(&state.store, all)?;
             // INBOX first, then role order, then the rest by name.
             all.sort_by_key(folder_sort_key);
             Ok(all)
@@ -290,7 +326,7 @@ pub async fn get_message(
         state.resolve_folder(&folder_id).map_err(err)?;
     let parsed: ParsedMessage = match state
         .store
-        .parsed_message(&folder_id, server_uid)
+        .parsed_message_for_logical_message(&folder_id, server_uid)
         .map_err(err)?
     {
         Some(parsed) => parsed,
@@ -1014,6 +1050,9 @@ pub async fn retry_outbox(state: State<'_, AppState>, account_id: String) -> Cmd
         .sync_account(&account_id, &account)
         .await
         .map_err(err)?;
+    state
+        .engine
+        .spawn_recent_prefetch(account_id.clone(), account);
     Ok(())
 }
 
@@ -1285,10 +1324,14 @@ pub async fn sync_now(state: State<'_, AppState>, account_id: Option<String>) ->
             .sync_account(&id, &account)
             .await
             .map_err(err)?;
+        state.engine.spawn_recent_prefetch(id.clone(), account);
     } else {
         let config = state.read_config();
         for (id, account) in &config.accounts {
             state.engine.sync_account(id, account).await.map_err(err)?;
+            state
+                .engine
+                .spawn_recent_prefetch(id.clone(), account.clone());
         }
     }
     Ok(())
@@ -1622,7 +1665,7 @@ mod tests {
             },
         ];
 
-        let logical = collapse_folders(folders);
+        let logical = collapse_folders_with_counts(folders, &HashMap::new());
         let sent = logical
             .iter()
             .find(|folder| folder.account_id == "account-a" && folder.role == MailboxRole::Sent)

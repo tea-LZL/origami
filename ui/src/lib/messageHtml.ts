@@ -136,7 +136,15 @@ function emailDocument(html: string, imageSources: ReadonlySet<string>): string 
   return '<!doctype html><html><head><meta charset="utf-8">'
     + `<meta http-equiv="Content-Security-Policy" content="${escapeAttribute(contentSecurityPolicy)}">`
     + "<style>html,body{margin:0;padding:0}</style>"
-    + `</head><body>${html}</body></html>`;
+    // Email styles are preserved inside the body for compatibility with
+    // real-world newsletter markup. Apply the readable fallback after them
+    // so a global `body { color: white }` cannot produce white-on-white text.
+    + `</head><body>${html}`
+    + '<style id="origami-email-defaults">'
+    + "html,body{margin:0;padding:0;overflow-x:auto !important;"
+    + "color:#141d33 !important;"
+    + "background-color:#fff !important;color-scheme:light}"
+    + "</style></body></html>";
 }
 
 function escapeAttribute(value: string): string {

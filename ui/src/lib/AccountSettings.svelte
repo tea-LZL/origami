@@ -107,9 +107,9 @@
 </script>
 
 {#if open}
-  <div class="overlay" role="dialog" aria-modal="true">
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="account-settings-title">
     <div class="dialog">
-      <h2>Account settings</h2>
+      <h2 id="account-settings-title">Account settings</h2>
       <form onsubmit={(e) => { e.preventDefault(); save(); }}>
         <label>Account name <input type="text" bind:value={name} /></label>
         <label>Email address <input type="email" bind:value={email} /></label>
@@ -166,7 +166,7 @@
 <style>
   .overlay {
     position: fixed; inset: 0;
-    background: rgba(0,0,0,0.4);
+    background: var(--overlay);
     display: grid; place-items: center; z-index: 80;
   }
   .dialog {
@@ -176,7 +176,8 @@
     padding: 24px;
     max-width: 440px;
     width: 90vw;
-    box-shadow: 0 12px 48px rgba(0,0,0,0.35);
+    box-shadow: var(--shadow-panel);
+    animation: surface-in var(--transition-med) both;
   }
   h2 { margin: 0 0 16px; font-size: 16px; }
   label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--fg-muted); margin-bottom: 12px; }
@@ -187,6 +188,7 @@
     padding: 8px 10px;
     color: var(--fg);
     font: inherit;
+    min-height: 36px;
   }
   fieldset { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px; }
   fieldset legend { font-size: 12px; color: var(--fg-subtle); }
@@ -198,11 +200,11 @@
   .oauth-reconnect div { display: grid; gap: 3px; }
   .oauth-reconnect strong { font-size: 12px; color: var(--fg); }
   .oauth-reconnect span { font-size: 10px; color: var(--fg-subtle); }
-  .oauth-reconnect button { flex: none; padding: 7px 10px; border-radius: var(--radius-sm); background: var(--accent); color: var(--accent-fg); font-weight: 650; }
+  .oauth-reconnect button { flex: none; padding: 7px 10px; min-height: 36px; border-radius: var(--radius-sm); background: var(--accent); color: var(--accent-fg); font-weight: 650; }
   .oauth-reconnect button:disabled { opacity: 0.6; }
   .err { color: var(--danger); font-size: 12px; }
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
-  .actions button { padding: 6px 16px; border-radius: var(--radius-sm); font-size: 13px; }
+  .actions button { padding: 6px 16px; min-height: 36px; border-radius: var(--radius-sm); font-size: 13px; }
   .actions button:first-child { color: var(--fg-muted); }
   .actions button:last-child { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
   .actions button:last-child:disabled { opacity: 0.6; }

@@ -66,14 +66,14 @@
 </script>
 
 {#if app.value.outboxAccountId}
-  <div class="overlay">
+  <div class="overlay" role="presentation">
     <dialog open aria-labelledby="outbox-title">
       <header>
         <div>
           <span>{accountName}</span>
           <h2 id="outbox-title">Outbox</h2>
         </div>
-        <button class="close" onclick={close} aria-label="Close Outbox">×</button>
+        <button type="button" class="close" onclick={close} aria-label="Close Outbox">×</button>
       </header>
 
       <p class="intro">Operations waiting for the mail server. Message contents and attachments are never shown here.</p>
@@ -109,8 +109,8 @@
 
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <footer>
-        <button onclick={close}>Close</button>
-        <button class="primary" disabled={retrying || entries.length === 0} onclick={retry}>
+        <button type="button" onclick={close}>Close</button>
+        <button type="button" class="primary" disabled={retrying || entries.length === 0} onclick={retry}>
           {retrying ? "Retrying…" : "Retry now"}
         </button>
       </footer>
@@ -121,13 +121,14 @@
 <style>
   .overlay {
     position: fixed; inset: 0; z-index: 85; display: grid; place-items: center;
-    padding: 16px; background: rgba(5, 10, 24, 0.52);
+    padding: 16px; background: var(--overlay);
   }
   dialog {
     position: static; width: min(560px, 100%); max-height: min(720px, calc(100vh - 32px));
     margin: 0; padding: 20px; overflow: hidden; border: 1px solid var(--border);
     border-radius: var(--radius-lg); display: grid; grid-template-rows: auto auto minmax(80px, 1fr) auto auto;
-    gap: 12px; background: var(--bg-raised); box-shadow: 0 20px 60px rgba(0,0,0,0.34); color: var(--fg);
+    gap: 12px; background: var(--bg-raised); box-shadow: var(--shadow-panel); color: var(--fg);
+    animation: surface-in var(--transition-med) both;
   }
   header { display: flex; align-items: flex-start; justify-content: space-between; }
   header span { color: var(--accent); font-size: 9px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
@@ -149,7 +150,7 @@
   .empty strong { color: var(--fg); font-size: 13px; }
   .error { margin: 0; color: var(--danger); font-size: 11px; }
   footer { display: flex; justify-content: flex-end; gap: 8px; }
-  footer button { padding: 7px 12px; border-radius: var(--radius-sm); color: var(--fg-muted); }
+  footer button { padding: 7px 12px; min-height: 36px; border-radius: var(--radius-sm); color: var(--fg-muted); }
   footer .primary { background: var(--accent); color: var(--accent-fg); font-weight: 700; }
   footer button:disabled { opacity: 0.55; }
 </style>

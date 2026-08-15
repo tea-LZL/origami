@@ -148,6 +148,7 @@ pub fn parse_display(display: &DisplayMessage) -> Option<ParsedMessage> {
     let headers = parser.parse_headers(&display.headers)?;
     let mut text = None;
     let mut html = None;
+    let mut html_from_plain_text = None;
     let mut parse_warnings = Vec::new();
 
     for section in &display.sections {
@@ -160,15 +161,37 @@ pub fn parse_display(display: &DisplayMessage) -> Option<ParsedMessage> {
             parse_warnings.push(format!("Could not parse MIME section {}", section.path));
             continue;
         };
-        if text.is_none() {
-            text = message.body_text(0).map(|value| value.into_owned());
-        }
-        if html.is_none() {
-            html = message.body_html(0).map(|value| value.into_owned());
+        let part = display.parts.iter().find(|part| part.path == section.path);
+        if part.is_some_and(|part| part.html) {
+            // Do not let the preceding text/plain alternative populate the
+            // HTML field with mail-parser's text-to-HTML fallback. The real
+            // HTML alternative must win regardless of MIME section order.
+            if html.is_none() {
+                html = message.body_html(0).map(|value| value.into_owned());
+            }
+            if text.is_none() {
+                text = message.body_text(0).map(|value| value.into_owned());
+            }
+        } else if part.is_some_and(|part| part.text) {
+            if text.is_none() {
+                text = message.body_text(0).map(|value| value.into_owned());
+            }
+            if html_from_plain_text.is_none() {
+                html_from_plain_text = message.body_html(0).map(|value| value.into_owned());
+            }
+        } else {
+            // Keep malformed or incomplete BODYSTRUCTURE responses usable as
+            // text, but never treat an unknown section as authoritative HTML.
+            if text.is_none() {
+                text = message.body_text(0).map(|value| value.into_owned());
+            }
         }
         if message.parts.iter().any(|part| part.is_encoding_problem) {
             parse_warnings.push(format!("MIME decoding problem in part {}", section.path));
         }
+    }
+    if html.is_none() {
+        html = html_from_plain_text;
     }
 
     Some(ParsedMessage {
@@ -410,6 +433,49 @@ mod tests {
         assert_eq!(parsed.text.as_deref(), Some("hello display"));
         assert_eq!(parsed.headers.message_id, None);
         assert_eq!(body_text_for_index(&parsed), "hello display");
+    }
+
+    #[test]
+    fn prefers_html_alternative_over_plain_text_fallback() {
+        let display = DisplayMessage {
+            headers: b"From: Alice <alice@example.org>\r\nSubject: alternatives\r\n\r\n".to_vec(),
+            parts: vec![
+                MimePart {
+                    path: "1".to_string(),
+                    mime: "text/plain".to_string(),
+                    text: true,
+                    ..MimePart::default()
+                },
+                MimePart {
+                    path: "2".to_string(),
+                    mime: "text/html".to_string(),
+                    text: true,
+                    html: true,
+                    ..MimePart::default()
+                },
+            ],
+            attachments: Vec::new(),
+            sections: vec![
+                DisplaySection {
+                    path: "1".to_string(),
+                    mime_headers: b"Content-Type: text/plain; charset=utf-8\r\n\r\n".to_vec(),
+                    body: b"plain alternative".to_vec(),
+                },
+                DisplaySection {
+                    path: "2".to_string(),
+                    mime_headers: b"Content-Type: text/html; charset=utf-8\r\n\r\n".to_vec(),
+                    body: b"<html><head><style>table { color: red; }</style></head><body><table><tr><td>styled newsletter</td></tr></table></body></html>".to_vec(),
+                },
+            ],
+        };
+
+        let parsed = parse_display(&display).unwrap();
+        assert_eq!(parsed.text.as_deref(), Some("plain alternative"));
+        let html = parsed.html.as_deref().unwrap();
+        assert!(html.contains("<table>"));
+        assert!(html.contains("styled newsletter"));
+        assert!(html.contains("table { color: red; }"));
+        assert!(!html.contains("plain alternative"));
     }
 
     #[test]

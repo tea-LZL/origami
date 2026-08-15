@@ -151,10 +151,10 @@
 </script>
 
 {#if open}
-  <div class="overlay" role="dialog" aria-modal="true">
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="add-account-title">
     <div class="wizard">
       {#if step === 0}
-        <h2>Add an email account</h2>
+        <h2 id="add-account-title">Add an email account</h2>
         <p>Origami will look up the best configuration for your provider.</p>
         <form onsubmit={(e) => { e.preventDefault(); detect(); }}>
           <label>
@@ -174,7 +174,7 @@
           </div>
         </form>
       {:else if step === 1}
-        <h2>Configure account</h2>
+        <h2 id="add-account-title">Configure account</h2>
         {#if description}<p class="provider">{description}</p>{/if}
 
         <form onsubmit={(e) => e.preventDefault()}>
@@ -224,10 +224,10 @@
           </div>
         </form>
       {:else if step === 2}
-        <h2>Account added!</h2>
+        <h2 id="add-account-title">Account added!</h2>
         <p>{email} is configured and syncing.</p>
         <div class="actions">
-          <button class="next" onclick={close}>Done</button>
+          <button type="button" class="next" onclick={close}>Done</button>
         </div>
       {/if}
     </div>
@@ -237,7 +237,7 @@
 <style>
   .overlay {
     position: fixed; inset: 0;
-    background: rgba(0, 0, 0, 0.45);
+    background: var(--overlay);
     display: grid; place-items: center; z-index: 50;
   }
   .wizard {
@@ -247,7 +247,8 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     padding: 28px;
-    box-shadow: 0 12px 48px rgba(0,0,0,0.35);
+    box-shadow: var(--shadow-panel);
+    animation: surface-in var(--transition-med) both;
   }
   h2 { margin: 0 0 4px; font-size: 18px; }
   p { color: var(--fg-muted); font-size: 13px; margin: 0 0 16px; }
@@ -256,7 +257,7 @@
   label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--fg-muted); margin-bottom: 12px; }
   label input, fieldset input {
     background: var(--bg-sunken); border: 1px solid var(--border);
-    border-radius: var(--radius-sm); padding: 8px 10px; color: var(--fg); font: inherit;
+    border-radius: var(--radius-sm); padding: 8px 10px; color: var(--fg); font: inherit; min-height: 36px;
   }
   fieldset { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px; }
   fieldset legend { font-size: 12px; color: var(--fg-subtle); }
@@ -264,7 +265,7 @@
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
   .cancel { padding: 8px 16px; border-radius: var(--radius-sm); color: var(--fg-muted); }
   .cancel:hover { background: var(--bg-sunken); }
-  .next { background: var(--accent); color: var(--accent-fg); padding: 8px 20px; border-radius: var(--radius-sm); font-weight: 600; }
+  .next { background: var(--accent); color: var(--accent-fg); padding: 8px 20px; min-height: 36px; border-radius: var(--radius-sm); font-weight: 600; }
   .next:disabled { opacity: 0.6; }
   .next:hover:not(:disabled) { background: var(--accent-hover); }
   .oauth {

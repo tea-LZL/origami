@@ -47,7 +47,12 @@
   });
 
   onMount(async () => {
-    info = await invoke<AppInfo>("app_info");
+    try {
+      info = await invoke<AppInfo>("app_info");
+    } catch (error) {
+      info = { name: "Origami", coreVersion: "unknown", shellVersion: "unknown" };
+      app.value.lastError = `Could not read application diagnostics: ${String(error)}`;
+    }
     await bootstrap();
   });
 
@@ -89,9 +94,9 @@
 <div class="shell">
   <Titlebar />
 
-  <main class="content">
+  <main class="content" aria-label="Origami mail workspace">
     {#if !info || !app.value.ready}
-      <div class="loading">
+      <div class="loading" role="status" aria-live="polite">
         <OrigamiBird size={96} />
         <p>Loading Origami…</p>
       </div>
@@ -137,7 +142,16 @@
     {/if}
   </main>
 
-  <button class="fab" onclick={() => openComposer()} aria-label="Compose">✎</button>
+  {#if info && app.value.ready && app.value.accounts.length > 0}
+    <button
+      class="fab"
+      type="button"
+      onclick={() => openComposer()}
+      aria-label="Compose new message"
+      aria-keyshortcuts="N"
+      title="Compose new message (N)"
+    >Compose</button>
+  {/if}
   {#if ComposerComponent}
     <ComposerComponent />
   {/if}
@@ -146,14 +160,14 @@
   <Outbox />
 
   {#if app.value.lastError}
-    <button class="toast" type="button" onclick={() => (app.value.lastError = null)}>
+    <button class="toast" type="button" aria-live="assertive" onclick={() => (app.value.lastError = null)}>
       {app.value.lastError}
     </button>
   {/if}
   {#if app.value.undoAction}
     <div class="undo-toast" role="status">
       <span>{app.value.undoAction.message}</span>
-      <button onclick={undoLastMessageAction}>Undo</button>
+      <button type="button" onclick={undoLastMessageAction}>Undo</button>
     </div>
   {/if}
   {#if app.value.lastNotice}
@@ -164,9 +178,9 @@
 </div>
 
 <style>
-  .shell { height: 100%; display: flex; flex-direction: column; }
+  .shell { height: 100%; display: flex; flex-direction: column; background: var(--bg); }
   .content { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-  .pane-row { flex: 1; display: flex; min-height: 0; }
+  .pane-row { flex: 1; display: flex; min-height: 0; animation: surface-in var(--transition-med) both; }
   .loading, .empty {
     flex: 1; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 12px;
@@ -178,16 +192,20 @@
     position: fixed;
     right: 24px;
     bottom: 24px;
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
+    min-width: 56px;
+    height: 44px;
+    padding: 0 16px;
+    border-radius: var(--radius-md);
     background: var(--accent);
     color: var(--accent-fg);
-    font-size: 24px;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+    font-size: 13px;
+    font-weight: 750;
+    box-shadow: var(--shadow-panel);
     z-index: 10;
+    animation: surface-in var(--transition-med) both;
   }
-  .fab:hover { background: var(--accent-hover); }
+  .fab:hover { background: var(--accent-hover); transform: translateY(-2px); }
+  .fab:active { transform: translateY(1px); }
   .add-btn {
     margin-top: 12px;
     background: var(--accent);
@@ -196,13 +214,14 @@
     border-radius: var(--radius-sm);
     font-weight: 600;
     font-size: 14px;
+    min-height: 36px;
   }
   .add-btn:hover { background: var(--accent-hover); }
   .toast {
     position: fixed; left: 50%; bottom: 24px;
-    transform: translateX(-50%);
+    translate: -50% 0;
     background: var(--danger);
-    color: white;
+    color: var(--danger-fg);
     padding: 8px 16px;
     border-radius: var(--radius-sm);
     font-size: 13px;
@@ -214,7 +233,7 @@
     left: 50%;
     bottom: 24px;
     z-index: 101;
-    transform: translateX(-50%);
+    translate: -50% 0;
     padding: 9px 10px 9px 14px;
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
@@ -223,7 +242,7 @@
     gap: 18px;
     background: var(--fg);
     color: var(--bg-raised);
-    box-shadow: 0 8px 28px rgba(0,0,0,0.28);
+    box-shadow: var(--shadow-panel);
     font-size: 12px;
   }
   .undo-toast button {
@@ -244,7 +263,7 @@
     border-radius: var(--radius-md);
     background: var(--bg-raised);
     color: var(--fg);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    box-shadow: var(--shadow-panel);
     font-size: 12px;
     text-align: left;
   }
@@ -282,14 +301,14 @@
       right: 16px;
       left: 16px;
       bottom: 16px;
-      transform: none;
+      translate: none;
       text-align: left;
     }
     .undo-toast {
       right: 16px;
       left: 16px;
       bottom: 16px;
-      transform: none;
+      translate: none;
       justify-content: space-between;
     }
     .notice-toast {

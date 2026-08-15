@@ -6,6 +6,7 @@ use origami_core::config::{
     parse_time, NotificationConfig, NotificationFolderScope, NotificationPreview,
 };
 use origami_core::model::MailboxRole;
+use std::collections::HashSet;
 
 pub fn new_mail_notification(
     settings: &NotificationConfig,
@@ -13,9 +14,7 @@ pub fn new_mail_notification(
     subject: &str,
     from: &str,
 ) {
-    let now = chrono::Local::now();
-    let minute = (now.hour() * 60 + now.minute()) as u16;
-    if !allows_folder(settings.folder_scope, folder_role) || is_quiet_at(settings, minute) {
+    if !should_notify(settings, folder_role) {
         return;
     }
     let (summary, body) = render_preview(settings.preview, subject, from);
@@ -27,6 +26,16 @@ pub fn new_mail_notification(
         .icon("origami")
         .timeout(notify_rust::Timeout::Milliseconds(8000))
         .show();
+}
+
+pub fn should_notify(settings: &NotificationConfig, folder_role: Option<MailboxRole>) -> bool {
+    let now = chrono::Local::now();
+    let minute = (now.hour() * 60 + now.minute()) as u16;
+    allows_folder(settings.folder_scope, folder_role) && !is_quiet_at(settings, minute)
+}
+
+pub(crate) fn claim_notification(seen: &mut HashSet<String>, key: &str) -> bool {
+    seen.insert(key.to_string())
 }
 
 fn allows_folder(scope: NotificationFolderScope, role: Option<MailboxRole>) -> bool {
@@ -122,5 +131,13 @@ mod tests {
         assert!(is_quiet_at(&settings, 6 * 60 + 59));
         assert!(!is_quiet_at(&settings, 7 * 60));
         assert!(!is_quiet_at(&settings, 12 * 60));
+    }
+
+    #[test]
+    fn logical_message_notifications_are_claimed_once() {
+        let mut seen = HashSet::new();
+        assert!(claim_notification(&mut seen, "account:message"));
+        assert!(!claim_notification(&mut seen, "account:message"));
+        assert!(claim_notification(&mut seen, "account:other-message"));
     }
 }

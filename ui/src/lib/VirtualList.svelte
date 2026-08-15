@@ -158,6 +158,7 @@
     padding: 8px 12px;
     color: var(--fg);
     cursor: pointer;
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
   }
   .row:hover {
     background: var(--bg-sunken);

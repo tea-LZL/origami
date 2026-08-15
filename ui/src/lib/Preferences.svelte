@@ -83,7 +83,7 @@
 </script>
 
 {#if app.value.preferencesOpen}
-  <div class="overlay">
+  <div class="overlay" role="presentation">
     <dialog
       open
       class="preferences"
@@ -94,7 +94,7 @@
           <span>Origami</span>
           <h2 id="preferences-title">Preferences</h2>
         </div>
-        <button onclick={() => app.value.preferencesOpen = false} aria-label="Close preferences">×</button>
+        <button type="button" onclick={() => app.value.preferencesOpen = false} aria-label="Close preferences">×</button>
       </header>
 
       <section aria-labelledby="appearance-title">
@@ -242,7 +242,7 @@
 
           <div class="actions">
             {#if saved}<span role="status">Saved</span>{/if}
-            <button class="primary" disabled={saving} onclick={saveNotifications}>
+            <button type="button" class="primary" disabled={saving} onclick={saveNotifications}>
               {saving ? "Saving…" : "Save notifications"}
             </button>
           </div>
@@ -260,7 +260,7 @@
     z-index: 80;
     display: grid;
     place-items: center;
-    background: rgba(5, 10, 24, 0.48);
+    background: var(--overlay);
   }
   .preferences {
     position: static;
@@ -274,7 +274,8 @@
     display: grid;
     gap: 14px;
     background: var(--bg-raised);
-    box-shadow: 0 20px 60px rgba(0,0,0,0.32);
+    box-shadow: var(--shadow-panel);
+    animation: surface-in var(--transition-med) both;
     color: var(--fg);
   }
   header { display: flex; align-items: flex-start; justify-content: space-between; }
@@ -329,11 +330,11 @@
   .time-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .time-row label { grid-template-columns: auto 1fr; gap: 8px; font-size: 11px; }
   .actions { display: flex; min-height: 32px; align-items: center; justify-content: flex-end; gap: 12px; }
-  .actions span { color: var(--success, #39805c); font-size: 11px; font-weight: 700; }
-  .primary { padding: 7px 11px; border-radius: var(--radius-sm); background: var(--accent); color: white; font-weight: 750; }
+  .actions span { color: var(--success); font-size: 11px; font-weight: 700; }
+  .primary { min-height: 36px; padding: 7px 11px; border-radius: var(--radius-sm); background: var(--accent); color: var(--accent-fg); font-weight: 750; }
   .primary:disabled { opacity: 0.55; }
   p { margin: 2px 0 0; color: var(--fg-subtle); font-size: 11px; }
-  .error { color: var(--danger, #b84a4a); }
+  .error { color: var(--danger); }
   @media (max-width: 520px) {
     label { grid-template-columns: 1fr; gap: 6px; }
     input[type="checkbox"] { justify-self: start; }

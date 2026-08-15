@@ -83,6 +83,9 @@ pub struct Envelope {
     pub to: Vec<Address>,
     /// RFC 5322 date, kept as string until the store layer normalizes it.
     pub date: Option<String>,
+    /// Server-received timestamp (IMAP INTERNALDATE), in Unix seconds.
+    #[serde(default)]
+    pub received_at: Option<i64>,
     pub flags: Vec<Flag>,
     pub has_attachment: bool,
     /// RFC822.SIZE in bytes.
@@ -95,6 +98,86 @@ pub struct Envelope {
     pub thread_id: Option<String>,
     /// IMAP keyword flags (tag names, e.g. "$Forwarded", "Important").
     pub keywords: Vec<String>,
+    /// Physical folder/UID references for this logical message.
+    #[serde(default)]
+    pub sources: Vec<EnvelopeSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvelopeSource {
+    pub mailbox_id: String,
+    pub server_uid: u32,
+}
+
+impl Envelope {
+    /// Stable identity for the same message copied across provider labels.
+    /// Message-ID is the strongest component when present, but it is combined
+    /// with stable envelope metadata because broken senders sometimes reuse a
+    /// Message-ID for unrelated messages. The metadata fallback is deliberately
+    /// limited to fields that survive label copies.
+    pub fn logical_id(&self, account_id: &str) -> String {
+        let account = account_id.trim().to_ascii_lowercase();
+        let metadata = self.metadata_identity();
+        if let Some(message_id) = self
+            .message_id
+            .as_deref()
+            .map(normalize_message_id)
+            .filter(|value| !value.is_empty())
+        {
+            return format!("{account}:message-id:{message_id}|{metadata}");
+        }
+
+        if self
+            .date
+            .as_deref()
+            .is_some_and(|date| !date.trim().is_empty())
+            && self.size > 0
+            && !self.from.is_empty()
+        {
+            return format!("{account}:metadata:{metadata}");
+        }
+
+        // Without a Message-ID and without enough stable metadata, merging
+        // would be more dangerous than showing a duplicate. The app-owned id
+        // is unique for each physical row and therefore gives us a safe stop.
+        format!("{account}:physical:{}", self.id)
+    }
+
+    fn metadata_identity(&self) -> String {
+        let mut from = self
+            .from
+            .iter()
+            .map(|address| address.addr.trim().to_ascii_lowercase())
+            .collect::<Vec<_>>();
+        let mut to = self
+            .to
+            .iter()
+            .map(|address| address.addr.trim().to_ascii_lowercase())
+            .collect::<Vec<_>>();
+        from.sort();
+        to.sort();
+        format!(
+            "{}|{}|{}|{}|{}",
+            normalize_text(&self.subject),
+            from.join(","),
+            to.join(","),
+            self.date.as_deref().map(normalize_text).unwrap_or_default(),
+            self.size,
+        )
+    }
+}
+
+fn normalize_message_id(value: &str) -> String {
+    value.trim().trim_matches(['<', '>']).to_ascii_lowercase()
+}
+
+fn normalize_text(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -208,6 +291,7 @@ mod tests {
             from: Vec::new(),
             to: Vec::new(),
             date: None,
+            received_at: None,
             flags: Vec::new(),
             has_attachment: false,
             size: 0,
@@ -215,6 +299,7 @@ mod tests {
             message_id: None,
             thread_id: None,
             keywords: Vec::new(),
+            sources: Vec::new(),
         };
 
         let mailbox = serde_json::to_value(mailbox).unwrap();
