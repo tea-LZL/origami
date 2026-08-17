@@ -324,21 +324,26 @@
     flex: 1;
     min-width: 0;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
     background: var(--bg-raised);
-    overflow-y: auto;
+    overflow: hidden;
     padding: 24px 32px;
-    scrollbar-gutter: stable;
   }
   .message > header,
   .message > footer {
+    flex-shrink: 0;
     width: 100%;
     max-width: 760px;
     margin-inline: auto;
   }
   .message > .body {
-    width: 100%;
+    flex: 1;
     min-width: 0;
-    margin-inline: auto;
+    min-height: 0;
+    width: 100%;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
   }
   .message-loading {
     width: 100%;
@@ -406,6 +411,7 @@
   .details dd { min-width: 0; margin: 0; color: var(--fg-muted); overflow-wrap: anywhere; user-select: text; }
   .remote-bar,
   .parse-warning {
+    flex-shrink: 0;
     width: 100%;
     max-width: 760px;
     margin: 0 auto 12px;
@@ -462,13 +468,16 @@
   .email-frame {
     display: block;
     width: 100%;
+    max-width: 760px;
+    margin-inline: auto;
     min-height: 180px;
     height: 180px;
     border: 0;
     background: var(--bg-raised);
   }
   .text {
-    margin: 0;
+    margin: 0 auto;
+    max-width: 760px;
     font-family: var(--font-mono);
     font-size: 14px;
     line-height: 1.55;
