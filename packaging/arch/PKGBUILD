@@ -1,0 +1,56 @@
+# Maintainer: tea-LZL <nightw227@gmail.com>
+# Builds Origami from the enclosing repository checkout.
+
+pkgname=origami
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="A fast, offline-first desktop email client"
+arch=('x86_64')
+url="https://gitlab.com/tea-LZL/origami"
+license=('MIT' 'Apache-2.0')
+depends=(
+  'webkit2gtk-4.1'
+  'gtk3'
+  'libsoup3'
+  'libsecret'
+  'libayatana-appindicator'
+  'dbus'
+  'xdg-utils'
+)
+makedepends=('cargo' 'nodejs' 'npm' 'git')
+source=()
+sha256sums=()
+# Rust release profile already enables fat LTO; extra makepkg C LTO breaks
+# linking rusqlite's bundled SQLite archive with the Arch linker.
+options=('!strip' '!lto' '!debug')
+
+build() {
+  local repo_root="${startdir}/../.."
+
+  cd "$repo_root"
+  npm ci --prefix ui
+  npm run build --prefix ui
+  CARGO_TARGET_DIR="$repo_root/target" cargo build --locked --release -p origami-app
+}
+
+package() {
+  local repo_root="${startdir}/../.."
+
+  cd "$repo_root"
+  install -Dm755 target/release/origami \
+    "$pkgdir/usr/bin/origami"
+  install -Dm644 assets/origami.desktop \
+    "$pkgdir/usr/share/applications/origami.desktop"
+  install -Dm644 crates/origami-app/icons/32x32.png \
+    "$pkgdir/usr/share/icons/hicolor/32x32/apps/origami.png"
+  install -Dm644 crates/origami-app/icons/64x64.png \
+    "$pkgdir/usr/share/icons/hicolor/64x64/apps/origami.png"
+  install -Dm644 crates/origami-app/icons/128x128.png \
+    "$pkgdir/usr/share/icons/hicolor/128x128/apps/origami.png"
+  install -Dm644 crates/origami-app/icons/128x128@2x.png \
+    "$pkgdir/usr/share/icons/hicolor/256x256/apps/origami.png"
+  install -Dm644 crates/origami-app/icons/icon.png \
+    "$pkgdir/usr/share/icons/hicolor/512x512/apps/origami.png"
+  install -Dm644 assets/origami-bird.svg \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/origami.svg"
+}

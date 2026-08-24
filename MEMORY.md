@@ -1,6 +1,6 @@
 # Origami repository memory
 
-> Operational snapshot for developers and agents. Updated 2026-08-15. Verify this file against source before changing a release claim.
+> Operational snapshot for developers and agents. Updated 2026-08-24. Verify this file against source before changing a release claim.
 
 ## Project identity
 
@@ -88,12 +88,12 @@ The uncommitted worktree currently also contains the logical-source projection, 
 ### Release blockers
 
 1. **Distribution and automation**
-   - CI is tracked; this worktree corrects its `main`/`master` trigger mismatch and adds UI tests, but the revised workflow has not run remotely;
-   - no tracked release workflow;
-   - no `PKGBUILD` despite README/plan references;
-   - Tauri currently targets `deb`, not an Arch package;
+   - GitLab CI now verifies Rust/UI, builds an Arch package in an Arch container, and publishes tagged package/checksum artifacts; the remote pipeline is not yet verified;
+   - `packaging/arch/PKGBUILD` is tracked and installs the native binary, desktop entry, and hicolor icons;
+   - the Tauri `deb` target remains, while Arch distribution uses the tracked PKGBUILD;
+   - signed pacman repository support is deferred until the app matures;
    - manifest declares MIT/Apache-2.0, but license text files are absent;
-   - no signed/checksummed release artifacts or v1 tag.
+   - no v1 tag yet.
 2. **Provider evidence**
    - Gmail, Outlook, Fastmail, Posteo, and Dovecot release matrix is not recorded;
    - current real-provider OAuth cannot be revalidated until the revoked/invalid grant is reauthorized.
@@ -179,6 +179,7 @@ Last verified locally on 2026-08-15:
 - `npm audit --audit-level=moderate` reported 0 vulnerabilities.
 - A real-browser CSS check confirmed the 220 ms surface animation, centered toast geometry, and disabled reduced-motion pulse.
 - `cargo tauri build --no-bundle --ci` built the optimized native binary at `target/release/origami`.
+- `packaging/arch/PKGBUILD` built `origami-0.1.0-1-x86_64.pkg.tar.zst`; checksum, package metadata, archive contents, and desktop entry validation passed on 2026-08-24.
 
 This does not replace remote CI, Docker/live-provider tests, package installation, accessibility/performance gates, or a native daily-driver smoke.
 
@@ -197,6 +198,6 @@ For native release confidence, also build/run the Tauri app on WebKitGTK and smo
 
 - The plan's architecture sections mix implemented behavior with target-state language; verify symbols before relying on them.
 - The plan's UI tree mentions Tailwind and `components/routes/stores`; the current UI uses custom CSS and a flatter `ui/src/lib` structure.
-- `packaging/arch/PKGBUILD` remains a planned path; no PKGBUILD is tracked.
-- The tracked CI baseline watched `main` although this repository uses `master`; the current worktree corrects the trigger and adds UI tests, but local green checks are not equivalent to a remote run.
+- `packaging/arch/PKGBUILD` and `.gitlab-ci.yml` are tracked; local package validation passed, but the first remote pipeline/release remains pending.
+- GitHub CI remains the existing baseline; GitLab CI now watches merge requests, branches, and semantic version tags.
 - Release checkboxes must be updated only from real build, provider, package, and native-smoke evidence.
