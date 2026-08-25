@@ -6,6 +6,13 @@
   import Select from "./Select.svelte";
 
   let editor: Editor | null = null;
+  let toInput: HTMLInputElement | null = $state(null);
+
+  $effect(() => {
+    if (!app.value.composerOpen || !toInput) return;
+    const frame = requestAnimationFrame(() => toInput?.focus());
+    return () => cancelAnimationFrame(frame);
+  });
 
   $effect(() => {
     if (!app.value.composerOpen) return;
@@ -37,8 +44,13 @@
       },
     });
     editor = instance;
+    const focusOnBlankArea = (event: MouseEvent) => {
+      if (event.target === event.currentTarget) instance.chain().focus().run();
+    };
+    node.addEventListener("click", focusOnBlankArea);
     return {
       destroy() {
+        node.removeEventListener("click", focusOnBlankArea);
         instance.destroy();
         if (editor === instance) editor = null;
       },
@@ -122,7 +134,7 @@
             }))}
           />
         </label>
-        <label>To <input type="text" list="origami-correspondents" bind:value={app.value.composerDraft.to} /></label>
+        <label>To <input bind:this={toInput} type="text" list="origami-correspondents" bind:value={app.value.composerDraft.to} /></label>
         <label>Cc <input type="text" list="origami-correspondents" bind:value={app.value.composerDraft.cc} /></label>
         <label>Bcc <input type="text" list="origami-correspondents" bind:value={app.value.composerDraft.bcc} /></label>
         <label>Subject <input type="text" bind:value={app.value.composerDraft.subject} /></label>
@@ -212,7 +224,7 @@
     padding: 10px 16px 4px;
   }
   .fields label {
-    display: flex; align-items: center; gap: 10px;
+    display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: center; gap: 10px;
     font-size: 12px; color: var(--fg-muted);
   }
   .fields input {
@@ -251,9 +263,10 @@
     flex: 1; overflow-y: auto;
     padding: 12px 16px;
     min-height: 200px;
+    cursor: text;
   }
   .editor:focus-within { box-shadow: inset 3px 0 0 var(--accent); }
-  .editor :global(.prose) { outline: none; }
+  .editor :global(.prose) { min-height: 100%; outline: none; }
   .editor :global(.prose p) { margin: 0 0 8px; }
   @media (forced-colors: active) {
     .editor:focus-within {

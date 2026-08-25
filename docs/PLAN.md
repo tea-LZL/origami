@@ -250,7 +250,7 @@ Post-v1: PGP (sequoia), JMAP backend, conversation view across folders, filters/
 ## M5 — Polish (daily-driver features present; release gates pending)
 - [x] Desktop notifications for new mail (notify-rust, freedesktop)
 - [x] Tags — IMAP keywords mapped to coloured badges in the thread list
-- [x] Keyboard navigation (j/k arrows, Enter, Escape, n for compose)
+- [x] Keyboard navigation (j/k arrows, Enter, Escape, n for compose, Alt+1/2/3 pane focus)
 - [x] Saved searches / virtual folders — SQLite-backed query persistence and UI
 - [x] System tray — close-to-tray, restore/focus, and explicit quit lifecycle
 - [~] Theming polish / perf pass (10k gate) — System/Light/Dark and motion/density
@@ -258,6 +258,7 @@ Post-v1: PGP (sequoia), JMAP backend, conversation view across folders, filters/
 
 ## M6 — Ship
 - [ ] AUR PKGBUILD (`origami`, `origami-git`)
-- [ ] GitHub release workflow (artifacts, checksums)
+- [x] GitLab Arch package workflow (artifacts, checksums)
+- [ ] Signed pacman repository (`pacman -S origami`) after the app matures
 - [~] .desktop + icon assets exist; package installation/integration is unverified
 - [ ] v1.0 tag

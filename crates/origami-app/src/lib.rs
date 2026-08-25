@@ -3,6 +3,7 @@ mod notifications;
 mod oauth_flow;
 mod state;
 
+use origami_core::model::Flag;
 use std::collections::HashSet;
 use tauri::Manager;
 
@@ -48,12 +49,16 @@ pub fn run() {
         )
         .init();
 
-    let app_state = state::AppState::new().unwrap_or_else(|e| {
-        eprintln!("fatal: cannot initialize Origami state: {e}");
-        std::process::exit(1);
-    });
+    let mut builder = tauri::Builder::default();
 
-    tauri::Builder::default()
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main_window(app)
+        }));
+    }
+
+    builder
         .plugin(
             tauri::plugin::Builder::<tauri::Wry, ()>::new("navigation-guard")
                 .on_navigation(|webview, url| {
@@ -65,8 +70,12 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
-        .manage(app_state)
         .setup(|app| {
+            let app_state = state::AppState::new().map_err(|error| {
+                std::io::Error::other(format!("cannot initialize Origami state: {error}"))
+            })?;
+            app.manage(app_state);
+
             #[cfg(desktop)]
             {
                 let window = app
@@ -133,7 +142,8 @@ pub fn run() {
                                     let folder_role =
                                         state.store.folder_role(folder).ok().flatten();
                                     let logical_id = envelope.logical_id(account_id);
-                                    if notifications::should_notify(&settings, folder_role)
+                                    let unread = !envelope.flags.contains(&Flag::Seen);
+                                    if notifications::should_notify(&settings, folder_role, unread)
                                         && notifications::claim_notification(
                                             &mut notified_messages,
                                             &logical_id,
@@ -149,6 +159,7 @@ pub fn run() {
                                         notifications::new_mail_notification(
                                             &settings,
                                             folder_role,
+                                            unread,
                                             &envelope.subject,
                                             &from,
                                         );

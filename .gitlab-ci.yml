@@ -30,6 +30,7 @@ variables:
         openssl
         webkit2gtk-4.1
         gtk3
+        librsvg
         libsoup3
         libsecret
         libayatana-appindicator
@@ -81,6 +82,16 @@ package_arch:
       test "$pkgver" = "$cargo_version"
       test "$pkgver" = "$tauri_version"
       test "$pkgver" = "$ui_version"
+    - |
+      icon_check_dir="$(mktemp -d)"
+      trap 'rm -rf "$icon_check_dir"' EXIT
+      for icon in '32:32x32.png' '64:64x64.png' '128:128x128.png' '256:128x128@2x.png' '512:icon.png'; do
+        size="${icon%%:*}"
+        name="${icon#*:}"
+        rsvg-convert -w "$size" -h "$size" \
+          -o "$icon_check_dir/$name" assets/origami-bird.svg
+        cmp "$icon_check_dir/$name" "crates/origami-app/icons/$name"
+      done
     - useradd --create-home --shell /bin/bash builder
     - chown -R builder:builder "$CI_PROJECT_DIR"
     - runuser -u builder -- env
@@ -99,6 +110,15 @@ package_arch:
     - tar -xf "$package_file" -C package-check
     - test -x package-check/usr/bin/origami
     - desktop-file-validate package-check/usr/share/applications/origami.desktop
+    - |
+      if ! strings package-check/usr/bin/origami | grep -F '/assets/index-' >/dev/null; then
+        echo 'package does not contain embedded Vite assets'
+        exit 1
+      fi
+      if ! strings package-check/usr/bin/origami | grep -F '/index.html' >/dev/null; then
+        echo 'package does not contain embedded frontend entrypoint'
+        exit 1
+      fi
     - pacman -Qp "$package_file"
     - pacman -U --noconfirm "$package_file"
     - pacman -Ql origami

@@ -10,6 +10,7 @@
   import { api } from "./api";
   import type { Mailbox } from "./types";
   import AccountSettings from "./AccountSettings.svelte";
+  import { sidebarKeyboard } from "./navigation";
 
   interface Props {
     onadd?: () => void;
@@ -145,7 +146,7 @@
 
 <svelte:window onclick={onGlobalClick} />
 
-<aside class="sidebar">
+<aside class="sidebar" data-navigation="sidebar" use:sidebarKeyboard>
   <div class="account-scroll">
     <button
       type="button"

@@ -19,6 +19,7 @@
     REMOTE_CONTENT_POLICY_EVENT,
   } from "./remoteContent";
   import { threadMembers } from "./threads";
+  import { messageBodyKeyboard } from "./navigation";
 
   let contentMode = $state<"html" | "text">("html");
   let detailsOpen = $state(false);
@@ -272,7 +273,7 @@
         <div class="remote-actions">
           <button type="button" onclick={loadRemoteContentOnce}>Load images once</button>
           {#if safeHtml.blockedOrigins.length > 0}
-            <button type="button" onclick={alwaysAllowBlockedSources}>Always allow these sources</button>
+            <button type="button" class="risk" onclick={alwaysAllowBlockedSources}>Always allow these sources</button>
           {/if}
           {#if senderAddress()}
             <button type="button" onclick={alwaysAllowSender}>Always allow this sender</button>
@@ -284,7 +285,7 @@
       <div class="parse-warning" role="status">Some MIME parts could not be decoded completely.</div>
     {/if}
 
-    <div class="body">
+    <div class="body" data-navigation="message-body" tabindex="-1" aria-label="Message body" use:messageBodyKeyboard>
       {#if safeHtml.html && (contentMode === "html" || !safeText)}
         <iframe
           class="email-frame"
@@ -442,6 +443,16 @@
     font-size: 10px;
   }
   .remote-actions button:hover { border-color: var(--accent); color: var(--accent); }
+  .remote-actions button.risk {
+    border-color: color-mix(in oklab, var(--warning) 48%, var(--border));
+    background: color-mix(in oklab, var(--warning) 9%, var(--bg-raised));
+    color: var(--warning);
+  }
+  .remote-actions button.risk:hover {
+    border-color: var(--warning);
+    background: color-mix(in oklab, var(--warning) 18%, var(--bg-raised));
+    color: var(--warning);
+  }
   .parse-warning { border-color: color-mix(in oklab, var(--danger) 38%, var(--border)); }
   .conversation {
     margin: -8px 0 18px;

@@ -98,6 +98,7 @@
 
 <div
   class="virtual"
+  data-navigation="message-list"
   use:measureViewport
   onscroll={onScroll}
   role="listbox"

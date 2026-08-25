@@ -85,8 +85,13 @@ describe("MessageView remote content", () => {
   it("offers a one-message remote image override", async () => {
     render(MessageView);
     expect(screen.getByText("Remote content blocked")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Always allow these sources" })).toHaveClass("risk");
+    const frame = screen.getByTitle("Email HTML body");
+    expect(frame.getAttribute("srcdoc")).not.toContain('src="https://images.example/photo.png"');
     await fireEvent.click(screen.getByRole("button", { name: "Load images once" }));
     expect(screen.queryByText("Remote content blocked")).not.toBeInTheDocument();
+    expect(frame.getAttribute("srcdoc")).toContain('src="https://images.example/photo.png"');
+    expect(frame.getAttribute("srcdoc")).toContain("img-src data: cid: http: https:");
   });
 
   it("renders HTML email in an isolated sandboxed document", () => {

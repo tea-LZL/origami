@@ -61,6 +61,10 @@ export function sanitizeMessageHtml(raw: string, policy: MessageHtmlPolicy = {})
   const blockedHosts = new Set<string>();
   const blockedOrigins = new Set<string>();
   const imageSources = new Set(["data:", "cid:"]);
+  if (policy.allowRemoteImages) {
+    imageSources.add("http:");
+    imageSources.add("https:");
+  }
   let blockedResources = 0;
 
   for (const image of document.querySelectorAll<HTMLImageElement>("img[src]")) {
@@ -79,7 +83,7 @@ export function sanitizeMessageHtml(raw: string, policy: MessageHtmlPolicy = {})
 
     const origin = url.origin;
     if (policy.allowRemoteImages || policy.allowedOrigins?.has(origin)) {
-      imageSources.add(policy.allowRemoteImages ? url.protocol : origin);
+      if (!policy.allowRemoteImages) imageSources.add(origin);
       continue;
     }
 
@@ -91,10 +95,7 @@ export function sanitizeMessageHtml(raw: string, policy: MessageHtmlPolicy = {})
     image.classList.add("remote-image-blocked");
   }
 
-  if (policy.allowRemoteImages) {
-    imageSources.add("http:");
-    imageSources.add("https:");
-  } else {
+  if (!policy.allowRemoteImages) {
     for (const allowedOrigin of policy.allowedOrigins ?? []) {
       try {
         const url = new URL(allowedOrigin);

@@ -10,6 +10,7 @@
     updatePaneWidth,
     undoLastMessageAction,
   } from "./lib/stores.svelte";
+  import { focusNavigationTarget, type NavigationShortcut } from "./lib/navigation";
   import Titlebar from "./lib/Titlebar.svelte";
   import OrigamiBird from "./lib/OrigamiBird.svelte";
   import Sidebar from "./lib/Sidebar.svelte";
@@ -75,6 +76,21 @@
       return;
     }
     const target = e.target as HTMLElement | null;
+    const protectedTarget = target?.closest(
+      "input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu'], [popover], [aria-haspopup='listbox']",
+    );
+    if (
+      e.altKey
+      && !e.metaKey
+      && !e.ctrlKey
+      && !e.shiftKey
+      && ["1", "2", "3"].includes(e.key)
+    ) {
+      if (protectedTarget || app.value.composerOpen || app.value.preferencesOpen || app.value.outboxAccountId) return;
+      e.preventDefault();
+      focusNavigationTarget(e.key as NavigationShortcut, app.value.selectedEnvelope?.id ?? null);
+      return;
+    }
     if (
       e.defaultPrevented
       || e.metaKey
@@ -94,7 +110,7 @@
 <div class="shell">
   <Titlebar />
 
-  <main class="content" aria-label="Origami mail workspace">
+    <main class="content" aria-label="Origami mail workspace" aria-keyshortcuts="Alt+1 Alt+2 Alt+3">
     {#if !info || !app.value.ready}
       <div class="loading" role="status" aria-live="polite">
         <OrigamiBird size={96} />

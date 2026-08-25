@@ -184,7 +184,7 @@
   }
 </script>
 
-<section class="threadlist" use:messageListKeyboard role="group" aria-label="Messages">
+<section class="threadlist" data-navigation="thread-pane" use:messageListKeyboard role="group" aria-label="Messages">
   <header class="list-header">
     <div>
       <span class="eyebrow">Mailbox</span>

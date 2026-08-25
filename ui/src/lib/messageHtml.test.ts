@@ -16,6 +16,7 @@ describe("sanitizeMessageHtml", () => {
     expect(result.blockedResources).toBe(1);
     expect(result.blockedHosts).toEqual(["tracking.example"]);
     expect(result.blockedOrigins).toEqual(["https://tracking.example"]);
+    expect(result.srcdoc).toContain("img-src data: cid:");
   });
 
   it("preserves presentation CSS used by HTML email layouts", () => {
@@ -76,6 +77,7 @@ describe("sanitizeMessageHtml", () => {
     expect(result.html).not.toContain("script");
     expect(result.blockedResources).toBe(1);
     expect(result.blockedOrigins).toEqual(["https://tracking.example"]);
+    expect(result.srcdoc).toContain("img-src data: cid: https://images.example");
   });
 
   it("allows all remote images only for an explicit one-message override", () => {
@@ -87,5 +89,6 @@ describe("sanitizeMessageHtml", () => {
     expect(result.html).toContain('src="https://images.example/photo.png"');
     expect(result.html).toContain('src="http://cdn.example/pixel"');
     expect(result.blockedResources).toBe(0);
+    expect(result.srcdoc).toContain("img-src data: cid: http: https:");
   });
 });

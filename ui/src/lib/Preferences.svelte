@@ -17,7 +17,7 @@
   let quietHoursEnabled = $state(false);
   let notifications = $state<NotificationSettings>({
     preview: "full",
-    folderScope: "all",
+    folderScope: "inbox",
     quietHours: null,
   });
   let remoteAllowlist = $state<RemoteContentAllowlist>(loadRemoteContentAllowlist());
@@ -37,7 +37,10 @@
     saved = false;
     remoteAllowlist = loadRemoteContentAllowlist();
     try {
-      notifications = await api.getNotificationSettings();
+      notifications = {
+        ...await api.getNotificationSettings(),
+        folderScope: "inbox",
+      };
       quietHoursEnabled = notifications.quietHours !== null;
     } catch (cause) {
       error = String(cause);
@@ -53,6 +56,7 @@
     try {
       await api.updateNotificationSettings({
         ...notifications,
+        folderScope: "inbox",
         quietHours: quietHoursEnabled
           ? (notifications.quietHours ?? { start: "22:00", end: "07:00" })
           : null,
@@ -205,18 +209,7 @@
             />
           </label>
 
-          <label>
-            Notify for
-            <Select
-              bind:value={notifications.folderScope}
-              ariaLabel="Notification folder scope"
-              options={[
-                { value: "all", label: "All folders" },
-                { value: "inbox", label: "Inbox only" },
-              ]}
-              onValueChange={() => saved = false}
-            />
-          </label>
+          <p class="help notification-policy">Desktop notifications are sent only for unread mail arriving in Inbox.</p>
 
           <label>
             Quiet hours

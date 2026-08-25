@@ -3,7 +3,7 @@
 
 pkgname=origami
 pkgver=0.1.0
-pkgrel=1
+pkgrel=6
 pkgdesc="A fast, offline-first desktop email client"
 arch=('x86_64')
 url="https://gitlab.com/tea-LZL/origami"
@@ -17,7 +17,7 @@ depends=(
   'dbus'
   'xdg-utils'
 )
-makedepends=('cargo' 'nodejs' 'npm' 'git')
+makedepends=('cargo' 'nodejs' 'npm' 'git' 'librsvg')
 source=()
 sha256sums=()
 # Rust release profile already enables fat LTO; extra makepkg C LTO breaks
@@ -30,7 +30,7 @@ build() {
   cd "$repo_root"
   npm ci --prefix ui
   npm run build --prefix ui
-  CARGO_TARGET_DIR="$repo_root/target" cargo build --locked --release -p origami-app
+  CARGO_TARGET_DIR="$repo_root/target" cargo build --locked --release -p origami-app --features custom-protocol
 }
 
 package() {

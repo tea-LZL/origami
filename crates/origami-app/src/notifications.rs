@@ -2,19 +2,18 @@
 
 use chrono::Timelike;
 use notify_rust::Notification;
-use origami_core::config::{
-    parse_time, NotificationConfig, NotificationFolderScope, NotificationPreview,
-};
+use origami_core::config::{parse_time, NotificationConfig, NotificationPreview};
 use origami_core::model::MailboxRole;
 use std::collections::HashSet;
 
 pub fn new_mail_notification(
     settings: &NotificationConfig,
     folder_role: Option<MailboxRole>,
+    unread: bool,
     subject: &str,
     from: &str,
 ) {
-    if !should_notify(settings, folder_role) {
+    if !should_notify(settings, folder_role, unread) {
         return;
     }
     let (summary, body) = render_preview(settings.preview, subject, from);
@@ -28,21 +27,18 @@ pub fn new_mail_notification(
         .show();
 }
 
-pub fn should_notify(settings: &NotificationConfig, folder_role: Option<MailboxRole>) -> bool {
+pub fn should_notify(
+    settings: &NotificationConfig,
+    folder_role: Option<MailboxRole>,
+    unread: bool,
+) -> bool {
     let now = chrono::Local::now();
     let minute = (now.hour() * 60 + now.minute()) as u16;
-    allows_folder(settings.folder_scope, folder_role) && !is_quiet_at(settings, minute)
+    folder_role == Some(MailboxRole::Inbox) && unread && !is_quiet_at(settings, minute)
 }
 
 pub(crate) fn claim_notification(seen: &mut HashSet<String>, key: &str) -> bool {
     seen.insert(key.to_string())
-}
-
-fn allows_folder(scope: NotificationFolderScope, role: Option<MailboxRole>) -> bool {
-    match scope {
-        NotificationFolderScope::All => true,
-        NotificationFolderScope::Inbox => role == Some(MailboxRole::Inbox),
-    }
 }
 
 fn is_quiet_at(settings: &NotificationConfig, minute: u16) -> bool {
@@ -97,17 +93,14 @@ mod tests {
     }
 
     #[test]
-    fn inbox_scope_fails_closed_for_unknown_folders() {
-        assert!(allows_folder(
-            NotificationFolderScope::Inbox,
-            Some(MailboxRole::Inbox)
-        ));
-        assert!(!allows_folder(
-            NotificationFolderScope::Inbox,
-            Some(MailboxRole::Other)
-        ));
-        assert!(!allows_folder(NotificationFolderScope::Inbox, None));
-        assert!(allows_folder(NotificationFolderScope::All, None));
+    fn only_unread_inbox_messages_notify() {
+        let settings = NotificationConfig::default();
+        assert!(should_notify(&settings, Some(MailboxRole::Inbox), true));
+        assert!(!should_notify(&settings, Some(MailboxRole::Inbox), false));
+        assert!(!should_notify(&settings, Some(MailboxRole::Sent), true));
+        assert!(!should_notify(&settings, Some(MailboxRole::Drafts), true));
+        assert!(!should_notify(&settings, Some(MailboxRole::Other), true));
+        assert!(!should_notify(&settings, None, true));
     }
 
     #[test]
