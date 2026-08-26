@@ -12,7 +12,7 @@
   } from "./lib/stores.svelte";
   import { focusNavigationTarget, type NavigationShortcut } from "./lib/navigation";
   import Titlebar from "./lib/Titlebar.svelte";
-  import OrigamiBird from "./lib/OrigamiBird.svelte";
+  import OrigamiArtwork from "./lib/OrigamiArtwork.svelte";
   import Sidebar from "./lib/Sidebar.svelte";
   import ThreadList from "./lib/ThreadList.svelte";
   import MessageView from "./lib/MessageView.svelte";
@@ -110,15 +110,15 @@
 <div class="shell">
   <Titlebar />
 
-    <main class="content" aria-label="Origami mail workspace" aria-keyshortcuts="Alt+1 Alt+2 Alt+3">
+  <main class="content" aria-label="Origami mail workspace" aria-keyshortcuts="Alt+1 Alt+2 Alt+3">
     {#if !info || !app.value.ready}
       <div class="loading" role="status" aria-live="polite">
-        <OrigamiBird size={96} />
+        <OrigamiArtwork variant="launch" theme={app.value.theme} className="launch-art" loading="eager" />
         <p>Loading Origami…</p>
       </div>
     {:else if app.value.accounts.length === 0}
       <div class="empty">
-        <OrigamiBird size={120} />
+        <OrigamiArtwork variant="hero" theme={app.value.theme} className="hero-art" />
         <h2>No accounts configured</h2>
         <p>Add an email account to get started.</p>
         <button class="add-btn" onclick={() => addAccount?.show()}>Add account</button>
@@ -194,16 +194,20 @@
 </div>
 
 <style>
-  .shell { height: 100%; display: flex; flex-direction: column; background: var(--bg); }
+   .shell { height: 100%; display: flex; flex-direction: column; background: transparent; }
   .content { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   .pane-row { flex: 1; display: flex; min-height: 0; animation: surface-in var(--transition-med) both; }
-  .loading, .empty {
+   .loading, .empty {
     flex: 1; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 12px;
-    color: var(--fg-muted); text-align: center; padding: 24px;
-  }
-  .empty h2 { margin: 4px 0 0; color: var(--fg); }
-  .empty p { max-width: 480px; }
+     color: var(--fg-muted); text-align: center; padding: 24px;
+   }
+   .loading { letter-spacing: 0.02em; }
+   .empty { position: relative; }
+   :global(.launch-art) { width: 88px; border-radius: 18px; box-shadow: var(--shadow-float); }
+   :global(.hero-art) { width: min(220px, 52vw); margin-bottom: 6px; }
+   .empty h2 { margin: 4px 0 0; color: var(--fg); font: 400 clamp(26px, 4vw, 36px)/1.06 var(--font-display); letter-spacing: -0.025em; }
+   .empty p { max-width: 420px; margin: 0; line-height: 1.6; }
   .fab {
     position: fixed;
     right: 24px;
@@ -211,12 +215,12 @@
     min-width: 56px;
     height: 44px;
     padding: 0 16px;
-    border-radius: var(--radius-md);
+     border-radius: var(--radius-sm);
     background: var(--accent);
     color: var(--accent-fg);
     font-size: 13px;
     font-weight: 750;
-    box-shadow: var(--shadow-panel);
+     box-shadow: var(--shadow-sheet);
     z-index: 10;
     animation: surface-in var(--transition-med) both;
   }
@@ -232,7 +236,7 @@
     font-size: 14px;
     min-height: 36px;
   }
-  .add-btn:hover { background: var(--accent-hover); }
+   .add-btn:hover { background: var(--accent-hover); }
   .toast {
     position: fixed; left: 50%; bottom: 24px;
     translate: -50% 0;

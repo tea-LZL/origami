@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, type OutboxSummary } from "./api";
   import { app, pollAccountErrors } from "./stores.svelte";
+  import OrigamiArtwork from "./OrigamiArtwork.svelte";
 
   let entries = $state<OutboxSummary[]>([]);
   let loading = $state(false);
@@ -83,6 +84,7 @@
           <p class="empty">Loading queued operations…</p>
         {:else if entries.length === 0}
           <div class="empty">
+            <OrigamiArtwork variant="caught-up" theme={app.value.theme} className="outbox-art" />
             <strong>All caught up</strong>
             <span>No operations are waiting to sync.</span>
           </div>
@@ -127,17 +129,17 @@
     position: static; width: min(560px, 100%); max-height: min(720px, calc(100vh - 32px));
     margin: 0; padding: 20px; overflow: hidden; border: 1px solid var(--border);
     border-radius: var(--radius-lg); display: grid; grid-template-rows: auto auto minmax(80px, 1fr) auto auto;
-    gap: 12px; background: var(--bg-raised); box-shadow: var(--shadow-panel); color: var(--fg);
+    gap: 12px; background: linear-gradient(145deg, var(--bg-raised), color-mix(in oklab, var(--bg-raised) 94%, var(--bg-sunken))); box-shadow: var(--shadow-float); color: var(--fg);
     animation: surface-in var(--transition-med) both;
   }
   header { display: flex; align-items: flex-start; justify-content: space-between; }
   header span { color: var(--accent); font-size: 9px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
-  h2 { margin: 1px 0 0; font-size: 20px; }
+  h2 { margin: 1px 0 0; font: 400 27px/1 var(--font-display); letter-spacing: -0.02em; }
   .close { width: 28px; height: 28px; border-radius: var(--radius-sm); font-size: 20px; }
   .close:hover { background: var(--bg-sunken); }
   .intro { margin: 0; color: var(--fg-subtle); font-size: 11px; line-height: 1.45; }
   .list { overflow-y: auto; display: grid; align-content: start; gap: 8px; padding-right: 3px; }
-  article { padding: 11px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-sunken); }
+  article { padding: 11px; border: 1px solid var(--border); border-radius: var(--radius-md); background: color-mix(in oklab, var(--bg-sunken) 78%, var(--bg-raised)); box-shadow: inset 0 1px var(--paper-highlight); }
   article.failed { border-color: color-mix(in oklab, var(--danger) 34%, var(--border)); }
   .operation { display: flex; justify-content: space-between; gap: 12px; }
   .operation strong { font-size: 12px; }
@@ -147,6 +149,7 @@
   summary { cursor: pointer; font-weight: 700; }
   pre { margin: 6px 0 0; padding: 7px; overflow: auto; border-radius: var(--radius-sm); background: var(--bg-raised); color: var(--fg-muted); font: 10px/1.4 var(--font-mono); white-space: pre-wrap; user-select: text; }
   .empty { min-height: 100px; display: grid; place-content: center; gap: 4px; text-align: center; color: var(--fg-subtle); font-size: 11px; }
+  :global(.outbox-art) { width: 88px; margin: 0 auto 4px; }
   .empty strong { color: var(--fg); font-size: 13px; }
   .error { margin: 0; color: var(--danger); font-size: 11px; }
   footer { display: flex; justify-content: flex-end; gap: 8px; }

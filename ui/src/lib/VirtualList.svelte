@@ -150,24 +150,39 @@
     right: 0;
   }
   .row {
+    position: relative;
     display: block;
     width: 100%;
     text-align: left;
     background: transparent;
     border: none;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 82%, var(--paper-highlight));
     padding: 8px 12px;
     color: var(--fg);
     cursor: pointer;
     transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
   }
   .row:hover {
-    background: var(--bg-sunken);
+    background: color-mix(in oklab, var(--bg-sunken) 84%, var(--accent));
   }
   .row.active {
-    background: color-mix(in oklab, var(--accent) 14%, transparent);
-    border-left: 3px solid var(--accent);
-    padding-left: 9px;
+    background: color-mix(in oklab, var(--accent) 10%, var(--bg-raised));
+    color: var(--fg);
+  }
+  .row.active::before {
+    content: "";
+    position: absolute;
+    top: 9px;
+    bottom: 9px;
+    left: 5px;
+    width: 3px;
+    border-radius: 999px;
+    background: var(--accent);
+    pointer-events: none;
+  }
+  .row:focus-visible {
+    z-index: 1;
+    outline-offset: -2px;
   }
   .row.checked:not(.active) {
     background: color-mix(in oklab, var(--accent) 8%, transparent);

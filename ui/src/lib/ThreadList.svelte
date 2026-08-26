@@ -23,6 +23,7 @@
   import { highlightSearchText } from "./searchHighlight";
   import Select from "./Select.svelte";
   import MessageSelectCheckbox from "./MessageSelectCheckbox.svelte";
+  import OrigamiArtwork from "./OrigamiArtwork.svelte";
 
   const rowHeight = $derived(app.value.density === "compact" ? 52 : 60);
   let listEl: HTMLElement | null = $state(null);
@@ -305,7 +306,10 @@
         </div>
       </div>
     {:else if app.value.envelopes.length === 0}
-      <div class="empty">No messages here</div>
+      <div class="empty">
+        <OrigamiArtwork variant="empty" theme={app.value.theme} className="empty-art" />
+        <span>No messages here</span>
+      </div>
     {:else}
       <VirtualList
         items={visibleEnvelopes}
@@ -367,7 +371,7 @@
     min-width: 280px;
     flex-shrink: 0;
     border-right: 1px solid var(--border);
-    background: var(--bg);
+    background: color-mix(in oklab, var(--bg) 86%, var(--bg-raised));
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -380,7 +384,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: var(--bg-raised);
+    background: linear-gradient(180deg, var(--bg-raised), color-mix(in oklab, var(--bg-raised) 92%, var(--bg-sunken)));
+    box-shadow: inset 0 1px var(--paper-highlight);
   }
   .header-actions { display: flex; align-items: center; gap: 6px; }
   .layout-button {
@@ -401,7 +406,7 @@
     letter-spacing: 0.12em;
     text-transform: uppercase;
   }
-  .list-header h2 { margin: 1px 0 0; font-size: 15px; }
+  .list-header h2 { margin: 1px 0 0; font: 400 19px/1.1 var(--font-display); letter-spacing: -0.015em; }
   .message-count {
     min-width: 28px;
     padding: 2px 7px;
@@ -419,10 +424,10 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    background: var(--bg-raised);
+    background: color-mix(in oklab, var(--bg-raised) 94%, var(--bg-sunken));
     color: var(--fg-subtle);
   }
-  .search-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 15%, transparent); }
+  .search-box:focus-within { border-color: var(--accent); box-shadow: inset 0 1px var(--paper-highlight), 0 0 0 2px color-mix(in oklab, var(--accent) 12%, transparent); }
   .search-box input {
     min-width: 0;
     width: 100%;
@@ -464,7 +469,7 @@
     align-content: center;
     flex-wrap: wrap;
     gap: 4px;
-    background: color-mix(in oklab, var(--accent) 8%, var(--bg-raised));
+    background: color-mix(in oklab, var(--accent) 6%, var(--bg-raised));
   }
   .bulk-bar strong { flex: 1 0 100%; font-size: 11px; white-space: nowrap; }
   .bulk-bar button {
@@ -538,11 +543,16 @@
     font-size: 10px;
   }
   .empty {
+    min-height: 100%;
     padding: 24px;
+    display: grid;
+    place-content: center;
+    gap: 10px;
     color: var(--fg-muted);
     text-align: center;
     font-size: 13px;
   }
+  :global(.empty-art) { width: 82px; margin-inline: auto; opacity: 0.72; }
   .row-content { position: relative; display: flex; flex-direction: column; gap: 2px; padding-left: 34px; }
   .top { display: flex; justify-content: space-between; gap: 8px; line-height: 1.25; }
   .from { font-size: 13px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -227,7 +227,7 @@
     align-items: center;
     background: linear-gradient(145deg, var(--select-face), var(--select-face-shade));
     color: var(--fg);
-    box-shadow: inset 0 1px 0 var(--select-glint), 0 2px 7px rgba(5, 14, 36, 0.08);
+    box-shadow: inset 0 1px 0 var(--select-glint), 0 1px 3px rgba(35, 31, 25, 0.08);
     text-align: left;
   }
   .select-trigger::after {
@@ -244,7 +244,7 @@
   .select-trigger:hover:not(:disabled),
   .select-trigger[aria-expanded="true"] {
     border-color: var(--accent);
-    box-shadow: inset 0 1px 0 var(--select-glint), 0 0 0 2px color-mix(in oklab, var(--accent) 13%, transparent);
+    box-shadow: inset 0 1px 0 var(--select-glint), 0 0 0 2px color-mix(in oklab, var(--accent) 11%, transparent);
   }
   .select-trigger span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .select-trigger svg {
@@ -276,7 +276,7 @@
     border-radius: var(--radius-md);
     background: var(--select-panel);
     color: var(--fg);
-    box-shadow: 0 18px 48px rgba(3, 9, 25, 0.38), inset 0 1px 0 var(--select-glint);
+    box-shadow: var(--shadow-float), inset 0 1px 0 var(--select-glint);
   }
   .select-menu:popover-open { animation: select-in var(--transition-fast) both; }
   .select-menu button {

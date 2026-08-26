@@ -20,6 +20,7 @@
   } from "./remoteContent";
   import { threadMembers } from "./threads";
   import { messageBodyKeyboard } from "./navigation";
+  import OrigamiArtwork from "./OrigamiArtwork.svelte";
 
   let contentMode = $state<"html" | "text">("html");
   let detailsOpen = $state(false);
@@ -203,7 +204,10 @@
       </div>
     </div>
   {:else if !app.value.message}
-    <div class="empty">Select a message</div>
+    <div class="empty">
+      <OrigamiArtwork variant="empty" theme={app.value.theme} className="message-empty-art" />
+      <span>Select a message</span>
+    </div>
   {:else}
     {@const env = app.value.message.envelope}
     {@const headers = app.value.message.headers}
@@ -327,7 +331,7 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    background: var(--bg-raised);
+    background: transparent;
     overflow: hidden;
     padding: 24px 32px;
   }
@@ -338,6 +342,15 @@
     max-width: 760px;
     margin-inline: auto;
   }
+  .message > header {
+    position: relative;
+    padding: 26px 30px 14px;
+    border: 1px solid var(--border);
+    border-bottom-color: var(--paper-crease);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    background: linear-gradient(145deg, var(--bg-raised), color-mix(in oklab, var(--bg-raised) 94%, var(--bg-sunken)));
+    box-shadow: var(--shadow-sheet), inset 0 1px var(--paper-highlight);
+  }
   .message > .body {
     flex: 1;
     min-width: 0;
@@ -345,6 +358,12 @@
     width: 100%;
     overflow-y: auto;
     scrollbar-gutter: stable;
+    max-width: 760px;
+    margin-inline: auto;
+    padding: 18px 30px 28px;
+    border-inline: 1px solid var(--border);
+    background: var(--bg-raised);
+    box-shadow: inset 0 1px var(--paper-highlight);
   }
   .message-loading {
     width: 100%;
@@ -372,8 +391,9 @@
   }
   .back-to-messages:hover { border-color: var(--accent); color: var(--accent); }
   :global(.reading) .back-to-messages { display: inline-flex; }
-  .empty { color: var(--fg-muted); padding: 40px; text-align: center; }
-  header h1 { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; font-size: 20px; margin: 0 0 6px; }
+  .empty { color: var(--fg-muted); padding: 40px; text-align: center; display: grid; place-content: center; gap: 12px; }
+  :global(.message-empty-art) { width: min(148px, 38vw); opacity: 0.64; }
+  header h1 { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; font: 400 clamp(25px, 3vw, 34px)/1.08 var(--font-display); letter-spacing: -0.025em; margin: 0 0 9px; }
   .subject-row { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px 16px; }
   .message-actions { display: flex; max-width: 100%; gap: 4px; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; }
   .message-actions button {
@@ -381,13 +401,13 @@
     padding: 6px 9px;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    background: var(--bg);
+    background: color-mix(in oklab, var(--bg-sunken) 82%, var(--bg-raised));
     color: var(--fg-muted);
     font-size: 11px;
     font-weight: 600;
   }
-  .message-actions button:hover { border-color: var(--accent); color: var(--accent); background: color-mix(in oklab, var(--accent) 6%, var(--bg)); }
-  .message-actions button.active { border-color: var(--accent); color: var(--accent); background: color-mix(in oklab, var(--accent) 10%, var(--bg)); }
+  .message-actions button:hover { border-color: var(--accent); color: var(--accent); background: color-mix(in oklab, var(--accent) 7%, var(--bg-raised)); }
+  .message-actions button.active { border-color: var(--accent); color: var(--accent); background: color-mix(in oklab, var(--accent) 12%, var(--bg-raised)); }
   .content-mode {
     display: inline-flex;
     border: 1px solid var(--border);
@@ -404,7 +424,7 @@
     padding: 10px 12px;
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
-    background: var(--bg);
+    background: color-mix(in oklab, var(--bg-sunken) 72%, var(--bg-raised));
     font-size: 11px;
   }
   .details div { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 10px; }
@@ -417,13 +437,14 @@
     max-width: 760px;
     margin: 0 auto 12px;
     padding: 9px 12px;
-    border: 1px solid color-mix(in oklab, var(--accent) 38%, var(--border));
+    border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--paper-rule));
     border-radius: var(--radius-md);
     display: flex;
     flex-wrap: wrap;
     gap: 6px 12px;
     align-items: baseline;
-    background: color-mix(in oklab, var(--accent) 7%, var(--bg-raised));
+    background: color-mix(in oklab, var(--accent) 6%, var(--bg-raised));
+    box-shadow: inset 0 1px var(--paper-highlight);
     color: var(--fg-muted);
     font-size: 11px;
   }
@@ -463,7 +484,7 @@
     align-items: center;
     gap: 5px;
     overflow-x: auto;
-    background: var(--bg);
+    background: color-mix(in oklab, var(--bg-sunken) 72%, var(--bg-raised));
   }
   .conversation span { margin-right: 3px; color: var(--fg-subtle); font-size: 10px; white-space: nowrap; }
   .conversation button {
@@ -483,8 +504,10 @@
     margin-inline: auto;
     min-height: 180px;
     height: 180px;
-    border: 0;
+    border: 1px solid color-mix(in oklab, var(--border) 70%, var(--paper-highlight));
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
     background: var(--bg-raised);
+    box-shadow: 0 10px 18px rgba(49, 45, 38, 0.06);
   }
   .text {
     margin: 0 auto;
@@ -494,11 +517,16 @@
     line-height: 1.55;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+    padding-bottom: 18px;
   }
   footer {
     margin-top: 32px;
-    padding-top: 16px;
-    border-top: 1px solid var(--border);
+    padding: 18px 30px 26px;
+    border: 1px solid var(--border);
+    border-top: 1px solid var(--paper-crease);
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+    background: var(--bg-raised);
+    box-shadow: var(--shadow-sheet), inset 0 1px var(--paper-highlight);
   }
   footer h2 { font-size: 13px; text-transform: uppercase; color: var(--fg-muted); margin: 0 0 8px; }
   footer ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -516,5 +544,8 @@
 
   @media (max-width: 760px) {
     .back-to-messages { display: inline-flex; }
+    .message > header { padding: 20px 18px 12px; }
+    .message > .body { padding: 16px 18px 22px; }
+    footer { padding: 16px 18px 22px; }
   }
 </style>

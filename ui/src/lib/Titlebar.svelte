@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { app, cycleLayout } from "./stores.svelte";
+  import OrigamiBird from "./OrigamiBird.svelte";
 
   const win = getCurrentWindow();
 
@@ -40,6 +41,7 @@
 
 <header class="titlebar" data-tauri-drag-region>
   <div class="brand" data-tauri-drag-region>
+    <span class="brand-mark" data-tauri-drag-region><OrigamiBird size={18} alt="" /></span>
     <span class="wordmark" data-tauri-drag-region>Origami</span>
     <span class:error={aggregateState === "Attention"} class:syncing={aggregateState === "Syncing"} class="aggregate" data-tauri-drag-region aria-live="polite" title="Mail synchronization status">
       <i></i>{aggregateState}
@@ -103,8 +105,9 @@
     align-items: center;
     justify-content: space-between;
     padding-left: 14px;
-    background: linear-gradient(180deg, var(--bg-raised), var(--bg));
+    background: linear-gradient(180deg, color-mix(in oklab, var(--bg-raised) 94%, var(--paper-highlight)), var(--bg-raised));
     border-bottom: 1px solid var(--border);
+    box-shadow: inset 0 -1px 0 var(--paper-highlight);
     flex-shrink: 0;
   }
 
@@ -115,12 +118,13 @@
     flex: 1;
     height: 100%;
   }
+  .brand-mark { width: 18px; height: 18px; display: grid; place-items: center; filter: drop-shadow(0 2px 2px color-mix(in oklab, var(--accent) 20%, transparent)); }
+  .brand-mark :global(img) { display: block; }
 
   .wordmark {
-    font-weight: 700;
-    font-size: 13px;
-    letter-spacing: 0.04em;
-    color: var(--accent);
+    font: 600 15px/1 var(--font-display);
+    letter-spacing: 0.015em;
+    color: var(--fg);
     user-select: none;
   }
   .aggregate {
@@ -156,7 +160,7 @@
   }
 
   .ctrl:hover {
-    background: var(--bg-sunken);
+    background: color-mix(in oklab, var(--bg-sunken) 88%, var(--accent));
     color: var(--fg);
   }
 

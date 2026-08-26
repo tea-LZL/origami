@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { app } from "./stores.svelte";
+  import OrigamiArtwork from "./OrigamiArtwork.svelte";
 
   let open = $state(false);
   let step = $state(0); // 0=email, 1=config, 2=done
@@ -152,9 +153,10 @@
 
 {#if open}
   <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="add-account-title">
-    <div class="wizard">
-      {#if step === 0}
-        <h2 id="add-account-title">Add an email account</h2>
+      <div class="wizard">
+       {#if step === 0}
+          <OrigamiArtwork variant="setup" theme={app.value.theme} className="wizard-art" />
+          <h2 id="add-account-title">Add an email account</h2>
         <p>Origami will look up the best configuration for your provider.</p>
         <form onsubmit={(e) => { e.preventDefault(); detect(); }}>
           <label>
@@ -223,8 +225,9 @@
             </button>
           </div>
         </form>
-      {:else if step === 2}
-        <h2 id="add-account-title">Account added!</h2>
+       {:else if step === 2}
+          <OrigamiArtwork variant="success" theme={app.value.theme} className="wizard-art success-art" />
+          <h2 id="add-account-title">Account added!</h2>
         <p>{email} is configured and syncing.</p>
         <div class="actions">
           <button type="button" class="next" onclick={close}>Done</button>
@@ -243,23 +246,25 @@
   .wizard {
     width: min(520px, 90vw);
     max-height: 85vh; overflow-y: auto;
-    background: var(--bg-raised);
+    background: linear-gradient(145deg, var(--bg-raised), color-mix(in oklab, var(--bg-raised) 94%, var(--bg-sunken)));
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     padding: 28px;
-    box-shadow: var(--shadow-panel);
+    box-shadow: var(--shadow-float);
     animation: surface-in var(--transition-med) both;
   }
-  h2 { margin: 0 0 4px; font-size: 18px; }
+  :global(.wizard-art) { width: 92px; margin: -4px 0 12px auto; }
+  :global(.success-art) { width: 128px; margin-inline: auto; }
+  h2 { margin: 0 0 6px; font: 400 28px/1.05 var(--font-display); letter-spacing: -0.025em; }
   p { color: var(--fg-muted); font-size: 13px; margin: 0 0 16px; }
   .provider { color: var(--accent); font-weight: 600; }
   p.alt { text-align: center; margin: 12px 0; color: var(--fg-subtle); font-size: 12px; }
   label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--fg-muted); margin-bottom: 12px; }
   label input, fieldset input {
-    background: var(--bg-sunken); border: 1px solid var(--border);
+    background: color-mix(in oklab, var(--bg-sunken) 78%, var(--bg-raised)); border: 1px solid var(--border);
     border-radius: var(--radius-sm); padding: 8px 10px; color: var(--fg); font: inherit; min-height: 36px;
   }
-  fieldset { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px; }
+  fieldset { border: 1px solid var(--paper-crease); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px; }
   fieldset legend { font-size: 12px; color: var(--fg-subtle); }
   .err { color: var(--danger); font-size: 12px !important; }
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
@@ -269,10 +274,13 @@
   .next:disabled { opacity: 0.6; }
   .next:hover:not(:disabled) { background: var(--accent-hover); }
   .oauth {
-    width: 100%; background: var(--bg-sunken);
+    width: 100%; background: color-mix(in oklab, var(--bg-sunken) 78%, var(--bg-raised));
     border: 1px solid var(--border); border-radius: var(--radius-sm);
     padding: 12px; font-weight: 600; font-size: 14px; margin-top: 8px;
   }
   .oauth:hover { background: var(--border); }
   .oauth:disabled { opacity: 0.6; }
+  @media (max-width: 430px) {
+    :global(.wizard-art) { display: none; }
+  }
 </style>

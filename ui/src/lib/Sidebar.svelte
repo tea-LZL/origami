@@ -326,8 +326,9 @@
     width: var(--sidebar-width, 260px);
     min-width: 200px;
     flex-shrink: 0;
-    background: linear-gradient(90deg, var(--bg-raised), color-mix(in oklab, var(--bg-raised) 94%, var(--accent)));
+    background: linear-gradient(100deg, color-mix(in oklab, var(--bg-raised) 92%, var(--accent)), var(--bg-raised));
     border-right: 1px solid var(--border);
+    box-shadow: inset -1px 0 var(--paper-highlight);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -335,6 +336,7 @@
 
   .account-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
   .unified {
+    position: relative;
     width: calc(100% - 16px);
     margin: 8px;
     padding: 8px 10px;
@@ -347,16 +349,13 @@
     min-height: 36px;
     transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
   }
-  .unified:hover { background: var(--bg-sunken); color: var(--fg); transform: translateX(2px); }
+  .unified:hover { background: color-mix(in oklab, var(--bg-sunken) 86%, var(--accent)); color: var(--fg); transform: translateX(2px); }
   .unified.selected {
-    background: color-mix(in oklab, var(--accent) 16%, transparent);
+    background: color-mix(in oklab, var(--accent) 10%, var(--bg-raised));
     color: var(--accent);
-    box-shadow: inset 3px 0 0 var(--accent);
   }
 
-  .account-group {
-    border-bottom: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
-  }
+  .account-group { border-bottom: 1px solid color-mix(in oklab, var(--paper-rule) 68%, transparent); }
 
   .account-header {
     display: flex;
@@ -457,11 +456,26 @@
     min-height: 32px;
     transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
   }
-  .folder:hover { background: var(--bg-sunken); transform: translateX(2px); }
+  .folder:hover { background: color-mix(in oklab, var(--bg-sunken) 88%, var(--accent)); transform: translateX(2px); }
   .folder.selected {
-    background: color-mix(in oklab, var(--accent) 20%, transparent);
+    background: color-mix(in oklab, var(--accent) 10%, var(--bg-raised));
     color: var(--accent);
-    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  .unified.selected::before,
+  .folder.selected::before {
+    content: "";
+    position: absolute;
+    top: 7px;
+    bottom: 7px;
+    left: 5px;
+    width: 3px;
+    border-radius: 999px;
+    background: var(--accent);
+    pointer-events: none;
+  }
+  .unified:focus-visible,
+  .folder:focus-visible {
+    outline-offset: -2px;
   }
   .folder-name { text-align: left; }
   .counts { display: flex; gap: 6px; align-items: center; }
@@ -503,7 +517,7 @@
     background: var(--bg-raised);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    box-shadow: var(--shadow-panel);
+    box-shadow: var(--shadow-float);
     padding: 4px;
     min-width: 180px;
     display: flex;
@@ -534,7 +548,7 @@
     border-radius: var(--radius-md);
     padding: 24px;
     max-width: 380px;
-    box-shadow: var(--shadow-panel);
+    box-shadow: var(--shadow-float);
     animation: surface-in var(--transition-med) both;
   }
   .dialog h3 { margin: 0 0 8px; }

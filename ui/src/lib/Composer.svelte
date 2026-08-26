@@ -196,10 +196,10 @@
   .composer {
     width: min(720px, 90vw);
     max-height: 80vh;
-    background: var(--bg-raised);
+    background: linear-gradient(145deg, var(--bg-raised), color-mix(in oklab, var(--bg-raised) 94%, var(--bg-sunken)));
     border-radius: var(--radius-lg);
     border: 1px solid var(--border);
-    box-shadow: var(--shadow-panel);
+    box-shadow: var(--shadow-float);
     animation: surface-in var(--transition-med) both;
     display: flex;
     flex-direction: column;
@@ -211,8 +211,9 @@
     align-items: center;
     padding: 10px 16px;
     border-bottom: 1px solid var(--border);
+    box-shadow: inset 0 1px var(--paper-highlight);
   }
-  header h2 { font-size: 14px; margin: 0; }
+  header h2 { font: 400 22px/1 var(--font-display); letter-spacing: -0.02em; margin: 0; }
   .close {
     width: 28px; height: 28px;
     font-size: 18px;
@@ -228,7 +229,7 @@
     font-size: 12px; color: var(--fg-muted);
   }
   .fields input {
-    flex: 1; background: var(--bg-sunken);
+    flex: 1; background: color-mix(in oklab, var(--bg-sunken) 82%, var(--bg-raised));
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     padding: 7px 8px;
@@ -238,34 +239,40 @@
   }
   .toolbar {
     display: flex; gap: 4px; padding: 6px 16px;
-    border-bottom: 1px solid var(--border);
+    border-block: 1px solid var(--border);
+    background: color-mix(in oklab, var(--bg-sunken) 64%, var(--bg-raised));
   }
   .toolbar button {
-    background: var(--bg-sunken);
+    background: var(--bg-raised);
+    border: 1px solid color-mix(in oklab, var(--border) 78%, var(--paper-highlight));
     border-radius: var(--radius-sm);
     padding: 4px 8px;
     font-size: 12px;
     min-width: 28px;
   }
-  .toolbar button:hover { background: var(--border); }
+  .toolbar button:hover { background: color-mix(in oklab, var(--accent) 10%, var(--bg-raised)); color: var(--accent); }
   .attach-button {
     margin-left: auto;
     padding: 4px 8px;
     border-radius: var(--radius-sm);
-    background: var(--bg-sunken);
+    background: var(--bg-raised);
+    border: 1px solid color-mix(in oklab, var(--border) 78%, var(--paper-highlight));
     color: var(--fg-muted);
     font-size: 12px;
     cursor: pointer;
   }
-  .attach-button:hover { background: var(--border); color: var(--fg); }
+  .attach-button:hover { background: color-mix(in oklab, var(--accent) 10%, var(--bg-raised)); color: var(--accent); }
   .attach-button input { display: none; }
   .editor {
     flex: 1; overflow-y: auto;
     padding: 12px 16px;
     min-height: 200px;
     cursor: text;
+    background:
+      linear-gradient(to bottom, transparent 0, transparent 29px, color-mix(in oklab, var(--paper-rule) 36%, transparent) 30px) 0 4px / 100% 30px,
+      var(--bg-raised);
   }
-  .editor:focus-within { box-shadow: inset 3px 0 0 var(--accent); }
+  .editor:focus-within { box-shadow: inset 3px 0 0 var(--accent), inset 0 1px var(--paper-highlight); }
   .editor :global(.prose) { min-height: 100%; outline: none; }
   .editor :global(.prose p) { margin: 0 0 8px; }
   @media (forced-colors: active) {
@@ -289,7 +296,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    background: var(--bg-sunken);
+    background: color-mix(in oklab, var(--bg-sunken) 76%, var(--bg-raised));
     font-size: 11px;
   }
   .attachments small { color: var(--fg-subtle); }
@@ -299,6 +306,7 @@
     display: flex; justify-content: flex-end; gap: 8px;
     padding: 10px 16px;
     border-top: 1px solid var(--border);
+    background: color-mix(in oklab, var(--bg-sunken) 56%, var(--bg-raised));
   }
   .draft-state { margin-right: auto; align-self: center; color: var(--fg-subtle); font-size: 10px; }
   .cancel { padding: 6px 12px; border-radius: var(--radius-sm); }
@@ -308,6 +316,7 @@
     padding: 6px 16px;
     border-radius: var(--radius-sm);
     font-weight: 600;
+    box-shadow: 0 2px 0 color-mix(in oklab, var(--accent-active) 30%, transparent);
   }
   .send:hover { background: var(--accent-hover); }
   .send:disabled { opacity: 0.6; cursor: wait; }

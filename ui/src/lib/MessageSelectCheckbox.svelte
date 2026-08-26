@@ -57,7 +57,7 @@
     background: linear-gradient(145deg, var(--checkbox-paper), var(--checkbox-paper-shade));
     box-shadow:
       inset 0 1px 0 var(--checkbox-glint),
-      0 2px 7px rgba(4, 12, 31, 0.15);
+      0 2px 5px rgba(49, 45, 38, 0.14);
     pointer-events: none;
     transition: border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
   }
@@ -97,7 +97,7 @@
   }
   .select-control:hover .select-paper {
     border-color: var(--accent);
-    box-shadow: inset 0 1px 0 var(--checkbox-glint), 0 3px 9px rgba(4, 12, 31, 0.2);
+    box-shadow: inset 0 1px 0 var(--checkbox-glint), 0 3px 8px rgba(49, 45, 38, 0.2);
   }
   .select-input:checked + .select-paper {
     border-color: var(--accent-hover);

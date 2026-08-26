@@ -3,7 +3,7 @@
 
 pkgname=origami
 pkgver=0.1.0
-pkgrel=6
+pkgrel=8
 pkgdesc="A fast, offline-first desktop email client"
 arch=('x86_64')
 url="https://gitlab.com/tea-LZL/origami"

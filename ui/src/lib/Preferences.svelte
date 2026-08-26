@@ -266,8 +266,8 @@
     border-radius: var(--radius-lg);
     display: grid;
     gap: 14px;
-    background: var(--bg-raised);
-    box-shadow: var(--shadow-panel);
+    background: linear-gradient(145deg, var(--bg-raised), color-mix(in oklab, var(--bg-raised) 94%, var(--bg-sunken)));
+    box-shadow: var(--shadow-float);
     animation: surface-in var(--transition-med) both;
     color: var(--fg);
   }
@@ -279,7 +279,7 @@
     letter-spacing: 0.14em;
     text-transform: uppercase;
   }
-  h2 { margin: 1px 0 0; font-size: 20px; }
+  h2 { margin: 1px 0 0; font: 400 27px/1 var(--font-display); letter-spacing: -0.02em; }
   h3 {
     margin: 0;
     color: var(--fg-subtle);
@@ -291,7 +291,7 @@
   header button { width: 28px; height: 28px; border-radius: var(--radius-sm); font-size: 20px; }
   header button:hover { background: var(--bg-sunken); }
   section { display: grid; gap: 12px; padding-top: 4px; }
-  section + section { padding-top: 16px; border-top: 1px solid var(--border); }
+  section + section { padding-top: 16px; border-top: 1px solid var(--paper-crease); }
   label { display: grid; grid-template-columns: 1fr 180px; align-items: center; gap: 16px; font-weight: 650; }
   .help,
   .muted { margin: -4px 0 0; color: var(--fg-muted); font-size: 11px; line-height: 1.45; }
@@ -305,7 +305,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    background: var(--bg-sunken);
+    background: color-mix(in oklab, var(--bg-sunken) 78%, var(--bg-raised));
     font-size: 11px;
   }
   .allowlist-row span { min-width: 0; flex: 1; overflow-wrap: anywhere; color: var(--fg); }
