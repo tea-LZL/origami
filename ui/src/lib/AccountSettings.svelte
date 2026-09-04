@@ -170,19 +170,19 @@
     display: grid; place-items: center; z-index: 80;
   }
   .dialog {
-    background: linear-gradient(145deg, var(--bg-raised), color-mix(in oklab, var(--bg-raised) 94%, var(--bg-sunken)));
+    background: var(--bg-raised);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     padding: 24px;
     max-width: 440px;
     width: 90vw;
-    box-shadow: var(--shadow-float);
+    box-shadow: var(--shadow-panel);
     animation: surface-in var(--transition-med) both;
   }
-  h2 { margin: 0 0 16px; font: 400 25px/1 var(--font-display); letter-spacing: -0.02em; }
+  h2 { margin: 0 0 16px; font-size: 16px; }
   label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--fg-muted); margin-bottom: 12px; }
   label input {
-    background: color-mix(in oklab, var(--bg-sunken) 78%, var(--bg-raised));
+    background: var(--bg-sunken);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     padding: 8px 10px;
@@ -190,12 +190,12 @@
     font: inherit;
     min-height: 36px;
   }
-  fieldset { border: 1px solid var(--paper-crease); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px; }
+  fieldset { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px; }
   fieldset legend { font-size: 12px; color: var(--fg-subtle); }
   .oauth-reconnect {
     display: flex; align-items: center; justify-content: space-between; gap: 16px;
     margin-bottom: 12px; padding: 12px; border: 1px solid var(--border);
-    border-radius: var(--radius-sm); background: color-mix(in oklab, var(--bg-sunken) 78%, var(--bg-raised));
+    border-radius: var(--radius-sm); background: var(--bg-sunken);
   }
   .oauth-reconnect div { display: grid; gap: 3px; }
   .oauth-reconnect strong { font-size: 12px; color: var(--fg); }
@@ -209,3 +209,4 @@
   .actions button:last-child { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
   .actions button:last-child:disabled { opacity: 0.6; }
 </style>
+

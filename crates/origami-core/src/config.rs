@@ -62,7 +62,7 @@ impl Default for NotificationConfig {
     fn default() -> Self {
         Self {
             preview: NotificationPreview::Full,
-            folder_scope: NotificationFolderScope::Inbox,
+            folder_scope: NotificationFolderScope::All,
             quiet_hours: None,
         }
     }
@@ -400,3 +400,4 @@ mod tests {
         }
     }
 }
+

@@ -42,11 +42,14 @@ variables:
       files:
         - Cargo.lock
         - ui/package-lock.json
+      prefix: v2
     paths:
       - .cargo/registry/
       - .cargo/git/
       - .npm/
-      - target/
+    # NOTE: target/ intentionally NOT cached. It is large and caching it
+    # fills the runner disk (No space left on device) when jobs download the
+    # cache and then build more on top. The registry cache alone keeps builds fast.
 
 rust:
   extends: .arch

@@ -18,3 +18,6 @@ packaging/arch/*.pkg.tar.zst.sha256
 # Logs / OS
 *.log
 .DS_Store
+
+# Hermes agent plans (local only)
+.hermes/
