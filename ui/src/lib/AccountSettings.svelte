@@ -20,6 +20,12 @@
   let oauthProvider = $state<"google" | "microsoft" | null>(null);
   let reconnecting = $state(false);
   let loadGeneration = 0;
+  const gmailAppPassword = $derived(
+    auth === "login" && (
+      oauthProvider === "google" ||
+      /@(gmail|googlemail)\.com$/i.test(email)
+    ),
+  );
 
   $effect(() => {
     if (!open || !accountId) return;
@@ -124,7 +130,7 @@
           <label>Port <input type="number" bind:value={smtpPort} /></label>
         </fieldset>
         <label>Username <input type="text" bind:value={username} /></label>
-        {#if oauthProvider}
+        {#if (auth === "xoauth2" || auth === "oauthbearer") && oauthProvider}
           <div class="oauth-reconnect">
             <div>
               <strong>{oauthProvider === "google" ? "Google" : "Microsoft"} OAuth</strong>
@@ -134,9 +140,13 @@
               {reconnecting ? "Connecting…" : `Reconnect ${oauthProvider === "google" ? "Google" : "Microsoft"}`}
             </button>
           </div>
-        {:else}
-          <label>New password (leave blank to keep current)
-            <input type="password" bind:value={password} />
+        {/if}
+        {#if auth === "login" || auth === "plain"}
+          <label>
+            {gmailAppPassword
+              ? "App password (leave blank to keep current)"
+              : "New password (leave blank to keep current)"}
+            <input type="password" bind:value={password} autocomplete="off" />
           </label>
         {/if}
         <label>Auth

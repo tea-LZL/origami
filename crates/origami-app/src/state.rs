@@ -86,6 +86,8 @@ impl AppState {
         let initial_account_id = account_id.clone();
         let initial_account = account.clone();
         let initial_cancel = token.clone();
+        let account_errors = self.account_errors.clone();
+        let syncing_accounts = self.syncing_accounts.clone();
         self.syncing_accounts
             .lock()
             .unwrap()
@@ -102,7 +104,14 @@ impl AppState {
                 .await
                 {
                     tracing::warn!(account = %initial_account_id, "OAuth refresh failed: {error}");
+                    account_errors.lock().unwrap().insert(
+                        initial_account_id.clone(),
+                        format!("OAuth token expired: {error}"),
+                    );
+                    syncing_accounts.lock().unwrap().remove(&initial_account_id);
+                    return;
                 }
+                account_errors.lock().unwrap().remove(&initial_account_id);
             }
             engine
                 .run_account_loop(aid, sync_account, token_clone)
@@ -113,6 +122,7 @@ impl AppState {
             let refresh_account_id = account_id.clone();
             let refresh_account = account.clone();
             let refresh_cancel = token.clone();
+            let account_errors = self.account_errors.clone();
             tauri::async_runtime::spawn(async move {
                 loop {
                     tokio::select! {
@@ -128,6 +138,12 @@ impl AppState {
                     .await
                     {
                         tracing::warn!(account = %refresh_account_id, "OAuth refresh failed: {error}");
+                        account_errors.lock().unwrap().insert(
+                            refresh_account_id.clone(),
+                            format!("OAuth token expired: {error}"),
+                        );
+                    } else {
+                        account_errors.lock().unwrap().remove(&refresh_account_id);
                     }
                 }
             });
@@ -221,7 +237,9 @@ async fn refresh_oauth_token(
     }
     .resolve()?;
     if refresh.is_empty() {
-        return Ok(());
+        return Err(Error::Secret(format!(
+            "missing OAuth refresh token for `{account_id}`"
+        )));
     }
     let (client_id, client_secret) = match provider {
         OAuthProvider::Google => (
@@ -271,9 +289,5 @@ pub fn account_from_config<'c>(
 
 /// XDG data dir for Origami (~/.local/share/origami).
 pub fn data_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("XDG_DATA_HOME") {
-        return PathBuf::from(dir).join("origami");
-    }
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".local/share/origami")
+    origami_core::config::data_dir()
 }

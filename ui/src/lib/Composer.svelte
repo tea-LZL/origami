@@ -6,13 +6,15 @@
   import Select from "./Select.svelte";
 
   let editor: Editor | null = null;
-  let toInput: HTMLInputElement | null = $state(null);
 
-  $effect(() => {
-    if (!app.value.composerOpen || !toInput) return;
-    const frame = requestAnimationFrame(() => toInput?.focus());
-    return () => cancelAnimationFrame(frame);
-  });
+  function focusOnMount(node: HTMLInputElement) {
+    const frame = requestAnimationFrame(() => node.focus());
+    return {
+      destroy() {
+        cancelAnimationFrame(frame);
+      },
+    };
+  }
 
   $effect(() => {
     if (!app.value.composerOpen) return;
@@ -134,7 +136,7 @@
             }))}
           />
         </label>
-        <label>To <input bind:this={toInput} type="text" list="origami-correspondents" bind:value={app.value.composerDraft.to} /></label>
+        <label>To <input use:focusOnMount type="text" list="origami-correspondents" bind:value={app.value.composerDraft.to} /></label>
         <label>Cc <input type="text" list="origami-correspondents" bind:value={app.value.composerDraft.cc} /></label>
         <label>Bcc <input type="text" list="origami-correspondents" bind:value={app.value.composerDraft.bcc} /></label>
         <label>Subject <input type="text" bind:value={app.value.composerDraft.subject} /></label>

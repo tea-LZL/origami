@@ -216,40 +216,114 @@ impl Secret {
                 Ok(secret.trim_end_matches(['\r', '\n']).to_string())
             }
             Secret::Keyring { entry } => {
-                let keyring = keyring::Entry::new("origami", entry)
-                    .map_err(|e| Error::Secret(format!("keyring error: {e}")))?;
-                keyring
-                    .get_password()
-                    .map_err(|e| Error::Secret(format!("cannot read keyring `{entry}`: {e}")))
+                let from_keyring = keyring::Entry::new("origami", entry)
+                    .ok()
+                    .and_then(|keyring| keyring.get_password().ok())
+                    .filter(|secret| !secret.is_empty());
+                if let Some(secret) = from_keyring {
+                    let _ = write_secret_file(entry, &secret);
+                    return Ok(secret);
+                }
+                read_secret_file(entry)?
+                    .ok_or_else(|| Error::Secret(format!("cannot read keyring `{entry}`")))
             }
         }
     }
 }
 
-/// Store a secret in the OS keyring under `origami/<entry>`.
-pub fn write_keyring_secret(entry: &str, value: &str) -> Result<()> {
-    keyring::Entry::new("origami", entry)
-        .map_err(|e| Error::Secret(e.to_string()))?
-        .set_password(value)
-        .map_err(|e| Error::Secret(e.to_string()))
+/// XDG data dir for Origami (`$XDG_DATA_HOME/origami` or `~/.local/share/origami`).
+pub fn data_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("XDG_DATA_HOME") {
+        return PathBuf::from(dir).join("origami");
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home).join(".local/share/origami")
 }
 
-/// Remove a keyring secret.
+fn secrets_dir() -> PathBuf {
+    data_dir().join("secrets")
+}
+
+fn secret_file_path(entry: &str) -> PathBuf {
+    let safe: String = entry
+        .chars()
+        .map(|ch| match ch {
+            '/' | '\\' | '\0' => '_',
+            _ => ch,
+        })
+        .collect();
+    let safe = match safe.as_str() {
+        "" | "." | ".." => "_".to_string(),
+        _ => safe,
+    };
+    secrets_dir().join(safe)
+}
+
+fn write_secret_file(entry: &str, value: &str) -> Result<()> {
+    let dir = secrets_dir();
+    private_fs::create_private_dir(&dir).map_err(|e| {
+        Error::Secret(format!(
+            "cannot create secrets directory {}: {e}",
+            dir.display()
+        ))
+    })?;
+    let path = secret_file_path(entry);
+    private_fs::write_private(&path, value.as_bytes())
+        .map_err(|e| Error::Secret(format!("cannot write {}: {e}", path.display())))
+}
+
+fn read_secret_file(entry: &str) -> Result<Option<String>> {
+    let path = secret_file_path(entry);
+    match std::fs::read_to_string(&path) {
+        Ok(value) if !value.is_empty() => Ok(Some(value)),
+        Ok(_) => Ok(None),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(Error::Secret(format!(
+            "cannot read {}: {e}",
+            path.display()
+        ))),
+    }
+}
+
+fn delete_secret_file(entry: &str) -> Result<()> {
+    let path = secret_file_path(entry);
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(Error::Secret(format!(
+            "cannot delete {}: {e}",
+            path.display()
+        ))),
+    }
+}
+
+/// Store a secret in the OS keyring under `origami/<entry>`, and mirror it
+/// to a 0600 file so it survives a locked or session-only keyring.
+pub fn write_keyring_secret(entry: &str, value: &str) -> Result<()> {
+    write_secret_file(entry, value)?;
+    match keyring::Entry::new("origami", entry).and_then(|keyring| keyring.set_password(value)) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            tracing::warn!("keyring write failed for `{entry}`, using private file: {e}");
+            Ok(())
+        }
+    }
+}
+
+/// Remove a keyring secret and its private-file copy.
 pub fn delete_keyring_secret(entry: &str) -> Result<()> {
     match keyring::Entry::new("origami", entry) {
         Ok(e) => {
             // keyring v3 does not expose delete; overwrite with empty.
             let _ = e.set_password("");
-            Ok(())
         }
         Err(e) => {
-            if e.to_string().contains("No such interface") {
-                Ok(())
-            } else {
-                Err(Error::Secret(e.to_string()))
+            if !e.to_string().contains("No such interface") {
+                tracing::warn!("keyring delete failed for `{entry}`: {e}");
             }
         }
     }
+    delete_secret_file(entry)
 }
 
 /// Save the current config to disk at the standard path, with
@@ -399,5 +473,79 @@ mod tests {
             assert!(settings.validate().is_err(), "accepted {start}-{end}");
         }
     }
-}
 
+    fn with_temp_data_home<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
+        use std::sync::Mutex;
+        static LOCK: Mutex<()> = Mutex::new(());
+        let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let temp = tempfile::tempdir().unwrap();
+        let old = std::env::var("XDG_DATA_HOME").ok();
+        std::env::set_var("XDG_DATA_HOME", temp.path());
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(temp.path())));
+        match old {
+            Some(value) => std::env::set_var("XDG_DATA_HOME", value),
+            None => std::env::remove_var("XDG_DATA_HOME"),
+        }
+        match result {
+            Ok(value) => value,
+            Err(panic) => std::panic::resume_unwind(panic),
+        }
+    }
+
+    fn secret_file(data_home: &std::path::Path, entry: &str) -> std::path::PathBuf {
+        data_home.join("origami/secrets").join(entry)
+    }
+
+    #[test]
+    fn keyring_secret_is_also_written_to_private_file() {
+        with_temp_data_home(|data_home| {
+            let entry = format!("origami-test-write-{}", uuid::Uuid::now_v7());
+            write_keyring_secret(&entry, "s3cret").unwrap();
+            let path = secret_file(data_home, &entry);
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), "s3cret");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                assert_eq!(
+                    std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                    0o600
+                );
+            }
+            delete_keyring_secret(&entry).unwrap();
+        });
+    }
+
+    #[test]
+    fn keyring_secret_falls_back_to_private_file_when_keyring_is_empty() {
+        with_temp_data_home(|data_home| {
+            let entry = format!("origami-test-fallback-{}", uuid::Uuid::now_v7());
+            write_keyring_secret(&entry, "from-file").unwrap();
+            let keyring = keyring::Entry::new("origami", &entry).unwrap();
+            keyring.set_password("").unwrap();
+            let got = Secret::Keyring {
+                entry: entry.clone(),
+            }
+            .resolve()
+            .unwrap();
+            assert_eq!(got, "from-file");
+            assert_eq!(
+                std::fs::read_to_string(secret_file(data_home, &entry)).unwrap(),
+                "from-file"
+            );
+            delete_keyring_secret(&entry).unwrap();
+        });
+    }
+
+    #[test]
+    fn delete_keyring_secret_removes_private_file() {
+        with_temp_data_home(|data_home| {
+            let entry = format!("origami-test-delete-{}", uuid::Uuid::now_v7());
+            write_keyring_secret(&entry, "gone").unwrap();
+            let path = secret_file(data_home, &entry);
+            assert!(path.exists());
+            delete_keyring_secret(&entry).unwrap();
+            assert!(!path.exists());
+            assert!(Secret::Keyring { entry }.resolve().is_err());
+        });
+    }
+}

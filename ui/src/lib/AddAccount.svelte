@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { openUrl } from "@tauri-apps/plugin-opener";
   import { app } from "./stores.svelte";
 
   let open = $state(false);
@@ -105,12 +106,15 @@
 
   async function savePassword() {
     if (!password) {
-      error = "Enter a password or app-specific token";
+      error = oauthProvider === "google"
+        ? "Enter a Gmail app password"
+        : "Enter a password or app-specific token";
       return;
     }
     loading = true;
     error = "";
     try {
+      const passwordAuth = oauthProvider === "google" ? "login" : auth;
       const account: { id: string; dbId: string; name: string; email: string } =
         await invoke("add_account", {
           accountId: name,
@@ -120,7 +124,7 @@
           imapPort: imapHost ? imapPort : null,
           smtpHost: smtpHost || undefined,
           smtpPort: smtpHost ? smtpPort : null,
-          auth,
+          auth: passwordAuth,
           username,
           password,
           oauthAccessToken: null,
@@ -205,10 +209,28 @@
             <p class="alt">or</p>
           {/if}
 
-          <label>
-            Password / app token
-            <input type="password" bind:value={password} />
-          </label>
+          {#if oauthProvider === "google"}
+            <label>
+              App password
+              <input type="password" bind:value={password} autocomplete="off" />
+            </label>
+            <p class="hint">
+              Enable 2-Step Verification, then create an app password at
+              <button
+                type="button"
+                class="link"
+                onclick={() => openUrl("https://myaccount.google.com/apppasswords")}
+              >
+                myaccount.google.com/apppasswords
+              </button>.
+              Your regular Gmail password will not work.
+            </p>
+          {:else}
+            <label>
+              Password / app token
+              <input type="password" bind:value={password} />
+            </label>
+          {/if}
 
           {#if error}<p class="err">{error}</p>{/if}
           <div class="actions">
@@ -219,7 +241,7 @@
               onclick={savePassword}
               disabled={loading}
             >
-              {loading ? "Saving…" : "Save password"}
+              {loading ? "Saving…" : oauthProvider === "google" ? "Save app password" : "Save password"}
             </button>
           </div>
         </form>
@@ -254,6 +276,11 @@
   p { color: var(--fg-muted); font-size: 13px; margin: 0 0 16px; }
   .provider { color: var(--accent); font-weight: 600; }
   p.alt { text-align: center; margin: 12px 0; color: var(--fg-subtle); font-size: 12px; }
+  p.hint { color: var(--fg-muted); font-size: 12px; margin: -4px 0 12px; line-height: 1.4; }
+  button.link {
+    display: inline; padding: 0; border: 0; background: none;
+    color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer;
+  }
   label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--fg-muted); margin-bottom: 12px; }
   label input, fieldset input {
     background: var(--bg-sunken); border: 1px solid var(--border);
@@ -271,11 +298,6 @@
   .oauth {
     width: 100%; background: var(--bg-sunken);
     border: 1px solid var(--border); border-radius: var(--radius-sm);
-    padding: 12px; font-weight: 600; font-size: 14px; margin-top: 8px;
-  }
-  .oauth:hover { background: var(--border); }
-  .oauth:disabled { opacity: 0.6; }
-</style>
     padding: 12px; font-weight: 600; font-size: 14px; margin-top: 8px;
   }
   .oauth:hover { background: var(--border); }

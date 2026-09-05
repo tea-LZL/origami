@@ -1,26 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { tick } from "svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => {
-  const editorFocus = vi.fn();
-  return {
-    app: {
-      value: {
-        composerOpen: true,
-        composerAccountId: "account-1",
-        composerDraft: { to: "", cc: "", bcc: "", subject: "", html: "<p></p>" },
-        composerAttachments: [],
-        composerThreading: { inReplyTo: null, references: [] },
-        correspondents: [],
-        accounts: [{ id: "account-1", name: "Work", email: "me@example.org" }],
-        sending: false,
-      },
-    },
-    closeComposer: vi.fn(),
-    sendComposer: vi.fn(),
-    editorFocus,
-  };
-});
+const mocks = vi.hoisted(() => ({
+  editorFocus: vi.fn(),
+}));
 
 vi.mock("@tiptap/core", () => ({
   Editor: class MockEditor {
@@ -44,21 +28,38 @@ vi.mock("@tiptap/core", () => ({
   },
 }));
 vi.mock("@tiptap/starter-kit", () => ({ default: {} }));
-vi.mock("./stores.svelte", () => mocks);
+vi.mock("./stores.svelte", () => import("./composer-test-store.svelte"));
 vi.mock("./api", () => ({ api: { saveComposerDraft: vi.fn().mockResolvedValue(undefined) } }));
 
 import Composer from "./Composer.svelte";
+import { app, resetComposerTestStore } from "./composer-test-store.svelte";
 
 describe("Composer focus behavior", () => {
   beforeEach(() => {
     mocks.editorFocus.mockClear();
-    mocks.app.value.composerOpen = true;
+    resetComposerTestStore();
   });
 
   it("focuses To when opened", async () => {
     render(Composer);
 
     await waitFor(() => expect(screen.getByLabelText("To")).toHaveFocus());
+  });
+
+  it("does not steal focus from other fields after opening", async () => {
+    render(Composer);
+
+    await waitFor(() => expect(screen.getByLabelText("To")).toHaveFocus());
+
+    const subject = screen.getByLabelText("Subject");
+    subject.focus();
+    expect(subject).toHaveFocus();
+
+    // Same identity break as stores.svelte.ts `patch()` / 5s pollAccountErrors.
+    app.value = { ...app.value };
+
+    await tick();
+    expect(subject).toHaveFocus();
   });
 
   it("focuses editor when clicking unused body space", async () => {
