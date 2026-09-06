@@ -149,18 +149,20 @@
             <input type="password" bind:value={password} autocomplete="off" />
           </label>
         {/if}
-        <label>Auth
-          <Select
-            bind:value={auth}
-            ariaLabel="Authentication method"
-            options={[
-              { value: "login", label: "Login" },
-              { value: "plain", label: "Plain" },
-              { value: "xoauth2", label: "XOAUTH2" },
-              { value: "oauthbearer", label: "OAuth Bearer" },
-            ]}
-          />
-        </label>
+        {#if !gmailAppPassword}
+          <label>Auth
+            <Select
+              bind:value={auth}
+              ariaLabel="Authentication method"
+              options={[
+                { value: "login", label: "Login" },
+                { value: "plain", label: "Plain" },
+                { value: "xoauth2", label: "XOAUTH2" },
+                { value: "oauthbearer", label: "OAuth Bearer" },
+              ]}
+            />
+          </label>
+        {/if}
         {#if error}<p class="err">{error}</p>{/if}
         <div class="actions">
           <button type="button" onclick={close}>Cancel</button>

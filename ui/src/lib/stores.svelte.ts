@@ -131,7 +131,7 @@ let composerLoadToken = 0;
 let accountStatusRequest = 0;
 
 function patch(partial: Partial<State>) {
-  app.value = { ...app.value, ...partial };
+  Object.assign(app.value, partial);
 }
 
 function bounded(value: unknown, fallback: number, min: number, max: number): number {

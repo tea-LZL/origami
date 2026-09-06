@@ -1,7 +1,8 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { app } from "./stores.svelte";
+  import { app, pollAccountErrors, selectFolder } from "./stores.svelte";
+  import { api } from "./api";
 
   let open = $state(false);
   let step = $state(0); // 0=email, 1=config, 2=done
@@ -21,6 +22,24 @@
 
   let username = $state("");
   let password = $state("");
+  let showAdvanced = $state(false);
+  let addedAccountId = $state<string | null>(null);
+
+  const addedStatus = $derived(
+    addedAccountId ? app.value.accountStatuses[addedAccountId] : undefined,
+  );
+
+  const isGmail = $derived(oauthProvider === "google");
+  const isMicrosoft = $derived(oauthProvider === "microsoft");
+  const knownProvider = $derived(imapHost.length > 0);
+  const appPasswordKind = $derived.by(() => {
+    if (isGmail) return "gmail";
+    const haystack = `${description} ${email}`.toLowerCase();
+    if (haystack.includes("icloud") || haystack.includes("apple")) return "icloud";
+    if (haystack.includes("yahoo")) return "yahoo";
+    if (haystack.includes("fastmail")) return "fastmail";
+    return null;
+  });
 
   async function detect() {
     if (!email.includes("@")) {
@@ -48,6 +67,7 @@
       oauthProvider = hints.oauthProvider;
       name = email.split("@")[0] ?? "personal";
       username = email;
+      showAdvanced = !imapHost;
       step = 1;
     } catch (e) {
       error = String(e);
@@ -57,7 +77,7 @@
   }
 
   async function oauthSignIn() {
-    if (!oauthProvider) return;
+    if (oauthProvider !== "microsoft") return;
     loading = true;
     error = "";
     try {
@@ -95,8 +115,7 @@
         oauthAccessToken: accessToken,
         oauthRefreshToken: refreshToken,
       });
-      app.value.accounts = [...app.value.accounts, { ...account, hasImap: !!imapHost, hasSmtp: !!smtpHost }];
-      step = 2;
+      await finishAddedAccount(account);
     } catch (e) {
       error = String(e);
     } finally {
@@ -106,15 +125,17 @@
 
   async function savePassword() {
     if (!password) {
-      error = oauthProvider === "google"
+      error = appPasswordKind === "gmail"
         ? "Enter a Gmail app password"
-        : "Enter a password or app-specific token";
+        : appPasswordKind
+          ? "Enter an app-specific password"
+          : "Enter a password or app-specific token";
       return;
     }
     loading = true;
     error = "";
     try {
-      const passwordAuth = oauthProvider === "google" ? "login" : auth;
+      const passwordAuth = isGmail || appPasswordKind ? "login" : auth;
       const account: { id: string; dbId: string; name: string; email: string } =
         await invoke("add_account", {
           accountId: name,
@@ -130,12 +151,31 @@
           oauthAccessToken: null,
           oauthRefreshToken: null,
         });
-      app.value.accounts = [...app.value.accounts, { ...account, hasImap: !!imapHost, hasSmtp: !!smtpHost }];
-      step = 2;
+      await finishAddedAccount(account);
     } catch (e) {
       error = String(e);
     } finally {
       loading = false;
+    }
+  }
+
+  async function finishAddedAccount(account: {
+    id: string;
+    dbId: string;
+    name: string;
+    email: string;
+  }) {
+    app.value.accounts = [...app.value.accounts, { ...account, hasImap: !!imapHost, hasSmtp: !!smtpHost }];
+    addedAccountId = account.id;
+    step = 2;
+    try {
+      const folders = await api.listFolders();
+      app.value.folders = folders;
+      const inbox = folders.find((folder) => folder.accountId === account.dbId && folder.role === "Inbox");
+      if (inbox) await selectFolder(inbox.id);
+      await pollAccountErrors();
+    } catch {
+      // Folders and status refresh after first sync; the account is already saved.
     }
   }
 
@@ -145,6 +185,9 @@
     email = "";
     name = "";
     error = "";
+    password = "";
+    showAdvanced = false;
+    addedAccountId = null;
   }
 
   export function show() {
@@ -178,44 +221,30 @@
           </div>
         </form>
       {:else if step === 1}
-        <h2 id="add-account-title">Configure account</h2>
+        <h2 id="add-account-title">
+          {#if isGmail}Connect Gmail{:else}Configure account{/if}
+        </h2>
         {#if description}<p class="provider">{description}</p>{/if}
 
         <form onsubmit={(e) => e.preventDefault()}>
           <label>Display name <input type="text" bind:value={name} /></label>
-          <label>Username <input type="text" bind:value={username} /></label>
-          <fieldset>
-            <legend>IMAP</legend>
-            <label>Host <input type="text" bind:value={imapHost} /></label>
-            <label>Port <input type="number" bind:value={imapPort} /></label>
-          </fieldset>
-          <fieldset>
-            <legend>SMTP</legend>
-            <label>Host <input type="text" bind:value={smtpHost} /></label>
-            <label>Port <input type="number" bind:value={smtpPort} /></label>
-          </fieldset>
 
-          {#if oauthProvider}
+          {#if isMicrosoft}
             <button
               type="button"
               class="oauth"
               onclick={oauthSignIn}
               disabled={loading}
             >
-              {loading
-                ? "Signing in…"
-                : `Sign in with ${oauthProvider === "google" ? "Google" : "Microsoft"}`}
+              {loading ? "Signing in…" : "Sign in with Microsoft"}
             </button>
-            <p class="alt">or</p>
+            <p class="alt">or use a password</p>
           {/if}
 
-          {#if oauthProvider === "google"}
-            <label>
-              App password
-              <input type="password" bind:value={password} autocomplete="off" />
-            </label>
+          {#if appPasswordKind === "gmail"}
             <p class="hint">
-              Enable 2-Step Verification, then create an app password at
+              Gmail needs an app password, not your regular password. Turn on
+              2-Step Verification, then create a 16-character app password at
               <button
                 type="button"
                 class="link"
@@ -223,13 +252,59 @@
               >
                 myaccount.google.com/apppasswords
               </button>.
-              Your regular Gmail password will not work.
             </p>
+            <label>
+              App password
+              <input type="password" bind:value={password} autocomplete="off" />
+            </label>
+          {:else if appPasswordKind === "icloud"}
+            <p class="hint">iCloud requires an app-specific password from appleid.apple.com.</p>
+            <label>
+              App-specific password
+              <input type="password" bind:value={password} autocomplete="off" />
+            </label>
+          {:else if appPasswordKind === "yahoo"}
+            <p class="hint">Yahoo requires an app password generated in account security settings.</p>
+            <label>
+              App password
+              <input type="password" bind:value={password} autocomplete="off" />
+            </label>
+          {:else if appPasswordKind === "fastmail"}
+            <p class="hint">Fastmail requires an app password from Privacy &amp; Security settings.</p>
+            <label>
+              App password
+              <input type="password" bind:value={password} autocomplete="off" />
+            </label>
           {:else}
             <label>
               Password / app token
               <input type="password" bind:value={password} />
             </label>
+          {/if}
+
+          {#if knownProvider}
+            <button
+              type="button"
+              class="advanced"
+              aria-expanded={showAdvanced}
+              onclick={() => showAdvanced = !showAdvanced}
+            >
+              Advanced
+            </button>
+          {/if}
+
+          {#if showAdvanced || !knownProvider}
+            <label>Username <input type="text" bind:value={username} /></label>
+            <fieldset>
+              <legend>IMAP</legend>
+              <label>Host <input type="text" bind:value={imapHost} /></label>
+              <label>Port <input type="number" bind:value={imapPort} /></label>
+            </fieldset>
+            <fieldset>
+              <legend>SMTP</legend>
+              <label>Host <input type="text" bind:value={smtpHost} /></label>
+              <label>Port <input type="number" bind:value={smtpPort} /></label>
+            </fieldset>
           {/if}
 
           {#if error}<p class="err">{error}</p>{/if}
@@ -241,13 +316,19 @@
               onclick={savePassword}
               disabled={loading}
             >
-              {loading ? "Saving…" : oauthProvider === "google" ? "Save app password" : "Save password"}
+              {loading ? "Verifying…" : appPasswordKind ? "Save app password" : "Save password"}
             </button>
           </div>
         </form>
       {:else if step === 2}
-        <h2 id="add-account-title">Account added!</h2>
-        <p>{email} is configured and syncing.</p>
+        <h2 id="add-account-title">Account added</h2>
+        {#if addedStatus?.state === "syncing"}
+          <p>Syncing Inbox…</p>
+        {:else if addedStatus?.state === "online"}
+          <p>{email} is connected.</p>
+        {:else}
+          <p>{email} is connected. Origami is syncing Inbox in the background.</p>
+        {/if}
         <div class="actions">
           <button type="button" class="next" onclick={close}>Done</button>
         </div>
@@ -302,6 +383,11 @@
   }
   .oauth:hover { background: var(--border); }
   .oauth:disabled { opacity: 0.6; }
+  .advanced {
+    background: none; border: 0; padding: 0; margin: 0 0 12px;
+    color: var(--accent); font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .advanced:hover { text-decoration: underline; }
   @media (max-width: 430px) {
     :global(.wizard-art) { display: none; }
   }

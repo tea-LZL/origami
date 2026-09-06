@@ -55,7 +55,12 @@ describe("Composer focus behavior", () => {
     subject.focus();
     expect(subject).toHaveFocus();
 
-    // Same identity break as stores.svelte.ts `patch()` / 5s pollAccountErrors.
+    // Production `patch()` mutates fields in place (status poll, sync).
+    Object.assign(app.value, { sending: false });
+    await tick();
+    expect(subject).toHaveFocus();
+
+    // Replacing `app.value` must still not steal focus after mount.
     app.value = { ...app.value };
 
     await tick();

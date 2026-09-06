@@ -27,6 +27,29 @@ fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
+fn classify_login_error(message: &str, app_password: bool) -> String {
+    let lower = message.to_lowercase();
+    let auth_failed = lower.contains("auth")
+        || lower.contains("login")
+        || lower.contains("invalid credentials")
+        || lower.contains("authentication");
+    if auth_failed && app_password {
+        return "The server rejected this app password. For Gmail, enable 2-Step Verification and use a 16-character app password — your regular password will not work.".into();
+    }
+    if auth_failed {
+        return "The server rejected this password.".into();
+    }
+    if lower.contains("timed out")
+        || lower.contains("connection")
+        || lower.contains("network")
+        || lower.contains("dns")
+        || lower.contains("connect")
+    {
+        return "Could not reach the mail server. Check the host, port, and your network.".into();
+    }
+    message.to_string()
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInfo {
@@ -671,10 +694,9 @@ pub fn provider_hints(email: String) -> ProviderHintDto {
             imap_port: Some(p.imap.1),
             smtp_host: Some(p.smtp.0.to_string()),
             smtp_port: Some(p.smtp.1),
-            auth: if oauth.is_some() {
-                "xoauth2".to_string()
-            } else {
-                "login".to_string()
+            auth: match oauth {
+                Some(OAuthProvider::Microsoft) => "xoauth2".to_string(),
+                _ => "login".to_string(),
             },
             oauth_provider: oauth.map(|p| {
                 match p {
@@ -816,6 +838,26 @@ pub async fn add_account(
     } else {
         return Err("password or oauth token required".to_string());
     };
+
+    let imap_probe = imap.as_ref().map(|config| ImapConfig {
+        secret: Some(origami_core::config::Secret::Raw {
+            raw: secret_value.clone(),
+        }),
+        ..config.clone()
+    });
+    if let Some(imap_probe) = imap_probe.as_ref() {
+        if let Err(error) = origami_core::imap::ImapBackend::connect(&account_id, imap_probe).await
+        {
+            let app_password = matches!(
+                auth_mech,
+                origami_core::config::AuthMechanism::Login
+                    | origami_core::config::AuthMechanism::Plain
+            ) && email.to_lowercase().rsplit_once('@').is_some_and(
+                |(_, domain)| matches!(domain, "gmail.com" | "googlemail.com" | "google.com"),
+            );
+            return Err(classify_login_error(&error.to_string(), app_password));
+        }
+    }
 
     origami_core::config::write_keyring_secret(&account_id, &secret_value).map_err(err)?;
     // Also store the refresh token for OAuth accounts.
@@ -1609,6 +1651,19 @@ pub async fn send_message(state: State<'_, AppState>, draft: Draft) -> CmdResult
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gmail_app_password_failures_explain_the_required_setup() {
+        assert!(
+            classify_login_error("LOGIN failed: AUTHENTICATIONFAILED", true)
+                .contains("16-character app password")
+        );
+        assert_eq!(
+            classify_login_error("authentication failed", false),
+            "The server rejected this password."
+        );
+        assert!(classify_login_error("connection timed out", false).contains("mail server"));
+    }
 
     #[test]
     fn outbox_summary_does_not_expose_message_payload() {
