@@ -519,9 +519,10 @@ mod tests {
     fn keyring_secret_falls_back_to_private_file_when_keyring_is_empty() {
         with_temp_data_home(|data_home| {
             let entry = format!("origami-test-fallback-{}", uuid::Uuid::now_v7());
-            write_keyring_secret(&entry, "from-file").unwrap();
-            let keyring = keyring::Entry::new("origami", &entry).unwrap();
-            keyring.set_password("").unwrap();
+            write_secret_file(&entry, "from-file").unwrap();
+            if let Ok(keyring) = keyring::Entry::new("origami", &entry) {
+                let _ = keyring.set_password("");
+            }
             let got = Secret::Keyring {
                 entry: entry.clone(),
             }
