@@ -16,6 +16,8 @@
     setSelectedFlag,
     setSelectedKeyword,
     toggleEnvelopeSelection,
+    recordFolderScroll,
+    restoredFolderScroll,
   } from "./stores.svelte";
   import VirtualList from "./VirtualList.svelte";
   import type { Envelope } from "./types";
@@ -291,7 +293,7 @@
     {/if}
   {/if}
   <div class="list-body" aria-busy={app.value.envelopesLoading}>
-    {#if app.value.envelopesLoading}
+    {#if app.value.envelopesLoading && app.value.envelopes.length === 0}
       <div class="message-loading" role="status" aria-live="polite">
         <span class="sr-only">{app.value.searching ? "Searching messages" : "Loading messages"}</span>
         <div class="skeleton-list" aria-hidden="true">
@@ -319,6 +321,9 @@
         isSelected={(e) => selectedIds.has(e.id)}
         onSelect={onRowSelect}
         onEndReached={loadMoreEnvelopes}
+        restoreScroll={restoredFolderScroll()}
+        restoreKey={app.value.selectedFolderId ?? ""}
+        onScrollPosition={recordFolderScroll}
       >
         {#snippet render(item: Envelope)}
           {@const count = threadCounts.get(threadKey(item)) ?? 1}

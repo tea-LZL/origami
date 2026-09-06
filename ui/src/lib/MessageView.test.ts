@@ -119,4 +119,14 @@ describe("MessageView remote content", () => {
     expect(status).toHaveTextContent("Loading message");
     expect(status.querySelector('[aria-hidden="true"]')).not.toBeNull();
   });
+
+  it("keeps a cached message visible while a refresh is in flight", () => {
+    mocks.app.value.message = message;
+    mocks.app.value.messageLoading = true;
+    render(MessageView);
+
+    expect(screen.getByTitle("Email HTML body")).toBeInTheDocument();
+    expect(screen.queryByText("Loading message")).toBeNull();
+    expect(screen.getByText("Checking mail…")).toBeInTheDocument();
+  });
 });

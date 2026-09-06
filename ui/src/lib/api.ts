@@ -144,6 +144,8 @@ export const api = {
     invoke<Envelope[]>("list_envelopes", { folderId, page, pageSize }),
   listUnifiedInbox: (page = 1, pageSize = 50) =>
     invoke<Envelope[]>("list_unified_inbox", { page, pageSize }),
+  getCachedMessage: (folderId: string, serverUid: number) =>
+    invoke<MessageDto | null>("get_cached_message", { folderId, serverUid }),
   getMessage: (folderId: string, serverUid: number) =>
     invoke<MessageDto>("get_message", { folderId, serverUid }),
   getAttachment: (folderId: string, serverUid: number, index: number) =>

@@ -130,6 +130,47 @@ let pendingUndo: {
 let composerLoadToken = 0;
 let accountStatusRequest = 0;
 
+type FolderView = {
+  envelopes: Envelope[];
+  envelopePage: number;
+  hasMoreEnvelopes: boolean;
+  selectedEnvelope: Envelope | null;
+  selectedMessageIds: string[];
+  selectionAnchorId: string | null;
+  scrollTop: number;
+};
+
+const folderViews = new Map<string, FolderView>();
+let folderScrollTop = 0;
+
+export function recordFolderScroll(scrollTop: number) {
+  folderScrollTop = scrollTop;
+  const folderId = app.value.selectedFolderId;
+  if (!folderId) return;
+  const view = folderViews.get(folderId);
+  if (view) view.scrollTop = scrollTop;
+}
+
+export function restoredFolderScroll(): number {
+  const folderId = app.value.selectedFolderId;
+  if (!folderId) return 0;
+  return folderViews.get(folderId)?.scrollTop ?? 0;
+}
+
+function snapshotFolderView() {
+  const folderId = app.value.selectedFolderId;
+  if (!folderId) return;
+  folderViews.set(folderId, {
+    envelopes: app.value.envelopes,
+    envelopePage: app.value.envelopePage,
+    hasMoreEnvelopes: app.value.hasMoreEnvelopes,
+    selectedEnvelope: app.value.selectedEnvelope,
+    selectedMessageIds: app.value.selectedMessageIds,
+    selectionAnchorId: app.value.selectionAnchorId,
+    scrollTop: folderScrollTop,
+  });
+}
+
 function patch(partial: Partial<State>) {
   Object.assign(app.value, partial);
 }
@@ -299,23 +340,36 @@ export async function bootstrap() {
 }
 
 export async function selectFolder(folderId: string) {
+  if (app.value.selectedFolderId === folderId && !app.value.unifiedInbox) {
+    await loadEnvelopes(folderId);
+    return;
+  }
+  snapshotFolderView();
   messageRequest += 1;
+  const cached = folderViews.get(folderId);
+  folderScrollTop = cached?.scrollTop ?? 0;
   patch({
     selectedFolderId: folderId,
     unifiedInbox: false,
     searchQuery: "",
     searching: false,
-    envelopes: [],
-    envelopePage: 1,
-    hasMoreEnvelopes: true,
+    envelopes: cached?.envelopes ?? [],
+    envelopePage: cached?.envelopePage ?? 1,
+    hasMoreEnvelopes: cached?.hasMoreEnvelopes ?? true,
     selectingAll: false,
-    selectedEnvelope: null,
-    selectedMessageIds: [],
-    selectionAnchorId: null,
-    message: null,
+    selectedEnvelope: cached?.selectedEnvelope ?? null,
+    selectedMessageIds: cached?.selectedMessageIds ?? [],
+    selectionAnchorId: cached?.selectionAnchorId ?? null,
+    message: cached?.selectedEnvelope?.id === app.value.message?.envelope.id
+      ? app.value.message
+      : null,
     messageLoading: false,
   });
   await loadEnvelopes(folderId);
+  if (cached?.selectedEnvelope) {
+    const stillThere = app.value.envelopes.some((item) => item.id === cached.selectedEnvelope?.id);
+    if (stillThere) void selectEnvelope(cached.selectedEnvelope);
+  }
 }
 
 export async function selectUnifiedInbox() {
@@ -357,7 +411,10 @@ async function loadUnifiedInbox() {
 
 export async function loadEnvelopes(folderId: string) {
   const request = ++envelopeRequest;
-  patch({ envelopesLoading: true, envelopesLoadingMore: false });
+  patch({
+    envelopesLoading: app.value.envelopes.length === 0,
+    envelopesLoadingMore: false,
+  });
   try {
     const envelopes = await api.listEnvelopes(folderId, 1, 200);
     if (request !== envelopeRequest || app.value.selectedFolderId !== folderId) return;
@@ -452,18 +509,34 @@ export async function selectEnvelope(envelope: Envelope) {
   ) ?? sources[0];
   if (!primary) return;
   const request = ++messageRequest;
-  patch({ selectedEnvelope: envelope, message: null, messageLoading: true });
+  patch({ selectedEnvelope: envelope, messageLoading: true });
   try {
     let message: MessageDto | null = null;
     let loadedSource: EnvelopeSource | null = null;
     let lastError: unknown = null;
-    for (const source of [primary, ...sources.filter((item) => item !== primary)]) {
+    const orderedSources = [primary, ...sources.filter((item) => item !== primary)];
+    for (const source of orderedSources) {
       try {
-        message = await api.getMessage(source.mailboxId, source.serverUid);
-        loadedSource = source;
-        break;
-      } catch (error) {
-        lastError = error;
+        const cached = await api.getCachedMessage(source.mailboxId, source.serverUid);
+        if (cached) {
+          message = cached;
+          loadedSource = source;
+          break;
+        }
+      } catch {
+        // Cache misses stay local; get_message handles IMAP.
+      }
+    }
+    if (!message) {
+      if (app.value.message?.envelope.id !== envelope.id) patch({ message: null });
+      for (const source of orderedSources) {
+        try {
+          message = await api.getMessage(source.mailboxId, source.serverUid);
+          loadedSource = source;
+          break;
+        } catch (error) {
+          lastError = error;
+        }
       }
     }
     if (!message) throw lastError ?? new Error("message not found");

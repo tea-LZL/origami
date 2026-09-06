@@ -191,7 +191,7 @@
 </script>
 
 <section class="message">
-  {#if app.value.messageLoading}
+  {#if app.value.messageLoading && !app.value.message}
     <div class="message-loading" role="status" aria-live="polite">
       <span class="sr-only">Loading message</span>
       <div class="message-skeleton" aria-hidden="true">
@@ -240,6 +240,9 @@
         <span class="from">{fromText()}</span>
         {#if fromAddressText()}<span class="address" title="From address">{fromAddressText()}</span>{/if}
         <span class="date">{env.date ?? ""}</span>
+        {#if app.value.messageLoading}
+          <span role="status" aria-live="polite">Checking mail…</span>
+        {/if}
       </div>
       {#if detailsOpen}
         <dl class="details">

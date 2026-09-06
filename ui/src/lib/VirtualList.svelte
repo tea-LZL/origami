@@ -14,6 +14,9 @@
     activeId?: string | null;
     isSelected?: (item: T) => boolean;
     onEndReached?: () => void;
+    restoreScroll?: number;
+    restoreKey?: string;
+    onScrollPosition?: (scrollTop: number) => void;
   }
 
   let {
@@ -25,6 +28,9 @@
     activeId = null,
     isSelected,
     onEndReached,
+    restoreScroll = 0,
+    restoreKey = "",
+    onScrollPosition,
   }: Props = $props();
 
   let scroller: HTMLDivElement | null = $state(null);
@@ -33,6 +39,15 @@
   let scrollFrame: number | null = null;
 
   const overscan = 6;
+
+  $effect(() => {
+    const _key = restoreKey;
+    const top = restoreScroll;
+    void _key;
+    if (!scroller) return;
+    scroller.scrollTop = top;
+    scrollTop = top;
+  });
 
   const total = $derived(items.length);
   const startIndex = $derived(
@@ -55,6 +70,7 @@
       scrollFrame = null;
       if (!scroller) return;
       scrollTop = scroller.scrollTop;
+      onScrollPosition?.(scrollTop);
       if (scrollTop + scroller.clientHeight >= scroller.scrollHeight - itemHeight * 4) {
         onEndReached?.();
       }
@@ -67,6 +83,7 @@
     const observer = new ResizeObserver(update);
     observer.observe(node);
     update();
+    if (restoreScroll > 0) node.scrollTop = restoreScroll;
     return {
       destroy() {
         observer.disconnect();

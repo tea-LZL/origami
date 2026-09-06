@@ -209,6 +209,7 @@ pub fn run() {
             commands::delete_folder,
             commands::list_envelopes,
             commands::list_unified_inbox,
+            commands::get_cached_message,
             commands::get_message,
             commands::get_attachment,
             commands::store_flags,

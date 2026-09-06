@@ -338,6 +338,46 @@ pub struct MessageDto {
     pub parse_warnings: Vec<String>,
 }
 
+fn message_dto(
+    state: &AppState,
+    folder_id: &str,
+    server_uid: u32,
+    parsed: ParsedMessage,
+) -> CmdResult<MessageDto> {
+    let envelope = state
+        .store
+        .get_envelope(folder_id, server_uid)
+        .map_err(err)?
+        .ok_or("envelope not found")?;
+    Ok(MessageDto {
+        envelope,
+        text: parsed.text,
+        html: parsed.html,
+        headers: parsed.headers,
+        attachments: parsed.attachments,
+        parts: parsed.parts,
+        parse_warnings: parsed.parse_warnings,
+    })
+}
+
+/// Local cache only: never opens IMAP. None means the UI should show a
+/// skeleton and call `get_message`.
+#[tauri::command]
+pub fn get_cached_message(
+    state: State<'_, AppState>,
+    folder_id: String,
+    server_uid: u32,
+) -> CmdResult<Option<MessageDto>> {
+    let Some(parsed) = state
+        .store
+        .parsed_message_for_logical_message(&folder_id, server_uid)
+        .map_err(err)?
+    else {
+        return Ok(None);
+    };
+    message_dto(&state, &folder_id, server_uid, parsed).map(Some)
+}
+
 /// Fetch normalized display data (or fall back to a full body) for display.
 #[tauri::command]
 pub async fn get_message(
@@ -398,21 +438,7 @@ pub async fn get_message(
         }
     };
 
-    let envelope = state
-        .store
-        .get_envelope(&folder_id, server_uid)
-        .map_err(err)?
-        .ok_or("envelope not found")?;
-
-    Ok(MessageDto {
-        envelope,
-        text: parsed.text,
-        html: parsed.html,
-        headers: parsed.headers,
-        attachments: parsed.attachments,
-        parts: parsed.parts,
-        parse_warnings: parsed.parse_warnings,
-    })
+    message_dto(&state, &folder_id, server_uid, parsed)
 }
 
 /// Decoded bytes of one attachment (base64 for IPC transport).
