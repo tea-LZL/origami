@@ -11,7 +11,7 @@
   import type { Mailbox } from "./types";
   import AccountSettings from "./AccountSettings.svelte";
   import { sidebarKeyboard } from "./navigation";
-  import { sidebarFolders } from "./folderNav";
+  import { flattenFolderTree, sidebarTree, type FolderRow } from "./folderNav";
 
   interface Props {
     onadd?: () => void;
@@ -28,9 +28,44 @@
   let folderName = $state("");
   let folderDelete = $state<Mailbox | null>(null);
   let folderBusy = $state(false);
+  let expandedByAccount = $state<Record<string, string[]>>(loadExpandedFolders());
 
-  function foldersFor(accountDbId: string): Mailbox[] {
-    return sidebarFolders(app.value.folders.filter((f) => f.accountId === accountDbId));
+  function loadExpandedFolders(): Record<string, string[]> {
+    try {
+      const saved = JSON.parse(localStorage.getItem("origami-sidebar-expanded") ?? "{}") as Record<string, string[]>;
+      return saved && typeof saved === "object" ? saved : {};
+    } catch {
+      return {};
+    }
+  }
+
+  $effect(() => {
+    localStorage.setItem("origami-sidebar-expanded", JSON.stringify(expandedByAccount));
+  });
+
+  function rowsFor(accountDbId: string): FolderRow[] {
+    const tree = sidebarTree(app.value.folders.filter((folder) => folder.accountId === accountDbId));
+    return flattenFolderTree(tree, new Set(expandedByAccount[accountDbId] ?? []));
+  }
+
+  function toggleExpanded(accountDbId: string, path: string, event: MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    const current = new Set(expandedByAccount[accountDbId] ?? []);
+    if (current.has(path)) current.delete(path);
+    else current.add(path);
+    expandedByAccount = { ...expandedByAccount, [accountDbId]: [...current] };
+  }
+
+  function onFolderRow(row: FolderRow, accountDbId: string) {
+    if (row.folder) {
+      selectFolder(row.folder.id);
+      return;
+    }
+    const current = new Set(expandedByAccount[accountDbId] ?? []);
+    if (current.has(row.path)) current.delete(row.path);
+    else current.add(row.path);
+    expandedByAccount = { ...expandedByAccount, [accountDbId]: [...current] };
   }
 
   function onContextMenu(e: MouseEvent, accountId: string) {
@@ -159,7 +194,7 @@
       <span>{app.value.folders.filter((folder) => folder.role === "Inbox").reduce((sum, folder) => sum + folder.unread, 0)}</span>
     </button>
     {#each app.value.accounts as account (account.id)}
-      {@const folders = foldersFor(account.dbId)}
+      {@const folders = rowsFor(account.dbId)}
       {@const accountError = app.value.accountErrors[account.id]}
       {@const accountStatus = app.value.accountStatuses[account.id]}
       <div class="account-group">
@@ -214,28 +249,47 @@
             <small>pending {accountStatus.pendingOperations === 1 ? "operation" : "operations"}</small>
           </button>
         {/if}
-        <nav aria-label={`${account.name} folders`}>
-          {#each folders as folder (folder.id)}
-            <button
-              type="button"
+        <div role="tree" aria-label={`${account.name} folders`}>
+          {#each folders as row (row.id)}
+            <div
               class="folder"
-              class:selected={app.value.selectedFolderId === folder.id}
-              aria-current={app.value.selectedFolderId === folder.id ? "page" : undefined}
-              onclick={() => selectFolder(folder.id)}
-              oncontextmenu={(event) => openFolderMenu(event, folder)}
+              class:selected={row.folder != null && app.value.selectedFolderId === row.folder.id}
+              class:virtual={row.folder == null}
+              role="treeitem"
+              aria-selected={row.folder != null && app.value.selectedFolderId === row.folder.id}
+              aria-expanded={row.expandable ? row.expanded : undefined}
+              style:padding-left="{8 + row.depth * 14}px"
             >
-              <span class="folder-name">
-                {roleLabel(folder.role) === "Other" ? folder.name : roleLabel(folder.role)}
-              </span>
-              <span class="counts">
-                {#if folder.unread > 0}
-                  <span class="unread">{folder.unread}</span>
-                {/if}
-                <span class="total">{folder.total}</span>
-              </span>
-            </button>
+              {#if row.expandable}
+                <button
+                  type="button"
+                  class="twist"
+                  aria-label={row.expanded ? `Collapse ${row.label}` : `Expand ${row.label}`}
+                  onclick={(event) => toggleExpanded(account.dbId, row.path, event)}
+                >{row.expanded ? "▾" : "▸"}</button>
+              {:else}
+                <span class="twist-spacer"></span>
+              {/if}
+              <button
+                type="button"
+                class="folder-select"
+                aria-current={row.folder != null && app.value.selectedFolderId === row.folder.id ? "page" : undefined}
+                onclick={() => onFolderRow(row, account.dbId)}
+                oncontextmenu={(event) => row.folder && openFolderMenu(event, row.folder)}
+              >
+                <span class="folder-name">
+                  {row.folder && roleLabel(row.folder.role) !== "Other" ? roleLabel(row.folder.role) : row.label}
+                </span>
+                <span class="counts">
+                  {#if row.unread > 0}
+                    <span class="unread">{row.unread}</span>
+                  {/if}
+                  <span class="total">{row.total}</span>
+                </span>
+              </button>
+            </div>
           {/each}
-        </nav>
+        </div>
       </div>
     {/each}
 
@@ -443,21 +497,50 @@
   .gear:focus-visible { opacity: 1; }
   .gear:hover { opacity: 1 !important; background: var(--bg-sunken); }
 
-  nav { padding: 2px 8px 8px; }
+  [role="tree"] { padding: 2px 8px 8px; }
   .folder {
     position: relative;
     width: 100%;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 4px;
     padding: 5px 8px;
     border-radius: var(--radius-sm);
     color: var(--fg);
     font-size: 12px;
     min-height: 32px;
-    transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
   }
-  .folder:hover { background: color-mix(in oklab, var(--bg-sunken) 88%, var(--accent)); transform: translateX(2px); }
+  .folder.virtual { color: var(--fg-muted); }
+  .twist, .twist-spacer {
+    width: 14px;
+    flex: 0 0 14px;
+    font-size: 10px;
+    color: var(--fg-subtle);
+  }
+  .twist {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    min-height: 20px;
+    color: var(--fg-subtle);
+  }
+  .folder:hover { background: color-mix(in oklab, var(--bg-sunken) 88%, var(--accent)); }
+  .folder-select {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    min-height: 22px;
+  }
   .folder.selected {
     background: color-mix(in oklab, var(--accent) 10%, var(--bg-raised));
     color: var(--accent);
@@ -475,10 +558,11 @@
     pointer-events: none;
   }
   .unified:focus-visible,
-  .folder:focus-visible {
+  .folder-select:focus-visible,
+  .twist:focus-visible {
     outline-offset: -2px;
   }
-  .folder-name { text-align: left; }
+  .folder-name { text-align: left; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .counts { display: flex; gap: 6px; align-items: center; }
   .unread {
     background: var(--accent);
