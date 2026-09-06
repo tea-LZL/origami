@@ -366,6 +366,7 @@ export async function selectFolder(folderId: string) {
     messageLoading: false,
   });
   await loadEnvelopes(folderId);
+  api.prefetchSelectedFolder(folderId).catch(() => {});
   if (cached?.selectedEnvelope) {
     const stillThere = app.value.envelopes.some((item) => item.id === cached.selectedEnvelope?.id);
     if (stillThere) void selectEnvelope(cached.selectedEnvelope);

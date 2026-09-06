@@ -298,7 +298,13 @@ async fn recent_prefetch_caches_display_data_without_a_blob() {
         .unwrap()
         .is_none());
 
-    assert!(engine.prefetch_recent("harness", &config).await.unwrap() >= 1);
+    assert!(
+        engine
+            .prefetch_recent("harness", &config, None)
+            .await
+            .unwrap()
+            >= 1
+    );
     let parsed = engine
         .store()
         .parsed_message(&folder, uid)

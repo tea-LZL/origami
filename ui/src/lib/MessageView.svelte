@@ -241,7 +241,9 @@
         {#if fromAddressText()}<span class="address" title="From address">{fromAddressText()}</span>{/if}
         <span class="date">{env.date ?? ""}</span>
         {#if app.value.messageLoading}
-          <span role="status" aria-live="polite">Checking mail…</span>
+          <span role="status" aria-live="polite">Fetching…</span>
+        {:else}
+          <span>Stored locally</span>
         {/if}
       </div>
       {#if detailsOpen}

@@ -874,6 +874,7 @@ impl Store {
         account_id: &str,
         since: i64,
         limit: u32,
+        prefer_folder_id: Option<&str>,
     ) -> Result<Vec<PrefetchCandidate>> {
         if limit == 0 {
             return Ok(Vec::new());
@@ -890,28 +891,38 @@ impl Store {
                 AND m.received_at >= ?2
                 AND m.blob_hash IS NULL
                 AND c.message_id IS NULL
-             ORDER BY m.received_at DESC, m.rowid DESC
-              LIMIT ?3",
+             ORDER BY
+               CASE
+                 WHEN ?3 IS NOT NULL AND m.folder_id = ?3 THEN 0
+                 WHEN f.role = 'inbox' THEN 1
+                 WHEN f.role IN ('sent', 'drafts', 'archive') THEN 2
+                 ELSE 3
+               END,
+               m.received_at DESC, m.rowid DESC
+              LIMIT ?4",
         )?;
-        let rows = stmt.query_map(params![account_id, since, limit as i64], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, i64>(2)?,
-                r.get::<_, Option<String>>(3)?,
-                r.get::<_, Option<String>>(4)?,
-                r.get::<_, String>(5)?,
-                r.get::<_, String>(6)?,
-                r.get::<_, String>(7)?,
-                r.get::<_, Option<String>>(8)?,
-                r.get::<_, Option<i64>>(9)?,
-                r.get::<_, i64>(10)?,
-                r.get::<_, String>(11)?,
-                r.get::<_, String>(12)?,
-                r.get::<_, i64>(13)?,
-                r.get::<_, String>(14)?,
-            ))
-        })?;
+        let rows = stmt.query_map(
+            params![account_id, since, prefer_folder_id, limit as i64],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                    r.get::<_, Option<String>>(4)?,
+                    r.get::<_, String>(5)?,
+                    r.get::<_, String>(6)?,
+                    r.get::<_, String>(7)?,
+                    r.get::<_, Option<String>>(8)?,
+                    r.get::<_, Option<i64>>(9)?,
+                    r.get::<_, i64>(10)?,
+                    r.get::<_, String>(11)?,
+                    r.get::<_, String>(12)?,
+                    r.get::<_, i64>(13)?,
+                    r.get::<_, String>(14)?,
+                ))
+            },
+        )?;
         let mut candidates = Vec::new();
         for row in rows {
             let (

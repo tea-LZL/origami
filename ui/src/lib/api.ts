@@ -144,6 +144,8 @@ export const api = {
     invoke<Envelope[]>("list_envelopes", { folderId, page, pageSize }),
   listUnifiedInbox: (page = 1, pageSize = 50) =>
     invoke<Envelope[]>("list_unified_inbox", { page, pageSize }),
+  prefetchSelectedFolder: (folderId: string) =>
+    invoke<void>("prefetch_selected_folder", { folderId }),
   getCachedMessage: (folderId: string, serverUid: number) =>
     invoke<MessageDto | null>("get_cached_message", { folderId, serverUid }),
   getMessage: (folderId: string, serverUid: number) =>

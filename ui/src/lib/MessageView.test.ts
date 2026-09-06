@@ -127,6 +127,14 @@ describe("MessageView remote content", () => {
 
     expect(screen.getByTitle("Email HTML body")).toBeInTheDocument();
     expect(screen.queryByText("Loading message")).toBeNull();
-    expect(screen.getByText("Checking mail…")).toBeInTheDocument();
+    expect(screen.getByText("Fetching…")).toBeInTheDocument();
+  });
+
+  it("marks a loaded message as stored locally", () => {
+    mocks.app.value.message = message;
+    mocks.app.value.messageLoading = false;
+    render(MessageView);
+
+    expect(screen.getByText("Stored locally")).toBeInTheDocument();
   });
 });

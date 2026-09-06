@@ -211,6 +211,7 @@ impl SyncEngine {
         self: &Arc<Self>,
         account_config_id: String,
         config: AccountConfig,
+        prefer_folder_id: Option<String>,
     ) {
         let lock = self
             .prefetch_locks
@@ -222,7 +223,10 @@ impl SyncEngine {
         let engine = Arc::clone(self);
         tokio::spawn(async move {
             let _guard = lock.lock().await;
-            match engine.prefetch_recent(&account_config_id, &config).await {
+            match engine
+                .prefetch_recent(&account_config_id, &config, prefer_folder_id.as_deref())
+                .await
+            {
                 Ok(cached) if cached > 0 => {
                     tracing::debug!(account = %account_config_id, cached, "warmed recent message cache");
                 }
@@ -241,6 +245,7 @@ impl SyncEngine {
         &self,
         account_config_id: &str,
         config: &AccountConfig,
+        prefer_folder_id: Option<&str>,
     ) -> Result<u32> {
         let imap = config
             .imap
@@ -256,8 +261,12 @@ impl SyncEngine {
         let since = now.as_secs().saturating_sub(PREFETCH_WINDOW.as_secs()) as i64;
         let candidates = group_prefetch_candidates(
             &account_db_id,
-            self.store
-                .recent_uncached_messages(&account_db_id, since, PREFETCH_MAX_MESSAGES)?,
+            self.store.recent_uncached_messages(
+                &account_db_id,
+                since,
+                PREFETCH_MAX_MESSAGES,
+                prefer_folder_id,
+            )?,
         );
 
         let mut cached = 0u32;
@@ -836,7 +845,7 @@ impl SyncEngine {
                 continue;
             }
             backoff = Duration::from_secs(1);
-            self.spawn_recent_prefetch(account_config_id.clone(), config.clone());
+            self.spawn_recent_prefetch(account_config_id.clone(), config.clone(), None);
 
             let Some(imap) = config.imap.clone() else {
                 return;

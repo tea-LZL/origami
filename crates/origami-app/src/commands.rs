@@ -1120,7 +1120,7 @@ pub async fn retry_outbox(state: State<'_, AppState>, account_id: String) -> Cmd
         .map_err(err)?;
     state
         .engine
-        .spawn_recent_prefetch(account_id.clone(), account);
+        .spawn_recent_prefetch(account_id.clone(), account, None);
     Ok(())
 }
 
@@ -1392,16 +1392,29 @@ pub async fn sync_now(state: State<'_, AppState>, account_id: Option<String>) ->
             .sync_account(&id, &account)
             .await
             .map_err(err)?;
-        state.engine.spawn_recent_prefetch(id.clone(), account);
+        state
+            .engine
+            .spawn_recent_prefetch(id.clone(), account, None);
     } else {
         let config = state.read_config();
         for (id, account) in &config.accounts {
             state.engine.sync_account(id, account).await.map_err(err)?;
             state
                 .engine
-                .spawn_recent_prefetch(id.clone(), account.clone());
+                .spawn_recent_prefetch(id.clone(), account.clone(), None);
         }
     }
+    Ok(())
+}
+
+/// Warm display cache for the folder the user is looking at, then Inbox.
+#[tauri::command]
+pub fn prefetch_selected_folder(state: State<'_, AppState>, folder_id: String) -> CmdResult<()> {
+    let (account_id, _, _) = state.resolve_folder(&folder_id).map_err(err)?;
+    let (_, account) = state.account(Some(&account_id)).map_err(err)?;
+    state
+        .engine
+        .spawn_recent_prefetch(account_id, account, Some(folder_id));
     Ok(())
 }
 

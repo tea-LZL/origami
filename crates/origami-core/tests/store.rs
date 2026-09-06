@@ -426,7 +426,7 @@ fn recent_uncached_messages_use_received_time_and_skip_cached_rows() {
         .unwrap();
 
     let candidates = store
-        .recent_uncached_messages(&account, 1_750_000_000, 20)
+        .recent_uncached_messages(&account, 1_750_000_000, 20, None)
         .unwrap();
     assert_eq!(
         candidates
@@ -436,6 +436,37 @@ fn recent_uncached_messages_use_received_time_and_skip_cached_rows() {
         vec![Some(21)]
     );
     assert_eq!(candidates[0].mailbox, "INBOX");
+}
+
+#[test]
+fn recent_uncached_messages_prefer_selected_folder_then_inbox() {
+    let (store, account, inbox) = setup();
+    let archive = store
+        .upsert_folder(&account, "Archive", MailboxRole::Archive)
+        .unwrap();
+    let lists = store
+        .upsert_folder(&account, "Lists", MailboxRole::Other)
+        .unwrap();
+    let mut inbox_mail = envelope(41, "inbox");
+    inbox_mail.received_at = Some(1_800_000_000);
+    let mut archive_mail = envelope(42, "archive");
+    archive_mail.received_at = Some(1_800_000_000);
+    let mut lists_mail = envelope(43, "lists");
+    lists_mail.received_at = Some(1_800_000_000);
+    store.upsert_envelope(&inbox, &inbox_mail).unwrap();
+    store.upsert_envelope(&archive, &archive_mail).unwrap();
+    store.upsert_envelope(&lists, &lists_mail).unwrap();
+
+    let candidates = store
+        .recent_uncached_messages(&account, 1_750_000_000, 20, Some(&lists))
+        .unwrap();
+    assert_eq!(
+        candidates
+            .iter()
+            .map(|candidate| candidate.mailbox.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Lists", "INBOX", "Archive"]
+    );
 }
 
 #[test]
