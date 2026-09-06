@@ -11,6 +11,7 @@
   import type { Mailbox } from "./types";
   import AccountSettings from "./AccountSettings.svelte";
   import { sidebarKeyboard } from "./navigation";
+  import { sidebarFolders } from "./folderNav";
 
   interface Props {
     onadd?: () => void;
@@ -29,7 +30,7 @@
   let folderBusy = $state(false);
 
   function foldersFor(accountDbId: string): Mailbox[] {
-    return app.value.folders.filter((f) => f.accountId === accountDbId);
+    return sidebarFolders(app.value.folders.filter((f) => f.accountId === accountDbId));
   }
 
   function onContextMenu(e: MouseEvent, accountId: string) {
