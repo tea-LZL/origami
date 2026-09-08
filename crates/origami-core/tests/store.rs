@@ -439,6 +439,24 @@ fn recent_uncached_messages_use_received_time_and_skip_cached_rows() {
 }
 
 #[test]
+fn list_keywords_counts_distinct_tags() {
+    let (store, _account, folder) = setup();
+    let mut first = envelope(51, "first");
+    first.keywords = vec!["receipts".into(), "tax".into()];
+    let mut second = envelope(52, "second");
+    second.keywords = vec!["receipts".into()];
+    store.upsert_envelope(&folder, &first).unwrap();
+    store.upsert_envelope(&folder, &second).unwrap();
+    let tags = store.list_keywords().unwrap();
+    assert_eq!(
+        tags.iter()
+            .map(|tag| (tag.name.as_str(), tag.count))
+            .collect::<Vec<_>>(),
+        vec![("receipts", 2), ("tax", 1)]
+    );
+}
+
+#[test]
 fn recent_uncached_messages_prefer_selected_folder_then_inbox() {
     let (store, account, inbox) = setup();
     let archive = store

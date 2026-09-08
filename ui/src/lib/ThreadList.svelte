@@ -26,6 +26,7 @@
   import Select from "./Select.svelte";
   import MessageSelectCheckbox from "./MessageSelectCheckbox.svelte";
   import OrigamiArtwork from "./OrigamiArtwork.svelte";
+  import { tagColor } from "./tags";
 
   const rowHeight = $derived(app.value.density === "compact" ? 52 : 60);
   let listEl: HTMLElement | null = $state(null);
@@ -173,25 +174,15 @@
     saveSearchOpen = false;
   }
 
-  // Keep tag colors theme-owned so light and dark modes retain readable contrast.
-  const TAG_PALETTE = [
-    "var(--tag-blue)", "var(--tag-violet)", "var(--tag-teal)", "var(--tag-green)",
-    "var(--tag-amber)", "var(--tag-rose)",
-  ];
-  function tagColor(name: string): string {
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
-    }
-    return TAG_PALETTE[Math.abs(hash) % TAG_PALETTE.length];
-  }
 </script>
 
 <section class="threadlist" data-navigation="thread-pane" use:messageListKeyboard role="group" aria-label="Messages">
   <header class="list-header">
     <div>
-      <span class="eyebrow">Mailbox</span>
-      <h2>{app.value.unifiedInbox ? "Unified Inbox" : selectedFolder?.name ?? "Messages"}</h2>
+      <span class="eyebrow">{app.value.searchQuery.startsWith("tag:") ? "Tag" : "Mailbox"}</span>
+      <h2>{app.value.searchQuery.startsWith("tag:")
+        ? app.value.searchQuery.slice(4)
+        : app.value.unifiedInbox ? "Unified Inbox" : selectedFolder?.name ?? "Messages"}</h2>
     </div>
     <div class="header-actions">
       {#if app.value.layout === "two-pane"}
@@ -250,7 +241,7 @@
       <button type="button" onclick={() => moveSelectedToRole("Archive")}>Archive</button>
       <button type="button" onclick={() => moveSelectedToRole("Trash")}>Trash</button>
       <button type="button" onclick={() => moveSelectedToRole("Junk")}>Junk</button>
-      <button type="button" aria-expanded={labelsOpen} onclick={() => labelsOpen = !labelsOpen}>Labels</button>
+      <button type="button" aria-expanded={labelsOpen} onclick={() => labelsOpen = !labelsOpen}>Tags</button>
       {#if selectedFolder?.role === "Trash" && !app.value.searchQuery.trim()}
         <button type="button" class="danger" onclick={deleteSelectedPermanently}>Delete</button>
       {/if}
@@ -277,7 +268,7 @@
     {#if labelsOpen}
       <div class="label-editor">
         <form onsubmit={(event) => { event.preventDefault(); addLabel(); }}>
-          <input bind:value={newLabel} placeholder="New label" aria-label="New label" />
+          <input bind:value={newLabel} placeholder="New tag" aria-label="New tag" />
           <button type="submit">Add</button>
         </form>
         {#if selectedKeywords.length > 0}

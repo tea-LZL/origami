@@ -3,6 +3,7 @@
     app,
     selectFolder,
     selectUnifiedInbox,
+    selectKeyword,
     syncNow,
     removeAccount,
     reconnectAccount,
@@ -12,6 +13,7 @@
   import AccountSettings from "./AccountSettings.svelte";
   import { sidebarKeyboard } from "./navigation";
   import { flattenFolderTree, sidebarTree, type FolderRow } from "./folderNav";
+  import { tagColor } from "./tags";
 
   interface Props {
     onadd?: () => void;
@@ -295,6 +297,24 @@
 
     {#if app.value.accounts.length === 0}
       <div class="empty">No accounts configured.</div>
+    {/if}
+
+    {#if app.value.keywords.length > 0}
+      <div class="tag-catalog">
+        <span class="eyebrow">Tags</span>
+        {#each app.value.keywords as tag (tag.name)}
+          <button
+            type="button"
+            class="tag-row"
+            class:selected={app.value.searchQuery === `tag:${tag.name}`}
+            style:--tag-swatch={tagColor(tag.name)}
+            onclick={() => selectKeyword(tag.name)}
+          >
+            <span class="tag-name">{tag.name}</span>
+            <span class="tag-count">{tag.count}</span>
+          </button>
+        {/each}
+      </div>
     {/if}
   </div>
   <button type="button" class="add-account" onclick={() => onadd?.()}>+ Add account</button>
@@ -582,6 +602,47 @@
     text-align: center;
     font-size: 12px;
   }
+
+  .tag-catalog {
+    padding: 10px 8px 8px;
+    border-top: 1px solid color-mix(in oklab, var(--paper-rule) 68%, transparent);
+  }
+  .tag-catalog .eyebrow {
+    display: block;
+    padding: 0 8px 6px;
+    color: var(--fg-subtle);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .tag-row {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border-radius: var(--radius-sm);
+    color: var(--fg);
+    font-size: 12px;
+    min-height: 32px;
+  }
+  .tag-row::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--tag-swatch);
+    flex: 0 0 8px;
+  }
+  .tag-row:hover { background: color-mix(in oklab, var(--bg-sunken) 88%, var(--accent)); }
+  .tag-row.selected {
+    background: color-mix(in oklab, var(--accent) 10%, var(--bg-raised));
+    color: var(--accent);
+  }
+  .tag-name { flex: 1; text-align: left; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .tag-count { color: var(--fg-subtle); font-size: 10px; font-weight: 600; }
 
   .add-account {
     margin: 8px;

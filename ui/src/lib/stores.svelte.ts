@@ -9,6 +9,7 @@ import {
   type MessageDto,
   type SavedSearch,
   type Correspondent,
+  type KeywordCount,
   type AccountStatusDto,
 } from "./api";
 import type { Envelope, EnvelopeSource, Flag, Mailbox, MailboxRole } from "./types";
@@ -31,6 +32,7 @@ export interface State {
   searching: boolean;
   savedSearches: SavedSearch[];
   correspondents: Correspondent[];
+  keywords: KeywordCount[];
   selectedEnvelope: Envelope | null;
   selectedMessageIds: string[];
   selectionAnchorId: string | null;
@@ -88,6 +90,7 @@ const initial: State = {
   searching: false,
   savedSearches: [],
   correspondents: [],
+  keywords: [],
   selectedEnvelope: null,
   selectedMessageIds: [],
   selectionAnchorId: null,
@@ -240,13 +243,25 @@ export function commitPaneWidth() {
   savePreferences();
 }
 
+export async function refreshKeywords() {
+  try {
+    patch({ keywords: await api.listKeywords() });
+  } catch {
+    // Catalog refresh is best-effort.
+  }
+}
+
+export function selectKeyword(name: string) {
+  void searchMessages(`tag:${name}`);
+}
+
 function refreshFoldersSoon() {
   if (folderRefreshTimer) clearTimeout(folderRefreshTimer);
   folderRefreshTimer = setTimeout(async () => {
     folderRefreshTimer = null;
     try {
-      const folders = await api.listFolders();
-      patch({ folders });
+      const [folders, keywords] = await Promise.all([api.listFolders(), api.listKeywords()]);
+      patch({ folders, keywords });
       if (app.value.unifiedInbox) return;
 
       const selectedFolderStillExists = app.value.selectedFolderId
@@ -276,11 +291,12 @@ function refreshFoldersSoon() {
 export async function bootstrap() {
   loadPreferences();
   try {
-    const [accounts, folders, savedSearches, correspondents, accountStatuses] = await Promise.all([
+    const [accounts, folders, savedSearches, correspondents, keywords, accountStatuses] = await Promise.all([
       api.listAccounts(),
       api.listFolders(),
       api.listSavedSearches(),
       api.listCorrespondents(),
+      api.listKeywords(),
       api.accountStatuses(),
     ]);
     patch({
@@ -288,6 +304,7 @@ export async function bootstrap() {
       folders,
       savedSearches,
       correspondents,
+      keywords,
       accountStatuses,
       accountErrors: Object.fromEntries(
         Object.entries(accountStatuses)
@@ -832,6 +849,7 @@ export async function setSelectedKeyword(rawKeyword: string, enabled: boolean) {
       [...byFolder].map(([folderId, updates]) => api.storeKeywordsBatch(folderId, updates)),
     );
     await refreshAfterMessageAction();
+    await refreshKeywords();
   } catch (error) {
     patch({ lastError: String(error) });
     if (app.value.searchQuery.trim()) await searchMessages(app.value.searchQuery);

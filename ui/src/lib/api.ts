@@ -125,6 +125,11 @@ export interface Correspondent {
   messageCount: number;
 }
 
+export interface KeywordCount {
+  name: string;
+  count: number;
+}
+
 export interface NotificationSettings {
   preview: "full" | "sender_only" | "hidden";
   folderScope: "all" | "inbox";
@@ -172,6 +177,7 @@ export const api = {
   saveSearch: (name: string, query: string) =>
     invoke<SavedSearch>("save_search", { name, query }),
   deleteSavedSearch: (id: string) => invoke<void>("delete_saved_search", { id }),
+  listKeywords: () => invoke<KeywordCount[]>("list_keywords"),
   listCorrespondents: (limit = 200) => invoke<Correspondent[]>("list_correspondents", { limit }),
   saveComposerDraft: (draft: SavedComposerDraft) =>
     invoke<void>("save_composer_draft", { draft }),

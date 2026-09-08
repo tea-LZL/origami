@@ -224,6 +224,7 @@ pub fn run() {
             commands::list_saved_searches,
             commands::save_search,
             commands::delete_saved_search,
+            commands::list_keywords,
             commands::list_correspondents,
             commands::save_composer_draft,
             commands::load_composer_draft,

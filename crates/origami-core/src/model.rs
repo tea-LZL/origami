@@ -270,6 +270,12 @@ pub struct Correspondent {
     pub message_count: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeywordCount {
+    pub name: String,
+    pub count: u32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

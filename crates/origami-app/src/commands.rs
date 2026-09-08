@@ -1468,6 +1468,13 @@ pub fn delete_saved_search(state: State<'_, AppState>, id: String) -> CmdResult<
 }
 
 #[tauri::command]
+pub fn list_keywords(
+    state: State<'_, AppState>,
+) -> CmdResult<Vec<origami_core::model::KeywordCount>> {
+    state.store.list_keywords().map_err(err)
+}
+
+#[tauri::command]
 pub fn list_correspondents(
     state: State<'_, AppState>,
     limit: Option<u32>,

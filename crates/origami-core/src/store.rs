@@ -15,8 +15,8 @@ use serde_json;
 
 use crate::message::ParsedMessage;
 use crate::model::{
-    Address, Correspondent, Envelope, EnvelopeSource, Flag, Mailbox, MailboxRole, OutboxEntry,
-    OutboxOp, SavedSearch, SyncState,
+    Address, Correspondent, Envelope, EnvelopeSource, Flag, KeywordCount, Mailbox, MailboxRole,
+    OutboxEntry, OutboxOp, SavedSearch, SyncState,
 };
 use crate::{private_fs, Error, Result};
 
@@ -1609,6 +1609,26 @@ impl Store {
         self.conn()?
             .execute("DELETE FROM saved_searches WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    /// Distinct IMAP keywords with how many local messages carry each one.
+    pub fn list_keywords(&self) -> Result<Vec<KeywordCount>> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT json_each.value, COUNT(*)
+               FROM messages, json_each(messages.keywords_json)
+              WHERE json_each.value IS NOT NULL
+                AND json_each.value != ''
+              GROUP BY json_each.value
+              ORDER BY COUNT(*) DESC, json_each.value COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(KeywordCount {
+                name: row.get(0)?,
+                count: row.get::<_, i64>(1)? as u32,
+            })
+        })?;
+        rows.collect::<rusqlite::Result<_>>().map_err(Into::into)
     }
 
     /// Frequently seen senders and recipients for compose completion.
