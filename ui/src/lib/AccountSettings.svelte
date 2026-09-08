@@ -3,6 +3,7 @@
   import { api } from "./api";
   import { app } from "./stores.svelte";
   import Select from "./Select.svelte";
+  import { trapFocus } from "./trapFocus";
 
   let { open, onclose, accountId }: { open: boolean; onclose: () => void; accountId: string } = $props();
   let loading = $state(false);
@@ -113,7 +114,7 @@
 </script>
 
 {#if open}
-  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="account-settings-title">
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="account-settings-title" use:trapFocus>
     <div class="dialog">
       <h2 id="account-settings-title">Account settings</h2>
       <form onsubmit={(e) => { e.preventDefault(); save(); }}>

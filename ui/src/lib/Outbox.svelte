@@ -2,6 +2,7 @@
   import { api, type OutboxSummary } from "./api";
   import { app, pollAccountErrors } from "./stores.svelte";
   import OrigamiArtwork from "./OrigamiArtwork.svelte";
+  import { trapFocus } from "./trapFocus";
 
   let entries = $state<OutboxSummary[]>([]);
   let loading = $state(false);
@@ -67,7 +68,7 @@
 </script>
 
 {#if app.value.outboxAccountId}
-  <div class="overlay" role="presentation">
+  <div class="overlay" role="presentation" use:trapFocus>
     <dialog open aria-labelledby="outbox-title">
       <header>
         <div>

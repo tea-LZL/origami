@@ -294,6 +294,7 @@
       <div class="parse-warning" role="status">Some MIME parts could not be decoded completely.</div>
     {/if}
 
+    {#key env.id}
     <div class="body" data-navigation="message-body" tabindex="-1" aria-label="Message body" use:messageBodyKeyboard>
       {#if safeHtml.html && (contentMode === "html" || !safeText)}
         <iframe
@@ -310,6 +311,7 @@
         <p class="empty">This message has no displayable body.</p>
       {/if}
     </div>
+    {/key}
 
     {#if app.value.message.attachments.length > 0}
       <footer>
@@ -369,6 +371,11 @@
     border-inline: 1px solid var(--border);
     background: var(--bg-raised);
     box-shadow: inset 0 1px var(--paper-highlight);
+    animation: fade-in var(--transition-fast) both;
+  }
+  @keyframes fade-in {
+    from { opacity: 0.4; }
+    to { opacity: 1; }
   }
   .message-loading {
     width: 100%;

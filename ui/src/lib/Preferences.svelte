@@ -8,6 +8,7 @@
   } from "./remoteContent";
   import { app, setLayout, setPreferences } from "./stores.svelte";
   import Select from "./Select.svelte";
+  import { trapFocus } from "./trapFocus";
 
   let loaded = $state(false);
   let loading = $state(false);
@@ -87,7 +88,7 @@
 </script>
 
 {#if app.value.preferencesOpen}
-  <div class="overlay" role="presentation">
+  <div class="overlay" role="presentation" use:trapFocus>
     <dialog
       open
       class="preferences"

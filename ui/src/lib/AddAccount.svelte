@@ -3,6 +3,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { app, pollAccountErrors, selectFolder } from "./stores.svelte";
   import { api } from "./api";
+  import { trapFocus } from "./trapFocus";
 
   let open = $state(false);
   let step = $state(0); // 0=email, 1=config, 2=done
@@ -198,7 +199,7 @@
 </script>
 
 {#if open}
-  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="add-account-title">
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="add-account-title" use:trapFocus>
     <div class="wizard">
       {#if step === 0}
         <h2 id="add-account-title">Add an email account</h2>

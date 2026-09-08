@@ -4,6 +4,7 @@
   import { app, closeComposer, sendComposer } from "./stores.svelte";
   import { api } from "./api";
   import Select from "./Select.svelte";
+  import { trapFocus } from "./trapFocus";
 
   let editor: Editor | null = null;
 
@@ -118,7 +119,7 @@
 </script>
 
 {#if app.value.composerOpen}
-  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="composer-title">
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="composer-title" use:trapFocus>
     <div class="composer">
       <header>
         <h2 id="composer-title">New message</h2>

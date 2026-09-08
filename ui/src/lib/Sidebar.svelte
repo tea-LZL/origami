@@ -14,6 +14,7 @@
   import { sidebarKeyboard } from "./navigation";
   import { flattenFolderTree, sidebarTree, type FolderRow } from "./folderNav";
   import { tagColor } from "./tags";
+  import { trapFocus } from "./trapFocus";
 
   interface Props {
     onadd?: () => void;
@@ -351,7 +352,7 @@
 {/if}
 
 {#if folderDialog}
-  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="folder-dialog-title">
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="folder-dialog-title" use:trapFocus>
     <form class="dialog" onsubmit={(event) => { event.preventDefault(); submitFolder(); }}>
       <h3 id="folder-dialog-title">{folderDialog.mode === "create" ? "Create folder" : "Rename folder"}</h3>
       <label>Folder name <input bind:value={folderName} /></label>
@@ -364,7 +365,7 @@
 {/if}
 
 {#if folderDelete}
-  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="delete-folder-title">
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="delete-folder-title" use:trapFocus>
     <div class="dialog">
       <h3 id="delete-folder-title">Delete {folderDelete.name}?</h3>
       <p>The server folder and all messages inside it will be permanently deleted.</p>
@@ -378,7 +379,7 @@
 
 <!-- Remove confirmation -->
 {#if showRemoveConfirm}
-  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="remove-account-title">
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="remove-account-title" use:trapFocus>
     <div class="dialog">
       <h3 id="remove-account-title">Remove account?</h3>
       <p>This will stop sync and delete the saved credentials. The local database is not cleared.</p>
@@ -424,7 +425,7 @@
     min-height: 36px;
     transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
   }
-  .unified:hover { background: color-mix(in oklab, var(--bg-sunken) 86%, var(--accent)); color: var(--fg); transform: translateX(2px); }
+  .unified:hover { background: color-mix(in oklab, var(--bg-sunken) 86%, var(--accent)); color: var(--fg); }
   .unified.selected {
     background: color-mix(in oklab, var(--accent) 10%, var(--bg-raised));
     color: var(--accent);
