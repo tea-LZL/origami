@@ -1,0 +1,68 @@
+---
+title: Build and verification
+type: status
+status: current
+updated: 2026-09-12
+sources:
+  - MEMORY.md
+  - .github/workflows/ci.yml
+  - .gitlab-ci.yml
+---
+
+# Build and verification
+
+Run from the repository root unless noted.
+
+## Gates
+
+```sh
+cargo fmt --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo check --workspace
+cargo test --workspace
+cargo build -p origami-app --no-default-features
+
+npm --prefix ui run check
+npm --prefix ui test -- --run
+npm --prefix ui run build
+
+git diff --check
+git status --short --branch
+```
+
+Live protocol tests need Docker and env-gated variables — see [[test-suite-md]].
+
+## Last verified locally
+
+As of the 2026-08-15 verification (and 2026-08-24 package check):
+
+- Rust fmt, strict clippy, workspace check/tests, and app build passed.
+- All 25 UI tests passed; Svelte reported 0 errors/0 warnings; production UI build passed.
+- `npm audit --audit-level=moderate` reported 0 vulnerabilities.
+- A real-browser CSS check confirmed the 220 ms surface animation, centered toast geometry,
+  and disabled reduced-motion pulse.
+- `cargo tauri build --no-bundle --ci` built the optimized native binary at
+  `target/release/origami`.
+- `packaging/arch/PKGBUILD` built `origami-0.1.0-1-x86_64.pkg.tar.zst`; checksum, package
+  metadata, archive contents, and desktop-entry validation passed on 2026-08-24.
+
+> Treat the dates above as the freshness bound for any release claim. Re-run before relying
+> on them; the wiki does not replace CI or a native smoke.
+
+## What this does **not** cover
+
+Remote CI, Docker/live-provider tests, package installation, accessibility/performance
+gates, and a native daily-driver smoke. For native release confidence, also build/run the
+Tauri app on WebKitGTK and smoke: account onboarding, cached opening, sync/reconnect, search,
+compose/send/outbox, tray restore/quit, external links, remote-content controls, keyboard
+navigation, and both themes.
+
+## CI configuration
+
+- `.github/workflows/ci.yml` — the original GitHub baseline (Rust and UI gates).
+- `.gitlab-ci.yml` — watches merge requests, branches, and semantic version tags; builds and
+  publishes the Arch package for `vX.Y.Z` tags ([[gitlab-cicd-md]]).
+
+## Related
+
+- [[release-readiness]] · [[test-suite-md]] · [[ui-frontend]] · [[origami-core]]

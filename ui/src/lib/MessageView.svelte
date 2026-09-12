@@ -21,6 +21,7 @@
   import { threadMembers } from "./threads";
   import { messageBodyKeyboard } from "./navigation";
   import OrigamiArtwork from "./OrigamiArtwork.svelte";
+  import ActionIcon from "./ActionIcon.svelte";
 
   let contentMode = $state<"html" | "text">("html");
   let detailsOpen = $state(false);
@@ -220,19 +221,58 @@
         <div class="message-actions" role="toolbar" aria-label="Message actions">
           {#if app.value.message.html && app.value.message.text}
             <div class="content-mode" role="group" aria-label="Message format">
-              <button type="button" class:active={contentMode === "html"} onclick={() => contentMode = "html"}>HTML</button>
-              <button type="button" class:active={contentMode === "text"} onclick={() => contentMode = "text"}>Text</button>
+              <button
+                type="button"
+                class:active={contentMode === "html"}
+                aria-pressed={contentMode === "html"}
+                onclick={() => contentMode = "html"}
+              >HTML</button>
+              <button
+                type="button"
+                class:active={contentMode === "text"}
+                aria-pressed={contentMode === "text"}
+                onclick={() => contentMode = "text"}
+              >Text</button>
             </div>
           {/if}
-          <button type="button" class:active={detailsOpen} aria-expanded={detailsOpen} onclick={() => detailsOpen = !detailsOpen}>Details</button>
-          <button type="button" onclick={() => openReplyComposer("reply")}>Reply</button>
-          <button type="button" onclick={() => openReplyComposer("replyAll")}>Reply all</button>
-          <button type="button" onclick={() => openReplyComposer("forward")}>Forward</button>
-          <button type="button" onclick={() => moveSelectedToRole("Archive")}>Archive</button>
-          <button type="button" onclick={() => moveSelectedToRole("Trash")}>Trash</button>
-          <button type="button" onclick={() => moveSelectedToRole("Junk")}>Junk</button>
-          <button type="button" onclick={() => setSelectedFlag("Flagged", !env.flags.includes("Flagged"))}>
-            {env.flags.includes("Flagged") ? "Unstar" : "Star"}
+          <button
+            type="button"
+            class:active={detailsOpen}
+            aria-expanded={detailsOpen}
+            aria-pressed={detailsOpen}
+            onclick={() => detailsOpen = !detailsOpen}
+          >Details</button>
+          <span class="sep" aria-hidden="true"></span>
+          <button type="button" class="icon" aria-label="Reply" title="Reply" onclick={() => openReplyComposer("reply")}>
+            <ActionIcon name="reply" />
+          </button>
+          <button type="button" class="icon" aria-label="Reply all" title="Reply all" onclick={() => openReplyComposer("replyAll")}>
+            <ActionIcon name="reply-all" />
+          </button>
+          <button type="button" class="icon" aria-label="Forward" title="Forward" onclick={() => openReplyComposer("forward")}>
+            <ActionIcon name="forward" />
+          </button>
+          <span class="sep" aria-hidden="true"></span>
+          <button type="button" class="icon" aria-label="Archive" title="Archive" onclick={() => moveSelectedToRole("Archive")}>
+            <ActionIcon name="archive" />
+          </button>
+          <button type="button" class="icon" aria-label="Trash" title="Trash" onclick={() => moveSelectedToRole("Trash")}>
+            <ActionIcon name="trash" />
+          </button>
+          <button type="button" class="icon" aria-label="Junk" title="Junk" onclick={() => moveSelectedToRole("Junk")}>
+            <ActionIcon name="junk" />
+          </button>
+          <span class="sep" aria-hidden="true"></span>
+          <button
+            type="button"
+            class="icon"
+            class:active={env.flags.includes("Flagged")}
+            aria-label="Star"
+            title="Star"
+            aria-pressed={env.flags.includes("Flagged")}
+            onclick={() => setSelectedFlag("Flagged", !env.flags.includes("Flagged"))}
+          >
+            <ActionIcon name="star" filled={env.flags.includes("Flagged")} />
           </button>
         </div>
       </div>
@@ -333,6 +373,10 @@
 
 <style>
   .message {
+    /* Width of the reading sheet. It grows into the pane up to this measure; the
+       old fixed 760px cap left the email frame ~700px of content, so mail wider
+       than that scrolled sideways while the pane still had room to spare. */
+    --message-measure: 1100px;
     flex: 1;
     min-width: 0;
     min-height: 0;
@@ -346,7 +390,7 @@
   .message > footer {
     flex-shrink: 0;
     width: 100%;
-    max-width: 760px;
+    max-width: min(100%, var(--message-measure));
     margin-inline: auto;
   }
   .message > header {
@@ -365,7 +409,7 @@
     width: 100%;
     overflow-y: auto;
     scrollbar-gutter: stable;
-    max-width: 760px;
+    max-width: min(100%, var(--message-measure));
     margin-inline: auto;
     padding: 18px 30px 28px;
     border-inline: 1px solid var(--border);
@@ -379,7 +423,7 @@
   }
   .message-loading {
     width: 100%;
-    max-width: 760px;
+    max-width: min(100%, var(--message-measure));
     margin-inline: auto;
     padding-top: 8px;
   }
@@ -405,9 +449,11 @@
   :global(.reading) .back-to-messages { display: inline-flex; }
   .empty { color: var(--fg-muted); padding: 40px; text-align: center; display: grid; place-content: center; gap: 12px; }
   :global(.message-empty-art) { width: min(148px, 38vw); opacity: 0.64; }
-  header h1 { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; font: 400 clamp(25px, 3vw, 34px)/1.08 var(--font-display); letter-spacing: -0.025em; margin: 0 0 9px; }
-  .subject-row { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px 16px; }
-  .message-actions { display: flex; max-width: 100%; gap: 4px; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; }
+  header h1 { min-width: 0; overflow-wrap: anywhere; font: 400 clamp(25px, 3vw, 34px)/1.08 var(--font-display); letter-spacing: -0.025em; margin: 0; }
+  /* Subject and its action bar each get a full-width row: sharing one row squeezed
+     the subject into a narrow column and wrapped the title. */
+  .subject-row { display: flex; flex-direction: column; gap: 10px; margin-bottom: 9px; }
+  .message-actions { display: flex; max-width: 100%; gap: 4px; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
   .message-actions button {
     min-height: 34px;
     padding: 6px 9px;
@@ -418,6 +464,15 @@
     font-size: 11px;
     font-weight: 600;
   }
+  .message-actions button.icon {
+    width: 30px;
+    min-height: 30px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .message-actions .sep { width: 1px; align-self: stretch; min-height: 18px; background: var(--border); margin: 0 2px; }
   .message-actions button:hover { border-color: var(--accent); color: var(--accent); background: color-mix(in oklab, var(--accent) 7%, var(--bg-raised)); }
   .message-actions button.active { border-color: var(--accent); color: var(--accent); background: color-mix(in oklab, var(--accent) 12%, var(--bg-raised)); }
   .content-mode {
@@ -446,7 +501,7 @@
   .parse-warning {
     flex-shrink: 0;
     width: 100%;
-    max-width: 760px;
+    max-width: min(100%, var(--message-measure));
     margin: 0 auto 12px;
     padding: 9px 12px;
     border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--paper-rule));
@@ -512,7 +567,7 @@
   .email-frame {
     display: block;
     width: 100%;
-    max-width: 760px;
+    max-width: min(100%, var(--message-measure));
     margin-inline: auto;
     min-height: 180px;
     height: 180px;
@@ -523,7 +578,7 @@
   }
   .text {
     margin: 0 auto;
-    max-width: 760px;
+    max-width: min(100%, var(--message-measure));
     font-family: var(--font-mono);
     font-size: 14px;
     line-height: 1.55;

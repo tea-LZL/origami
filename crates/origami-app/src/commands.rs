@@ -1408,8 +1408,14 @@ pub async fn sync_now(state: State<'_, AppState>, account_id: Option<String>) ->
 }
 
 /// Warm display cache for the folder the user is looking at, then Inbox.
+///
+/// Must stay `async`: `spawn_recent_prefetch` calls `tokio::spawn`, and Tauri runs
+/// synchronous commands on the main thread, where no Tokio runtime context exists.
 #[tauri::command]
-pub fn prefetch_selected_folder(state: State<'_, AppState>, folder_id: String) -> CmdResult<()> {
+pub async fn prefetch_selected_folder(
+    state: State<'_, AppState>,
+    folder_id: String,
+) -> CmdResult<()> {
     let (account_id, _, _) = state.resolve_folder(&folder_id).map_err(err)?;
     let (_, account) = state.account(Some(&account_id)).map_err(err)?;
     state

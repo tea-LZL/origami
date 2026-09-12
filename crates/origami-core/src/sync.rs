@@ -213,6 +213,14 @@ impl SyncEngine {
         config: AccountConfig,
         prefer_folder_id: Option<String>,
     ) {
+        // Fire-and-forget optimization, reachable from threads that have no
+        // Tokio runtime (Tauri runs synchronous commands on the main thread).
+        // `tokio::spawn` panics there, and that panic crosses an FFI boundary
+        // and aborts the process, so skip the pass rather than take the app down.
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            tracing::debug!("recent message prefetch skipped: no Tokio runtime on this thread");
+            return;
+        };
         let lock = self
             .prefetch_locks
             .lock()
@@ -221,7 +229,7 @@ impl SyncEngine {
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
             .clone();
         let engine = Arc::clone(self);
-        tokio::spawn(async move {
+        runtime.spawn(async move {
             let _guard = lock.lock().await;
             match engine
                 .prefetch_recent(&account_config_id, &config, prefer_folder_id.as_deref())

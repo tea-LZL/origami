@@ -1,0 +1,63 @@
+---
+title: Log
+type: log
+status: current
+updated: 2026-09-12
+---
+
+# Log
+
+Append-only chronology. Entries begin with `## [YYYY-MM-DD] <kind> | <title>` so the
+file stays greppable: `grep "^## \[" docs/wiki/log.md | tail -5`.
+
+## [2026-09-12] init | Wiki instantiated
+Created the wiki at `docs/wiki/` with [[SCHEMA]] as the governing schema and root
+`AGENTS.md` as the discovery pointer. Established categories: architecture, decisions,
+concepts, entities, status, sources.
+
+## [2026-09-12] migrate | MEMORY.md superseded
+Reduced `MEMORY.md` to a pointer. Migrated its verified content into [[overview]],
+[[runtime-and-layers]], [[sync-engine]], [[store-and-search]], [[message-model-and-threading]],
+[[ui-state-and-rendering]], [[accounts-and-secrets]], [[release-readiness]],
+[[build-and-verification]], and [[known-drift]].
+
+## [2026-09-12] ingest | Repository docs (batch)
+Ingested `README.md`, `docs/PLAN.md`, `docs/IMPROVEMENT_PLAN.md`, `docs/TEST_SUITE.md`,
+`docs/GITLAB_CICD.md`, `docs/adr/0001-0003`, and both `.hermes/plans/` artifacts.
+Summary pages filed under `sources/`; distilled into the architecture, decisions,
+concepts, and status pages. See each source page for what it fed.
+
+## [2026-09-12] fix | Synchronous prefetch command aborted the app on startup
+`prefetch_selected_folder` was a synchronous `#[tauri::command]` while
+`SyncEngine::spawn_recent_prefetch` calls `tokio::spawn`. Tauri runs synchronous commands
+on the GTK main thread with no runtime, so the panic crossed the FFI callback boundary and
+aborted the process (SIGABRT) whenever a folder was selected. Introduced by `59fb84b`
+(2026-09-06); unrelated to the icon-first toolbar change. Fixed by making the command
+`async` and by having the prefetch skip with a debug log when no runtime is present. New
+regression test `crates/origami-core/tests/prefetch_runtime.rs` fails without the guard and
+reproduces the exact production panic. Recorded the command-layer rule in [[origami-app]].
+
+## [2026-09-12] change | Message action bar is icon-first
+Implemented `.hermes/plans/2026-09-12_231307-message-action-bar-icon-first.md`. Reply, Reply
+all, Forward, Archive, Trash, Junk, and Star are now icon-only buttons rendered by the new
+`ui/src/lib/ActionIcon.svelte`; the HTML/Text format control and Details keep their text
+labels (icons for verbs, text for modes). Every icon button has a constant `aria-label` and
+`title`, Star uses `aria-pressed` instead of a label swap, and separators group the
+clusters. Updated [[ui-state-and-rendering]] and [[ui-frontend]]. Gates: svelte-check 0
+errors/0 warnings, 50 UI tests passing (MessageView 6 → 11), production build OK.
+
+Two layout follow-ups after seeing it live: the subject and its action bar now occupy
+**separate full-width rows** (`.subject-row` is a column; the `h1` lost `flex: 1 1 260px`,
+which would have become a 260 px *height* basis in a column), and the message sheet width is
+now `min(100%, var(--message-measure))` with `--message-measure: 1100px` on `.message`.
+The old fixed 760 px cap in six places left the email frame ~700 px of content, so mail wider
+than that scrolled horizontally while the pane had room to spare. The `overflow-x: auto`
+fallback inside the email document (`messageHtml.ts`) is unchanged and still pinned by test.
+
+## [2026-09-12] lint | First pass
+Scripted check over 34 pages: 0 unresolved wikilinks, 0 orphans, 0 missing `sources:`
+paths, 0 pages absent from [[index]]. The only flagged items were literal `[[wikilinks]]`
+and `[[basename]]` mentioned inside code spans in [[SCHEMA]], which Obsidian does not
+resolve as links. Structural files (SCHEMA, index, log) added to the catalog under Meta.
+Open items — none blocking; content freshness is bounded by the source dates recorded in
+[[build-and-verification]] and [[known-drift]].

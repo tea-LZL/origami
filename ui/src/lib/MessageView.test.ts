@@ -60,7 +60,7 @@ const message = {
   parseWarnings: [],
 };
 
-describe("MessageView remote content", () => {
+describe("MessageView", () => {
   beforeEach(() => {
     const values = new Map<string, string>();
     Object.defineProperty(globalThis, "localStorage", {
@@ -136,5 +136,66 @@ describe("MessageView remote content", () => {
     render(MessageView);
 
     expect(screen.getByText("Stored locally")).toBeInTheDocument();
+  });
+
+  it("exposes every message action as an icon control with a stable name and tooltip", () => {
+    render(MessageView);
+
+    for (const name of ["Reply", "Reply all", "Forward", "Archive", "Trash", "Junk", "Star"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveClass("icon");
+      expect(button).toHaveAttribute("title", name);
+      expect(button.querySelector("svg")).not.toBeNull();
+    }
+  });
+
+  it("routes icon actions to their message handlers", async () => {
+    render(MessageView);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Reply" }));
+    expect(mocks.openReplyComposer).toHaveBeenCalledWith("reply");
+    await fireEvent.click(screen.getByRole("button", { name: "Reply all" }));
+    expect(mocks.openReplyComposer).toHaveBeenCalledWith("replyAll");
+    await fireEvent.click(screen.getByRole("button", { name: "Forward" }));
+    expect(mocks.openReplyComposer).toHaveBeenCalledWith("forward");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+    expect(mocks.moveSelectedToRole).toHaveBeenCalledWith("Archive");
+    await fireEvent.click(screen.getByRole("button", { name: "Trash" }));
+    expect(mocks.moveSelectedToRole).toHaveBeenCalledWith("Trash");
+    await fireEvent.click(screen.getByRole("button", { name: "Junk" }));
+    expect(mocks.moveSelectedToRole).toHaveBeenCalledWith("Junk");
+  });
+
+  it("keeps the star name stable and reports its state with aria-pressed", async () => {
+    render(MessageView);
+
+    const star = screen.getByRole("button", { name: "Star" });
+    expect(star).toHaveAttribute("aria-pressed", "false");
+
+    await fireEvent.click(star);
+    expect(mocks.setSelectedFlag).toHaveBeenCalledWith("Flagged", true);
+  });
+
+  it("marks a flagged message's star as pressed and filled", () => {
+    mocks.app.value.message = {
+      ...message,
+      envelope: { ...message.envelope, flags: ["Seen", "Flagged"] },
+    };
+    render(MessageView);
+
+    const star = screen.getByRole("button", { name: "Star" });
+    expect(star).toHaveAttribute("aria-pressed", "true");
+    expect(star.querySelector("path")).toHaveAttribute("fill", "currentColor");
+  });
+
+  it("keeps the reading controls available next to the icon actions", async () => {
+    render(MessageView);
+
+    expect(screen.getByRole("button", { name: "HTML" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Text" })).toHaveAttribute("aria-pressed", "false");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Details" }));
+    expect(screen.getByText("Message-ID")).toBeInTheDocument();
   });
 });
