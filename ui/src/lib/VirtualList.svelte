@@ -13,6 +13,7 @@
     selectedId?: (item: T) => string | null;
     activeId?: string | null;
     isSelected?: (item: T) => boolean;
+    isUnread?: (item: T) => boolean;
     onEndReached?: () => void;
     restoreScroll?: number;
     restoreKey?: string;
@@ -27,6 +28,7 @@
     selectedId,
     activeId = null,
     isSelected,
+    isUnread,
     onEndReached,
     restoreScroll = 0,
     restoreKey = "",
@@ -131,6 +133,7 @@
           class="row"
           class:active={activeId != null && selectedId?.(item) === activeId}
           class:checked={isSelected?.(item) ?? false}
+          class:unread={isUnread?.(item) ?? false}
           data-item-id={selectedId?.(item) ?? undefined}
           style:height="{itemHeight}px"
           role="option"
@@ -203,5 +206,19 @@
   }
   .row.checked:not(.active) {
     background: color-mix(in oklab, var(--accent) 8%, transparent);
+  }
+  .row.unread {
+    background: color-mix(in oklab, var(--accent) 7%, var(--bg-raised));
+  }
+  .row.unread:hover {
+    background: color-mix(in oklab, var(--bg-sunken) 84%, var(--accent));
+  }
+  .row.unread.active {
+    background: color-mix(in oklab, var(--accent) 10%, var(--bg-raised));
+  }
+  @media (forced-colors: active) {
+    .row.unread {
+      background: transparent;
+    }
   }
 </style>

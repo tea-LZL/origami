@@ -333,6 +333,7 @@
         selectedId={(e) => e.id}
         activeId={app.value.selectedEnvelope?.id ?? null}
         isSelected={(e) => selectedIds.has(e.id)}
+        isUnread={isUnread}
         onSelect={onRowSelect}
         onEndReached={loadMoreEnvelopes}
         restoreScroll={restoredFolderScroll()}
@@ -349,6 +350,10 @@
               label={`Select message from ${sender}: ${subject}`}
               onToggle={(range) => toggleEnvelopeSelection(item, range)}
             />
+            {#if isUnread(item)}
+              <span class="sr-only">Unread</span>
+              <span class="unread-pip" title="Unread" aria-hidden="true"></span>
+            {/if}
             <div class="top">
               <span class="from">
                 {#each highlightSearchText(sender, app.value.searchQuery) as part}
@@ -589,6 +594,27 @@
   .date { font-size: 11px; color: var(--fg-subtle); white-space: nowrap; }
   .subject { font-size: 12px; line-height: 1.35; color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .unread .from, .unread .subject { font-weight: 700; color: var(--fg); }
+  .unread-pip {
+    position: absolute;
+    left: 26px;
+    top: 11px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--bg-raised) 70%, transparent);
+  }
+  :global(:root[data-density="compact"]) .unread-pip { top: 8px; }
+  @media (forced-colors: active) {
+    .unread-pip {
+      background: Highlight;
+      box-shadow: none;
+      forced-color-adjust: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .unread-pip { box-shadow: none; }
+  }
   .attach { margin-left: 4px; color: var(--accent); }
   .thread-count {
     margin-left: 5px;

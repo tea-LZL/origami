@@ -112,4 +112,46 @@ describe("ThreadList", () => {
     expect(screen.getByText("No unread messages")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
   });
+
+  it("shows unread pip and screen-reader label for unread rows", () => {
+    mocks.app.value.envelopes = [
+      {
+        id: "unread-1",
+        mailboxId: "inbox",
+        subject: "Unread subject",
+        from: [{ name: "Alice", addr: "alice@example.org" }],
+        to: [],
+        date: null,
+        flags: [],
+        hasAttachment: false,
+        size: 10,
+        serverUid: 1,
+        messageId: "unread@example.org",
+        threadId: "thread-unread",
+        keywords: [],
+        sources: [{ mailboxId: "inbox", serverUid: 1 }],
+      },
+      {
+        id: "read-1",
+        mailboxId: "inbox",
+        subject: "Read subject",
+        from: [{ name: "Bob", addr: "bob@example.org" }],
+        to: [],
+        date: null,
+        flags: ["Seen"],
+        hasAttachment: false,
+        size: 10,
+        serverUid: 2,
+        messageId: "read@example.org",
+        threadId: "thread-read",
+        keywords: [],
+        sources: [{ mailboxId: "inbox", serverUid: 2 }],
+      },
+    ];
+    render(ThreadList);
+    const unreadLabel = document.querySelector(".row-content.unread .sr-only");
+    expect(unreadLabel).toHaveTextContent("Unread");
+    expect(document.querySelector(".unread-pip")).toBeTruthy();
+    expect(document.querySelectorAll(".unread-pip")).toHaveLength(1);
+  });
 });

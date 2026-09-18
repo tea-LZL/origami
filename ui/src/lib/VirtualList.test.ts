@@ -14,4 +14,11 @@ describe("VirtualList", () => {
     list.focus();
     expect(list).toHaveFocus();
   });
+
+  it("marks unread rows for styling", () => {
+    render(VirtualListHarness);
+    const rows = screen.getAllByRole("option");
+    expect(rows[0]).toHaveClass("unread");
+    expect(rows[1]).not.toHaveClass("unread");
+  });
 });
