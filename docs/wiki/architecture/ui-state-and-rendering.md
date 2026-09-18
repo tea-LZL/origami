@@ -2,11 +2,16 @@
 title: UI state and rendering
 type: architecture
 status: current
-updated: 2026-09-12
+updated: 2026-09-18
 sources:
   - ui/src/lib/stores.svelte.ts
+  - ui/src/lib/ThreadList.svelte
+  - ui/src/lib/VirtualList.svelte
+  - ui/src/lib/searchHighlight.ts
   - ui/src/lib/messageHtml.ts
   - ui/src/lib/remoteContent.ts
+  - crates/origami-core/src/store.rs
+  - crates/origami-app/src/commands.rs
   - ui/package.json
   - docs/IMPROVEMENT_PLAN.md
 ---
@@ -16,7 +21,8 @@ sources:
 ## State
 
 `ui/src/lib/stores.svelte.ts` owns UI state: requests to the shell, optimistic actions, and
-persisted UI preferences (themes, density, motion, layout widths, notification settings).
+persisted UI preferences (themes, density, motion, layout widths, the unread-only list flag,
+notification settings). Preferences live in `localStorage` key `origami-preferences`.
 `ui/src/lib/api.ts` wraps the typed Tauri commands; `ui/src/lib/types.ts` mirrors the DTOs.
 The UI reads normalized DTOs only and must not contain provider-specific logic
 ([[backend-seam]]).
@@ -28,6 +34,42 @@ Key components: `App.svelte`, `Sidebar.svelte`, `ThreadList.svelte`, `MessageVie
 `Composer.svelte`, `Outbox.svelte`, `VirtualList.svelte`, `PaneSplitter.svelte`,
 `Preferences.svelte`, `AccountSettings.svelte`, `AddAccount.svelte`,
 `ActionIcon.svelte` (inline-SVG action glyphs).
+
+## Unread-only list view
+
+`State.unreadOnly` (`boolean`, default `false`) is a sticky **current-view** filter, not a
+saved search. `ThreadList.svelte` exposes it as a header **Unread** toggle (`aria-pressed`,
+pressed chrome, tooltip swaps between "Show unread only" and "Show all messages"). Empty
+folders use `No unread messages`. The header count uses the mailbox `unread` total (or the
+sum of Inbox `unread` under unified Inbox), not the loaded page length.
+
+The flag is restored in `loadPreferences` before the first folder fetch and written by
+`savePreferences` / `setUnreadOnly`. Folder snapshots are keyed
+`${folderId}:unread|all` so toggling does not flash the other mode's cached page.
+
+Folder and unified-Inbox paging pass `unreadOnly` into
+`list_envelopes` / `list_unified_inbox` (`unread_only: Option<bool>` at the command edge,
+default false). The store filters **after** `deduplicate_envelopes` and **before** skip/take
+in `list_envelopes_in_folders` (`crates/origami-core/src/store.rs`). A logical envelope is
+unread when the merged flags lack `Seen` — any retained physical copy unseen, via
+`merge_envelope_sources`. Filtering on SQL `flags_json` before dedupe would drop label
+copies from `sources` ([[logical-vs-physical-message]]). Search does not use that argument:
+`withUnreadToken` appends `is:unread` to the invoke string only, leaving `searchQuery` as
+typed, and skips the token if the query already has `is:read` / `is:unread`.
+
+Opening an unread row still flips Seen, but `retainForUnreadFilter` keeps
+`selectedEnvelope` / `selectedMessageIds` in the list until the selection moves or the
+filter is toggled — otherwise first-open auto-Seen would make the filter look broken.
+
+## Unread row chrome
+
+Unread rows keep bold sender/subject (`.row-content.unread`). `VirtualList` also takes
+`isUnread` and tints `.row.unread` (accent mix on `--bg-raised`; hover/active reuse the
+existing fills). `ThreadList` draws a 7 px accent **pip** at `left: 26px` (checkbox padding)
+plus a screen-reader "Unread" label. The active-row marker remains `.row.active::before` at
+`left: 5px` — the pip is not a second rail. Under `forced-colors`, the tint is cleared and
+the pip uses `Highlight` with `forced-color-adjust: none`. Compact density only nudges pip
+`top`.
 
 ## Rendering and the trust boundary
 
@@ -85,4 +127,4 @@ The thread-list bulk bar (`ThreadList.svelte`) still uses text chips; adopting
 
 ## Related
 
-- [[ui-frontend]] · [[accounts-and-secrets]] · [[release-readiness]]
+- [[ui-frontend]] · [[store-and-search]] · [[logical-vs-physical-message]] · [[accounts-and-secrets]] · [[release-readiness]]

@@ -2,7 +2,7 @@
 title: Log
 type: log
 status: current
-updated: 2026-09-12
+updated: 2026-09-18
 ---
 
 # Log
@@ -61,3 +61,8 @@ and `[[basename]]` mentioned inside code spans in [[SCHEMA]], which Obsidian doe
 resolve as links. Structural files (SCHEMA, index, log) added to the catalog under Meta.
 Open items — none blocking; content freshness is bounded by the source dates recorded in
 [[build-and-verification]] and [[known-drift]].
+
+## [2026-09-18] ingest | Unread-only list filter
+Recorded the sticky thread-list Unread view (`unreadOnly`, `origami-preferences`), store-level
+unread paging after logical dedupe, search `is:unread` composition, keep-selected-on-Seen, and
+unread row chrome (pip + tint + bold) in [[ui-state-and-rendering]]. No new wiki page.
