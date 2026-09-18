@@ -15,6 +15,7 @@
     setLayout,
     setSelectedFlag,
     setSelectedKeyword,
+    setUnreadOnly,
     toggleEnvelopeSelection,
     recordFolderScroll,
     restoredFolderScroll,
@@ -41,6 +42,18 @@
   const selectedFolder = $derived(
     app.value.folders.find((folder) => folder.id === app.value.selectedFolderId) ?? null,
   );
+  const headerCount = $derived.by(() => {
+    if (app.value.searchQuery.trim()) return app.value.envelopes.length;
+    if (app.value.unreadOnly) {
+      if (app.value.unifiedInbox) {
+        return app.value.folders
+          .filter((folder) => folder.role === "Inbox")
+          .reduce((sum, folder) => sum + folder.unread, 0);
+      }
+      return selectedFolder?.unread ?? app.value.envelopes.length;
+    }
+    return selectedFolder?.total ?? app.value.envelopes.length;
+  });
   const selectedIds = $derived.by(() => new Set(app.value.selectedMessageIds));
   const selectedKeywords = $derived.by(() => {
     return Array.from(new Set(
@@ -199,7 +212,17 @@
       >
         Focus
       </button>
-      <span class="message-count">{selectedFolder?.total ?? app.value.envelopes.length}</span>
+      <button
+        type="button"
+        class="layout-button"
+        class:pressed={app.value.unreadOnly}
+        aria-pressed={app.value.unreadOnly}
+        title={app.value.unreadOnly ? "Show all messages" : "Show unread only"}
+        onclick={() => void setUnreadOnly(!app.value.unreadOnly)}
+      >
+        Unread
+      </button>
+      <span class="message-count">{headerCount}</span>
     </div>
   </header>
   <div class="search-box">
@@ -301,7 +324,7 @@
     {:else if app.value.envelopes.length === 0}
       <div class="empty">
         <OrigamiArtwork variant="empty" theme={app.value.theme} className="empty-art" />
-        <span>No messages here</span>
+        <span>{app.value.unreadOnly ? "No unread messages" : "No messages here"}</span>
       </div>
     {:else}
       <VirtualList
@@ -394,6 +417,11 @@
   }
   .layout-button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
   .layout-button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .layout-button.pressed {
+    border-color: var(--accent);
+    background: color-mix(in oklab, var(--accent) 16%, var(--bg-raised));
+    color: var(--accent);
+  }
   .eyebrow {
     display: block;
     color: var(--fg-subtle);
