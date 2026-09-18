@@ -12,6 +12,7 @@ import {
   type KeywordCount,
   type AccountStatusDto,
 } from "./api";
+import { withUnreadToken } from "./searchHighlight";
 import type { Envelope, EnvelopeSource, Flag, Mailbox, MailboxRole } from "./types";
 
 export type WorkspaceLayout = "three-pane" | "two-pane" | "reading";
@@ -22,6 +23,7 @@ export interface State {
   folders: Mailbox[];
   selectedFolderId: string | null;
   unifiedInbox: boolean;
+  unreadOnly: boolean;
   envelopes: Envelope[];
   envelopesLoading: boolean;
   envelopesLoadingMore: boolean;
@@ -80,6 +82,7 @@ const initial: State = {
   folders: [],
   selectedFolderId: null,
   unifiedInbox: false,
+  unreadOnly: false,
   envelopes: [],
   envelopesLoading: false,
   envelopesLoadingMore: false,
@@ -146,24 +149,32 @@ type FolderView = {
 const folderViews = new Map<string, FolderView>();
 let folderScrollTop = 0;
 
+function folderViewKey(folderId: string): string {
+  return `${folderId}:${app.value.unreadOnly ? "unread" : "all"}`;
+}
+
+function unreadOnly(): boolean {
+  return app.value.unreadOnly;
+}
+
 export function recordFolderScroll(scrollTop: number) {
   folderScrollTop = scrollTop;
   const folderId = app.value.selectedFolderId;
   if (!folderId) return;
-  const view = folderViews.get(folderId);
+  const view = folderViews.get(folderViewKey(folderId));
   if (view) view.scrollTop = scrollTop;
 }
 
 export function restoredFolderScroll(): number {
   const folderId = app.value.selectedFolderId;
   if (!folderId) return 0;
-  return folderViews.get(folderId)?.scrollTop ?? 0;
+  return folderViews.get(folderViewKey(folderId))?.scrollTop ?? 0;
 }
 
 function snapshotFolderView() {
   const folderId = app.value.selectedFolderId;
   if (!folderId) return;
-  folderViews.set(folderId, {
+  folderViews.set(folderViewKey(folderId), {
     envelopes: app.value.envelopes,
     envelopePage: app.value.envelopePage,
     hasMoreEnvelopes: app.value.hasMoreEnvelopes,
@@ -198,6 +209,7 @@ function loadPreferences() {
         ? saved.layout as WorkspaceLayout : "three-pane",
       sidebarWidth: bounded(saved.sidebarWidth, 260, 200, 420),
       threadListWidth: bounded(saved.threadListWidth, 360, 280, 520),
+      unreadOnly: typeof saved.unreadOnly === "boolean" ? saved.unreadOnly : false,
     });
   } catch {
     // Invalid preferences fall back to defaults.
@@ -212,6 +224,7 @@ function savePreferences() {
     layout: app.value.layout,
     sidebarWidth: app.value.sidebarWidth,
     threadListWidth: app.value.threadListWidth,
+    unreadOnly: app.value.unreadOnly,
   }));
 }
 
@@ -363,7 +376,7 @@ export async function selectFolder(folderId: string) {
   }
   snapshotFolderView();
   messageRequest += 1;
-  const cached = folderViews.get(folderId);
+  const cached = folderViews.get(folderViewKey(folderId));
   folderScrollTop = cached?.scrollTop ?? 0;
   patch({
     selectedFolderId: folderId,
@@ -413,7 +426,7 @@ async function loadUnifiedInbox() {
   const request = ++envelopeRequest;
   patch({ envelopesLoading: true, envelopesLoadingMore: false });
   try {
-    const envelopes = await api.listUnifiedInbox(1, 200);
+    const envelopes = await api.listUnifiedInbox(1, 200, unreadOnly());
     if (request !== envelopeRequest || !app.value.unifiedInbox) return;
     patch({
       envelopes,
@@ -434,7 +447,7 @@ export async function loadEnvelopes(folderId: string) {
     envelopesLoadingMore: false,
   });
   try {
-    const envelopes = await api.listEnvelopes(folderId, 1, 200);
+    const envelopes = await api.listEnvelopes(folderId, 1, 200, unreadOnly());
     if (request !== envelopeRequest || app.value.selectedFolderId !== folderId) return;
     const available = new Set(envelopes.map((envelope) => envelope.id));
     patch({
@@ -464,7 +477,7 @@ export async function loadMoreEnvelopes() {
     const page = app.value.envelopePage + 1;
     patch({ envelopesLoadingMore: true });
     try {
-      const next = await api.searchPage(query, page, 200);
+      const next = await api.searchPage(withUnreadToken(query, unreadOnly()), page, 200);
       if (request !== envelopeRequest || app.value.searchQuery.trim() !== query) {
         if (request === envelopeRequest) patch({ envelopesLoadingMore: false });
         return;
@@ -498,8 +511,8 @@ export async function loadMoreEnvelopes() {
   patch({ envelopesLoadingMore: true });
   try {
     const next = app.value.unifiedInbox
-      ? await api.listUnifiedInbox(page, 200)
-      : await api.listEnvelopes(folderId!, page, 200);
+      ? await api.listUnifiedInbox(page, 200, unreadOnly())
+      : await api.listEnvelopes(folderId!, page, 200, unreadOnly());
     if (request !== envelopeRequest || (!app.value.unifiedInbox && app.value.selectedFolderId !== folderId)) {
       if (request === envelopeRequest) patch({ envelopesLoadingMore: false });
       return;
@@ -584,9 +597,9 @@ export async function selectEnvelope(envelope: Envelope) {
     // First-open marks as read: optimistic local flip + command.
     if (!messageWithAttachmentState.envelope.flags.includes("Seen")) {
       const next: Flag[] = Array.from(new Set([...messageWithAttachmentState.envelope.flags, "Seen"]));
-      const envelopes = app.value.envelopes.map((item) =>
+      const envelopes = retainForUnreadFilter(app.value.envelopes.map((item) =>
         item.id === envelope.id ? { ...item, flags: next } : item
-      );
+      ));
       patch({
         envelopes,
         message: {
@@ -632,7 +645,7 @@ export async function searchMessages(query: string) {
     message: null,
   });
   try {
-    const envelopes = await api.searchPage(normalized, 1, 200);
+    const envelopes = await api.searchPage(withUnreadToken(query, unreadOnly()), 1, 200);
     if (request !== envelopeRequest || app.value.searchQuery.trim() !== normalized) return;
     patch({
       envelopes,
@@ -645,6 +658,24 @@ export async function searchMessages(query: string) {
     if (request !== envelopeRequest) return;
     patch({ searching: false, envelopesLoading: false, lastError: String(error) });
   }
+}
+
+export async function setUnreadOnly(unreadOnly: boolean) {
+  if (app.value.unreadOnly === unreadOnly) return;
+  snapshotFolderView();
+  patch({ unreadOnly });
+  savePreferences();
+  const query = app.value.searchQuery.trim();
+  if (query) await searchMessages(app.value.searchQuery);
+  else if (app.value.unifiedInbox) await loadUnifiedInbox();
+  else if (app.value.selectedFolderId) await loadEnvelopes(app.value.selectedFolderId);
+}
+
+function retainForUnreadFilter(envelopes: Envelope[]): Envelope[] {
+  if (!app.value.unreadOnly) return envelopes;
+  const keep = new Set(app.value.selectedMessageIds);
+  if (app.value.selectedEnvelope) keep.add(app.value.selectedEnvelope.id);
+  return envelopes.filter((envelope) => !envelope.flags.includes("Seen") || keep.has(envelope.id));
 }
 
 export async function saveCurrentSearch(name: string) {
@@ -777,9 +808,9 @@ export async function setSelectedFlag(flag: Flag, enabled: boolean) {
       updatesByFolder.set(source.mailboxId, updates);
     }
   }
-  const envelopes = app.value.envelopes.map((envelope) =>
+  const envelopes = retainForUnreadFilter(app.value.envelopes.map((envelope) =>
     selected.has(envelope.id) ? { ...envelope, flags: nextFlags(envelope) } : envelope
-  );
+  ));
   const message = app.value.message && selected.has(app.value.message.envelope.id)
     ? {
         ...app.value.message,
@@ -1238,7 +1269,7 @@ export async function syncNow(accountId?: string) {
       patch({ folders });
       await loadUnifiedInbox();
     } else if (selectedFolder) {
-      const envs = await api.listEnvelopes(selectedFolder.id, 1, 200);
+      const envs = await api.listEnvelopes(selectedFolder.id, 1, 200, unreadOnly());
       patch({ envelopes: envs, folders });
     } else {
       patch({ folders, selectedFolderId: null, envelopes: [], selectedEnvelope: null, message: null });
