@@ -572,10 +572,14 @@
     font-size: 10px;
   }
   .empty {
-    min-height: 100%;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
     padding: 24px;
     display: grid;
     place-content: center;
+    justify-items: center;
     gap: 10px;
     color: var(--fg-muted);
     text-align: center;

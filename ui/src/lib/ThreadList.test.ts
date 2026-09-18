@@ -108,8 +108,11 @@ describe("ThreadList", () => {
       id: "inbox", accountId: "a", name: "INBOX", role: "Inbox",
       total: 12, unread: 3, sourceIds: [],
     }];
-    render(ThreadList);
-    expect(screen.getByText("No unread messages")).toBeInTheDocument();
+    const { container } = render(ThreadList);
+    const empty = container.querySelector(".list-body > .empty");
+    expect(empty).toBeTruthy();
+    expect(empty).toContainElement(screen.getByText("No unread messages"));
+    expect(empty?.querySelector(".origami-artwork.empty-art")).toBeTruthy();
     expect(screen.getByText("3")).toBeInTheDocument();
   });
 
