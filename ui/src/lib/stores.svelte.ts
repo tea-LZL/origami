@@ -13,6 +13,12 @@ import {
   type AccountStatusDto,
 } from "./api";
 import { withUnreadToken } from "./searchHighlight";
+import {
+  applyUnreadListReload,
+  folderViewKey as unreadFolderViewKey,
+  retainForUnreadFilter as retainUnreadRows,
+  unreadKeepIds,
+} from "./unreadList";
 import type { Envelope, EnvelopeSource, Flag, Mailbox, MailboxRole } from "./types";
 
 export type WorkspaceLayout = "three-pane" | "two-pane" | "reading";
@@ -150,7 +156,7 @@ const folderViews = new Map<string, FolderView>();
 let folderScrollTop = 0;
 
 function folderViewKey(folderId: string): string {
-  return `${folderId}:${app.value.unreadOnly ? "unread" : "all"}`;
+  return unreadFolderViewKey(folderId, app.value.unreadOnly);
 }
 
 function unreadOnly(): boolean {
@@ -426,13 +432,21 @@ async function loadUnifiedInbox() {
   const request = ++envelopeRequest;
   patch({ envelopesLoading: true, envelopesLoadingMore: false });
   try {
-    const envelopes = await api.listUnifiedInbox(1, 200, unreadOnly());
+    const loaded = await api.listUnifiedInbox(1, 200, unreadOnly());
     if (request !== envelopeRequest || !app.value.unifiedInbox) return;
+    const { envelopes, selectedMessageIds } = applyUnreadListReload({
+      loaded,
+      previous: app.value.envelopes,
+      selectedEnvelope: app.value.selectedEnvelope,
+      selectedMessageIds: app.value.selectedMessageIds,
+      unreadOnly: app.value.unreadOnly,
+    });
     patch({
       envelopes,
       envelopesLoading: false,
       envelopePage: 1,
-      hasMoreEnvelopes: envelopes.length === 200,
+      hasMoreEnvelopes: loaded.length === 200,
+      selectedMessageIds,
     });
   } catch (error) {
     if (request !== envelopeRequest) return;
@@ -447,15 +461,21 @@ export async function loadEnvelopes(folderId: string) {
     envelopesLoadingMore: false,
   });
   try {
-    const envelopes = await api.listEnvelopes(folderId, 1, 200, unreadOnly());
+    const loaded = await api.listEnvelopes(folderId, 1, 200, unreadOnly());
     if (request !== envelopeRequest || app.value.selectedFolderId !== folderId) return;
-    const available = new Set(envelopes.map((envelope) => envelope.id));
+    const { envelopes, selectedMessageIds } = applyUnreadListReload({
+      loaded,
+      previous: app.value.envelopes,
+      selectedEnvelope: app.value.selectedEnvelope,
+      selectedMessageIds: app.value.selectedMessageIds,
+      unreadOnly: app.value.unreadOnly,
+    });
     patch({
       envelopes,
       envelopesLoading: false,
       envelopePage: 1,
-      hasMoreEnvelopes: envelopes.length === 200,
-      selectedMessageIds: app.value.selectedMessageIds.filter((id) => available.has(id)),
+      hasMoreEnvelopes: loaded.length === 200,
+      selectedMessageIds,
     });
   } catch (e) {
     if (request !== envelopeRequest || app.value.selectedFolderId !== folderId) return;
@@ -672,10 +692,11 @@ export async function setUnreadOnly(unreadOnly: boolean) {
 }
 
 function retainForUnreadFilter(envelopes: Envelope[]): Envelope[] {
-  if (!app.value.unreadOnly) return envelopes;
-  const keep = new Set(app.value.selectedMessageIds);
-  if (app.value.selectedEnvelope) keep.add(app.value.selectedEnvelope.id);
-  return envelopes.filter((envelope) => !envelope.flags.includes("Seen") || keep.has(envelope.id));
+  return retainUnreadRows(
+    envelopes,
+    app.value.unreadOnly,
+    unreadKeepIds(app.value.selectedEnvelope, app.value.selectedMessageIds),
+  );
 }
 
 export async function saveCurrentSearch(name: string) {
@@ -1269,8 +1290,8 @@ export async function syncNow(accountId?: string) {
       patch({ folders });
       await loadUnifiedInbox();
     } else if (selectedFolder) {
-      const envs = await api.listEnvelopes(selectedFolder.id, 1, 200, unreadOnly());
-      patch({ envelopes: envs, folders });
+      patch({ folders });
+      await loadEnvelopes(selectedFolder.id);
     } else {
       patch({ folders, selectedFolderId: null, envelopes: [], selectedEnvelope: null, message: null });
       const initialFolder = folders.find((folder) => folder.role === "Inbox") ?? folders[0];
