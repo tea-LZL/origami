@@ -145,10 +145,10 @@ export const api = {
   renameFolder: (folderId: string, name: string) =>
     invoke<void>("rename_folder", { folderId, name }),
   deleteFolder: (folderId: string) => invoke<void>("delete_folder", { folderId }),
-  listEnvelopes: (folderId: string, page = 1, pageSize = 50) =>
-    invoke<Envelope[]>("list_envelopes", { folderId, page, pageSize }),
-  listUnifiedInbox: (page = 1, pageSize = 50) =>
-    invoke<Envelope[]>("list_unified_inbox", { page, pageSize }),
+  listEnvelopes: (folderId: string, page = 1, pageSize = 50, unreadOnly = false) =>
+    invoke<Envelope[]>("list_envelopes", { folderId, page, pageSize, unreadOnly }),
+  listUnifiedInbox: (page = 1, pageSize = 50, unreadOnly = false) =>
+    invoke<Envelope[]>("list_unified_inbox", { page, pageSize, unreadOnly }),
   prefetchSelectedFolder: (folderId: string) =>
     invoke<void>("prefetch_selected_folder", { folderId }),
   getCachedMessage: (folderId: string, serverUid: number) =>
