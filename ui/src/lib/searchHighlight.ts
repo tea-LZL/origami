@@ -44,3 +44,11 @@ export function highlightSearchText(value: string, query: string): HighlightPart
   if (cursor < value.length) parts.push({ text: value.slice(cursor), match: false });
   return parts;
 }
+
+export function withUnreadToken(query: string, unreadOnly: boolean): string {
+  const tokens = query.trim().split(/\s+/).filter(Boolean);
+  if (!unreadOnly) return tokens.join(" ");
+  const hasReadState = tokens.some((token) => /^is:(un)?read$/i.test(token));
+  if (hasReadState) return tokens.join(" ");
+  return [...tokens, "is:unread"].join(" ");
+}

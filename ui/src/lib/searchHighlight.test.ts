@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { highlightSearchText } from "./searchHighlight";
+import { highlightSearchText, withUnreadToken } from "./searchHighlight";
 
 describe("highlightSearchText", () => {
   it("highlights free text and field-filter values", () => {
@@ -19,5 +19,19 @@ describe("highlightSearchText", () => {
       { text: "safe", match: true },
       { text: "</b>", match: false },
     ]);
+  });
+});
+
+describe("withUnreadToken", () => {
+  it("appends is:unread for folder-unrelated search text", () => {
+    expect(withUnreadToken("invoice", true)).toBe("invoice is:unread");
+    expect(withUnreadToken("invoice", false)).toBe("invoice");
+    expect(withUnreadToken("", true)).toBe("is:unread");
+    expect(withUnreadToken("  ", false)).toBe("");
+  });
+
+  it("does not duplicate an existing read-state token", () => {
+    expect(withUnreadToken("is:unread invoice", true)).toBe("is:unread invoice");
+    expect(withUnreadToken("invoice is:read", true)).toBe("invoice is:read");
   });
 });
