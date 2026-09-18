@@ -239,7 +239,7 @@ fn unified_inbox_combines_accounts_but_not_other_folders() {
             .unwrap();
         store.upsert_envelope(&sent, &envelope(2, "sent")).unwrap();
     }
-    let unified = store.list_unified_inbox(1, 10).unwrap();
+    let unified = store.list_unified_inbox(1, 10, false).unwrap();
     assert_eq!(unified.len(), 2);
     assert!(unified.iter().all(|message| message.subject != "sent"));
 }
@@ -681,7 +681,7 @@ fn logical_sent_sources_list_together_without_losing_mailbox_identity() {
     assert!(sources.contains(&sent));
     assert!(sources.contains(&gmail_sent));
 
-    let messages = store.list_envelopes_in_folders(&sources, 1, 10).unwrap();
+    let messages = store.list_envelopes_in_folders(&sources, 1, 10, false).unwrap();
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].subject, "gmail");
     assert_eq!(messages[0].mailbox_id, gmail_sent);
@@ -743,7 +743,7 @@ fn label_copies_are_one_logical_envelope_with_one_unread_state() {
     store.upsert_envelope(&important, &third).unwrap();
 
     let folders = vec![inbox.clone(), archive.clone(), important.clone()];
-    let messages = store.list_envelopes_in_folders(&folders, 1, 10).unwrap();
+    let messages = store.list_envelopes_in_folders(&folders, 1, 10, false).unwrap();
     assert_eq!(messages.len(), 1);
     assert!(!messages[0].flags.contains(&Flag::Seen));
     assert_eq!(messages[0].sources.len(), 3);
@@ -763,4 +763,77 @@ fn duplicate_message_ids_in_one_folder_are_not_merged() {
     let messages = store.list_envelopes(&folder, 1, 10).unwrap();
     assert_eq!(messages.len(), 2);
     assert!(messages.iter().all(|message| message.sources.len() == 1));
+}
+
+#[test]
+fn unread_only_list_skips_seen_and_paginates_unread() {
+    let (store, _account, folder) = setup();
+    let mut unread_new = envelope(3, "unread new");
+    unread_new.flags.clear();
+    unread_new.received_at = Some(300);
+    let mut read = envelope(2, "read");
+    read.received_at = Some(200);
+    let mut unread_old = envelope(1, "unread old");
+    unread_old.flags.clear();
+    unread_old.received_at = Some(100);
+    store.upsert_envelope(&folder, &unread_new).unwrap();
+    store.upsert_envelope(&folder, &read).unwrap();
+    store.upsert_envelope(&folder, &unread_old).unwrap();
+
+    let all = store.list_envelopes_in_folders(&[folder.clone()], 1, 10, false).unwrap();
+    assert_eq!(
+        all.iter().map(|e| e.subject.as_str()).collect::<Vec<_>>(),
+        vec!["unread new", "read", "unread old"]
+    );
+
+    let page1 = store.list_envelopes_in_folders(&[folder.clone()], 1, 1, true).unwrap();
+    let page2 = store.list_envelopes_in_folders(&[folder.clone()], 2, 1, true).unwrap();
+    assert_eq!(page1[0].subject, "unread new");
+    assert_eq!(page2[0].subject, "unread old");
+    assert_eq!(
+        store.list_envelopes_in_folders(&[folder], 1, 10, true).unwrap().len(),
+        2
+    );
+}
+
+#[test]
+fn unread_only_keeps_logical_unread_when_one_copy_is_seen() {
+    let store = Store::open_in_memory().unwrap();
+    let account = store.upsert_account("test", "Test", "t@example.org").unwrap();
+    let inbox = store.upsert_folder(&account, "INBOX", MailboxRole::Inbox).unwrap();
+    let important = store
+        .upsert_folder(&account, "[Gmail]/Important", MailboxRole::Other)
+        .unwrap();
+
+    let mut seen = envelope(10, "same message");
+    seen.message_id = Some("<same@example.org>".into());
+    seen.flags = vec![Flag::Seen];
+    let mut unseen = seen.clone();
+    unseen.server_uid = Some(30);
+    unseen.flags.clear();
+    store.upsert_envelope(&inbox, &seen).unwrap();
+    store.upsert_envelope(&important, &unseen).unwrap();
+
+    let folders = vec![inbox, important];
+    let unread = store.list_envelopes_in_folders(&folders, 1, 10, true).unwrap();
+    assert_eq!(unread.len(), 1);
+    assert!(!unread[0].flags.contains(&Flag::Seen));
+    assert_eq!(unread[0].sources.len(), 2);
+}
+
+#[test]
+fn unread_only_unified_inbox_skips_seen() {
+    let store = Store::open_in_memory().unwrap();
+    let account = store.upsert_account("one", "one", "one@example.org").unwrap();
+    let inbox = store.upsert_folder(&account, "INBOX", MailboxRole::Inbox).unwrap();
+    let mut unread = envelope(1, "inbox unread");
+    unread.flags.clear();
+    store.upsert_envelope(&inbox, &unread).unwrap();
+    store.upsert_envelope(&inbox, &envelope(2, "inbox read")).unwrap();
+
+    let all = store.list_unified_inbox(1, 10, false).unwrap();
+    let only_unread = store.list_unified_inbox(1, 10, true).unwrap();
+    assert_eq!(all.len(), 2);
+    assert_eq!(only_unread.len(), 1);
+    assert_eq!(only_unread[0].subject, "inbox unread");
 }

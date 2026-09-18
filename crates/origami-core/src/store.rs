@@ -345,7 +345,7 @@ impl Store {
         if folder_ids.is_empty() {
             return Ok((0, 0));
         }
-        let logical = self.list_envelopes_in_folders(folder_ids, 1, u32::MAX)?;
+        let logical = self.list_envelopes_in_folders(folder_ids, 1, u32::MAX, false)?;
         let unread = logical
             .iter()
             .filter(|envelope| !envelope.flags.contains(&Flag::Seen))
@@ -758,7 +758,7 @@ impl Store {
         page: u32,
         page_size: u32,
     ) -> Result<Vec<Envelope>> {
-        self.list_envelopes_in_folders(&[folder_id.to_string()], page, page_size)
+        self.list_envelopes_in_folders(&[folder_id.to_string()], page, page_size, false)
     }
 
     /// Page envelopes from multiple physical folders as one logical view.
@@ -766,11 +766,16 @@ impl Store {
     /// The query deliberately reads all matching physical rows before applying
     /// pagination. Provider labels are separate IMAP rows, so paginating first
     /// would allow one logical message to occupy several page slots.
+    ///
+    /// When `unread_only` is true, filter after logical dedupe (unread if any
+    /// retained copy lacks Seen) and before skip/take, so label copies keep
+    /// their merged `sources`.
     pub fn list_envelopes_in_folders(
         &self,
         folder_ids: &[String],
         page: u32,
         page_size: u32,
+        unread_only: bool,
     ) -> Result<Vec<Envelope>> {
         if folder_ids.is_empty() || page_size == 0 {
             return Ok(Vec::new());
@@ -855,7 +860,10 @@ impl Store {
             ));
         }
 
-        let logical = deduplicate_envelopes(physical);
+        let mut logical = deduplicate_envelopes(physical);
+        if unread_only {
+            logical.retain(|envelope| !envelope.flags.contains(&Flag::Seen));
+        }
         let offset = page.max(1).saturating_sub(1).saturating_mul(page_size) as usize;
         Ok(logical
             .into_iter()
@@ -1056,7 +1064,12 @@ impl Store {
     }
 
     /// Page all account Inbox folders as one local view.
-    pub fn list_unified_inbox(&self, page: u32, page_size: u32) -> Result<Vec<Envelope>> {
+    pub fn list_unified_inbox(
+        &self,
+        page: u32,
+        page_size: u32,
+        unread_only: bool,
+    ) -> Result<Vec<Envelope>> {
         if page_size == 0 {
             return Ok(Vec::new());
         }
@@ -1066,7 +1079,7 @@ impl Store {
         let folder_ids = rows.collect::<rusqlite::Result<Vec<_>>>()?;
         drop(stmt);
         drop(conn);
-        self.list_envelopes_in_folders(&folder_ids, page, page_size)
+        self.list_envelopes_in_folders(&folder_ids, page, page_size, unread_only)
     }
 
     /// Record the blob hash of a fetched body and index the message in FTS.
