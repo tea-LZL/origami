@@ -785,7 +785,7 @@ fn unread_only_list_skips_seen_and_paginates_unread() {
     store.upsert_envelope(&folder, &unread_old).unwrap();
 
     let all = store
-        .list_envelopes_in_folders(&[folder.clone()], 1, 10, false)
+        .list_envelopes_in_folders(std::slice::from_ref(&folder), 1, 10, false)
         .unwrap();
     assert_eq!(
         all.iter().map(|e| e.subject.as_str()).collect::<Vec<_>>(),
@@ -793,10 +793,10 @@ fn unread_only_list_skips_seen_and_paginates_unread() {
     );
 
     let page1 = store
-        .list_envelopes_in_folders(&[folder.clone()], 1, 1, true)
+        .list_envelopes_in_folders(std::slice::from_ref(&folder), 1, 1, true)
         .unwrap();
     let page2 = store
-        .list_envelopes_in_folders(&[folder.clone()], 2, 1, true)
+        .list_envelopes_in_folders(std::slice::from_ref(&folder), 2, 1, true)
         .unwrap();
     assert_eq!(page1[0].subject, "unread new");
     assert_eq!(page2[0].subject, "unread old");
