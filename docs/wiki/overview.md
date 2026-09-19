@@ -2,7 +2,7 @@
 title: Overview
 type: overview
 status: current
-updated: 2026-09-12
+updated: 2026-09-19
 sources:
   - README.md
   - docs/PLAN.md
@@ -29,7 +29,8 @@ Version `0.1.0`; workspace edition 2021, `rust-version` 1.85.
 | Packaging | Arch PKGBUILD via GitLab CI (signed pacman repo deferred) |
 
 Tracked source was ~17,700 lines across 66 Rust/Svelte/TS/CSS files as of 2026-08-24
-([[memory-md]]); the repository has since added the trap-focus and tag-catalog work.
+([[memory-md]]); later work includes trap-focus dialogs, the tag catalog, nested folders,
+the app-password wizard, and the unread-only list filter.
 
 ## Architecture in one paragraph
 
@@ -52,14 +53,17 @@ See [[logical-vs-physical-message]] and [[adr-0001-app-owned-keys]].
 ## What works today
 
 The main daily-driver flows are implemented: multi-account onboarding with password and
-Gmail/Microsoft OAuth and keyring-backed secrets; indexed envelope sync; SQLite/FTS search,
-saved searches, unified Inbox, tags, conversations; body-on-demand plus bounded recent
-display-cache warming; offline flag/move/delete/send with replay and an Outbox inspector;
-reply/reply-all/forward, attachments, drafts, duplicate-send protection; logical cross-label
-deduplication with all physical sources retained; chronological ordering by normalized
-server-received time; isolated HTML rendering with DOMPurify, restrictive CSP, link
-interception, and remote images blocked by default; themes, density, motion preferences,
-resizable layouts, tray lifecycle, notifications, and keyboard list navigation.
+app-password providers (Gmail, iCloud, Yahoo, Fastmail) plus Microsoft OAuth, and
+keyring-backed secrets; nested sidebar folders with unread rollup and a tag catalog;
+indexed envelope sync; SQLite/FTS search, saved searches, unified Inbox, tags,
+conversations, and a sticky unread-only thread-list view; body-on-demand plus bounded
+recent display-cache warming; offline flag/move/delete/send with replay and an Outbox
+inspector; reply/reply-all/forward, attachments, drafts, duplicate-send protection;
+logical cross-label deduplication with all physical sources retained; chronological
+ordering by normalized server-received time; isolated HTML rendering with DOMPurify,
+restrictive CSP, link interception, and remote images blocked by default; themes, density,
+motion preferences, resizable layouts, tray lifecycle, notifications, and keyboard list
+navigation.
 
 Details: [[sync-engine]], [[store-and-search]], [[ui-state-and-rendering]],
 [[backend-seam]], [[accounts-and-secrets]].

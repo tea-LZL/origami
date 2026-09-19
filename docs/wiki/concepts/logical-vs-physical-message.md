@@ -2,11 +2,12 @@
 title: Logical vs physical message
 type: concept
 status: current
-updated: 2026-09-12
+updated: 2026-09-19
 sources:
   - MEMORY.md
   - docs/adr/0001-message-key-ownership.md
   - crates/origami-core/src/model.rs
+  - crates/origami-core/src/store.rs
 ---
 
 # Logical vs physical message
@@ -28,6 +29,11 @@ one message delivered to two folders.
   `(folder, UIDVALIDITY)` ([[adr-0001-app-owned-keys]]).
 - **Never discard a retained physical source** when deduplicating logical messages.
 - Address every mutation by physical source, even when the UI shows one logical row.
+- **Logical unread** means any retained physical copy lacks Seen.
+  `merge_envelope_sources` puts Seen on the logical envelope only when **every** copy is
+  Seen. Unread-only folder listing must filter after dedupe and before skip/take, not via
+  SQL `WHERE` on `flags_json`, or label copies lose `sources` ([[unread-only-list-filter]],
+  [[store-and-search]]).
 
 ## Where it shows up
 
@@ -39,4 +45,4 @@ one message delivered to two folders.
 
 ## Related
 
-- [[adr-0001-app-owned-keys]] · [[message-model-and-threading]] · [[overview]]
+- [[adr-0001-app-owned-keys]] · [[message-model-and-threading]] · [[store-and-search]] · [[unread-only-list-filter]] · [[overview]]

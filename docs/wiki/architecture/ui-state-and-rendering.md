@@ -2,12 +2,19 @@
 title: UI state and rendering
 type: architecture
 status: current
-updated: 2026-09-18
+updated: 2026-09-19
 sources:
   - ui/src/lib/stores.svelte.ts
   - ui/src/lib/ThreadList.svelte
   - ui/src/lib/VirtualList.svelte
   - ui/src/lib/searchHighlight.ts
+  - ui/src/lib/unreadList.ts
+  - ui/src/lib/folderNav.ts
+  - ui/src/lib/Sidebar.svelte
+  - ui/src/lib/tags.ts
+  - ui/src/lib/trapFocus.ts
+  - ui/src/lib/AddAccount.svelte
+  - ui/src/lib/OrigamiArtwork.svelte
   - ui/src/lib/messageHtml.ts
   - ui/src/lib/remoteContent.ts
   - crates/origami-core/src/store.rs
@@ -28,20 +35,24 @@ The UI reads normalized DTOs only and must not contain provider-specific logic
 ([[backend-seam]]).
 
 Supporting modules: `threads.ts` (conversation projection), `tags.ts`, `navigation.ts`,
-`folderNav.ts`, `searchHighlight.ts`, `trapFocus.ts`, `remoteContent.ts`.
+`folderNav.ts`, `searchHighlight.ts`, `unreadList.ts`, `trapFocus.ts`,
+`remoteContent.ts`.
 
 Key components: `App.svelte`, `Sidebar.svelte`, `ThreadList.svelte`, `MessageView.svelte`,
 `Composer.svelte`, `Outbox.svelte`, `VirtualList.svelte`, `PaneSplitter.svelte`,
 `Preferences.svelte`, `AccountSettings.svelte`, `AddAccount.svelte`,
-`ActionIcon.svelte` (inline-SVG action glyphs).
+`ActionIcon.svelte` (inline-SVG action glyphs), `OrigamiArtwork.svelte` (empty/setup art).
+
+Mail list and rendering stay provider-neutral ([[backend-seam]]). Provider-specific copy
+is confined to onboarding ([[accounts-and-secrets]]).
 
 ## Unread-only list view
 
 `State.unreadOnly` (`boolean`, default `false`) is a sticky **current-view** filter, not a
 saved search. `ThreadList.svelte` exposes it as a header **Unread** toggle (`aria-pressed`,
-pressed chrome, tooltip swaps between "Show unread only" and "Show all messages"). Empty
-folders use `No unread messages`. The header count uses the mailbox `unread` total (or the
-sum of Inbox `unread` under unified Inbox), not the loaded page length.
+pressed chrome, tooltip swaps between "Show unread only" and "Show all messages"). The
+header count uses the mailbox `unread` total (or the sum of Inbox `unread` under unified
+Inbox), not the loaded page length.
 
 The flag is restored in `loadPreferences` before the first folder fetch and written by
 `savePreferences` / `setUnreadOnly`. Folder snapshots are keyed
@@ -57,9 +68,20 @@ copies from `sources` ([[logical-vs-physical-message]]). Search does not use tha
 `withUnreadToken` appends `is:unread` to the invoke string only, leaving `searchQuery` as
 typed, and skips the token if the query already has `is:read` / `is:unread`.
 
-Opening an unread row still flips Seen, but `retainForUnreadFilter` keeps
-`selectedEnvelope` / `selectedMessageIds` in the list until the selection moves or the
-filter is toggled — otherwise first-open auto-Seen would make the filter look broken.
+Opening an unread row still flips Seen. `ui/src/lib/unreadList.ts`
+(`retainForUnreadFilter`, `applyUnreadListReload`) keeps `selectedEnvelope` /
+`selectedMessageIds` in the unread-only list until the selection moves or the filter is
+toggled — otherwise first-open auto-Seen would make the filter look broken.
+
+After a folder sync while that row is still selected, `mergeSelectedIntoUnreadPage` can
+overwrite a patched Seen extra with a stale unseen `selectedEnvelope`. The open row may
+then keep looking unread and remain in the unread-only list after leaving it. See
+[[known-drift]].
+
+Empty folders render `OrigamiArtwork` (`variant="empty"`) plus
+`No unread messages` / `No messages here`. `.list-body` is a row flex container;
+`.empty` grows (`flex: 1`, `width: 100%`) so the artwork and copy center in the Inbox
+column rather than shrink-wrapping left.
 
 ## Unread row chrome
 
@@ -70,6 +92,22 @@ plus a screen-reader "Unread" label. The active-row marker remains `.row.active:
 `left: 5px` — the pip is not a second rail. Under `forced-colors`, the tint is cleared and
 the pip uses `Highlight` with `forced-color-adjust: none`. Compact density only nudges pip
 `top`.
+
+## Sidebar folders and tags
+
+`folderNav.ts` builds the account folder tree: special-role folders first (Inbox, Drafts,
+Sent, Archive, Junk, Trash), then nested `Other` folders using the IMAP delimiter.
+Collapsed parents roll unread/total up from children. Expand state is per-account in
+`localStorage` key `origami-sidebar-expanded`. Other-role leaves named All Mail,
+Important, or Starred (Gmail namespace stripped) are hidden from the tree; they remain
+in the store.
+
+Account context menu: Sync now, Create folder, Settings, Remove account. Folder context
+menu applies to **Other-role** folders only (Rename, Delete). Dialogs use `trapFocus`.
+
+The tag catalog lists `app.value.keywords` with hashed palette colors (`tagColor`) and
+counts; a click runs search `tag:<name>`. Thread-list chips share the same colors.
+Details: [[sidebar-folders-tags-onboarding]].
 
 ## Rendering and the trust boundary
 
@@ -127,4 +165,4 @@ The thread-list bulk bar (`ThreadList.svelte`) still uses text chips; adopting
 
 ## Related
 
-- [[ui-frontend]] · [[store-and-search]] · [[logical-vs-physical-message]] · [[accounts-and-secrets]] · [[release-readiness]]
+- [[ui-frontend]] · [[store-and-search]] · [[logical-vs-physical-message]] · [[accounts-and-secrets]] · [[unread-only-list-filter]] · [[sidebar-folders-tags-onboarding]] · [[release-readiness]]

@@ -2,7 +2,7 @@
 title: Log
 type: log
 status: current
-updated: 2026-09-18
+updated: 2026-09-19
 ---
 
 # Log
@@ -66,3 +66,22 @@ Open items — none blocking; content freshness is bounded by the source dates r
 Recorded the sticky thread-list Unread view (`unreadOnly`, `origami-preferences`), store-level
 unread paging after logical dedupe, search `is:unread` composition, keep-selected-on-Seen, and
 unread row chrome (pip + tint + bold) in [[ui-state-and-rendering]]. No new wiki page.
+
+## [2026-09-19] ingest | Unread-only list filter (complete)
+Filed [[unread-only-list-filter]]. Distilled keep-selected (`unreadList.ts`), empty-state
+centering (`OrigamiArtwork` + `.empty` grow in a row-flex `.list-body`), store unread paging,
+and logical-unread (`merge_envelope_sources`) into [[ui-state-and-rendering]],
+[[store-and-search]], [[logical-vs-physical-message]], [[ui-frontend]], and [[overview]].
+Recorded the parked Seen-merge residual in [[known-drift]]. Completes the 2026-09-18 note.
+
+## [2026-09-19] ingest | Sidebar folders, tags, and onboarding
+Filed [[sidebar-folders-tags-onboarding]]. Distilled nested folder tree and Gmail All Mail
+hiding, tag catalog, account/folder menus, trap-focus dialogs, and the app-password wizard
+(Gmail/iCloud/Yahoo/Fastmail app passwords; Microsoft OAuth; Google OAuth not offered in the
+wizard) into [[ui-state-and-rendering]], [[accounts-and-secrets]], [[ui-frontend]], and
+[[overview]]. Gmail OAuth-vs-app-password split recorded in [[known-drift]].
+
+## [2026-09-19] lint | After catch-up ingest
+Scripted check over 36 pages: 0 unresolved wikilinks (same SCHEMA/log code-span false
+positives as 2026-09-12), 0 orphans, 0 missing `sources:` paths, 0 pages absent from
+[[index]].

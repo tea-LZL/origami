@@ -2,12 +2,13 @@
 title: Store and search
 type: architecture
 status: current
-updated: 2026-09-12
+updated: 2026-09-19
 sources:
   - docs/PLAN.md
   - crates/origami-core/src/store.rs
   - crates/origami-core/src/blob.rs
   - crates/origami-core/src/private_fs.rs
+  - crates/origami-core/tests/store.rs
 ---
 
 # Store and search
@@ -28,11 +29,27 @@ Logical tables include: `accounts`, `folders`, `messages`, `threads`, `attachmen
 
 Schema and migrations live in `crates/origami-core/src/store.rs`.
 
+## Envelope listing and unread-only
+
+`list_envelopes_in_folders` reads all matching physical rows, then
+`deduplicate_envelopes`, then optional unread filtering, then skip/take. Pagination
+cannot run first: provider labels are separate IMAP rows, and paging before dedupe would
+let one logical message occupy several page slots.
+
+When `unread_only` is true, the store retains logical envelopes whose merged flags lack
+`Seen`. Unread is defined by `merge_envelope_sources`: Seen is on the logical envelope
+only if **every** retained physical copy is Seen. Filtering on SQL `flags_json` before
+dedupe would drop label copies from `sources` ([[logical-vs-physical-message]],
+[[unread-only-list-filter]]). `list_unified_inbox` uses the same flag and the same
+order. Commands default `unread_only` to false.
+
 ## Search
 
 A single FTS5 index over subject / from / to / body-plain with the porter tokenizer. The
 index is updated lazily **after the body is fetched** — envelope-first sync means subject and
-participants are searchable before a body is downloaded.
+participants are searchable before a body is downloaded. The unread-only **search** path
+does not use the store argument: the UI appends an `is:unread` token
+([[ui-state-and-rendering]]).
 
 ## Bodies
 
@@ -49,4 +66,4 @@ see [[release-readiness]].
 
 ## Related
 
-- [[content-addressed-store]] · [[logical-vs-physical-message]] · [[sync-engine]]
+- [[content-addressed-store]] · [[logical-vs-physical-message]] · [[sync-engine]] · [[unread-only-list-filter]]

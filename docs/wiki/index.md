@@ -2,7 +2,7 @@
 title: Index
 type: index
 status: current
-updated: 2026-09-12
+updated: 2026-09-19
 ---
 
 # Wiki index
@@ -26,10 +26,10 @@ Status · Sources.
 - [[runtime-and-layers]] — process model, crate layers, threading, data flow.
 - [[backend-seam]] — `MailBackend` / `SmtpSender` traits and protocol isolation.
 - [[sync-engine]] — per-account actors, CONDSTORE/QRESYNC delta sync, IDLE, outbox replay.
-- [[store-and-search]] — SQLite/WAL schema, FTS5, blob store, migrations.
+- [[store-and-search]] — SQLite/WAL schema, FTS5, unread-only paging, blob store, migrations.
 - [[message-model-and-threading]] — dual message identity, MIME, jwz threading.
-- [[ui-state-and-rendering]] — Svelte state, commands/events, HTML sanitization.
-- [[accounts-and-secrets]] — config, keyring, OAuth2 PKCE and token refresh.
+- [[ui-state-and-rendering]] — Svelte state, unread-only list, sidebar tree, HTML sanitization.
+- [[accounts-and-secrets]] — config, keyring, onboarding wizard, OAuth2 PKCE and token refresh.
 
 ## Decisions
 
@@ -39,7 +39,7 @@ Status · Sources.
 
 ## Concepts
 
-- [[logical-vs-physical-message]] — one logical message, many physical sources.
+- [[logical-vs-physical-message]] — one logical message, many physical sources; logical unread.
 - [[condstore-qresync]] — the delta-sync machinery and its fallbacks.
 - [[offline-outbox]] — queue offline mutations and replay on reconnect.
 - [[content-addressed-store]] — raw RFC 822 bodies stored by content hash.
@@ -68,3 +68,5 @@ Status · Sources.
 - [[gitlab-cicd-md]] — GitLab pipeline, Arch package, release tags.
 - [[hermes-sent-tray-background]] — plan: unified Sent projection + tray lifecycle.
 - [[hermes-arch-local-release]] — plan: PKGBUILD and local pacman install.
+- [[unread-only-list-filter]] — sticky unread-only thread list (store filter, keep-selected, chrome).
+- [[sidebar-folders-tags-onboarding]] — nested folders, tag catalog, context menus, app-password wizard.

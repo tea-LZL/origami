@@ -2,7 +2,7 @@
 title: ui frontend
 type: entity
 status: current
-updated: 2026-09-12
+updated: 2026-09-19
 sources:
   - ui/package.json
   - ui/src/App.svelte
@@ -24,9 +24,10 @@ Tooling: `vite`, `svelte-check`, `typescript`, `vitest` + Testing Library + jsdo
 ## Structure
 
 State and helpers in `ui/src/lib/` (`stores.svelte.ts`, `api.ts`, `types.ts`, `threads.ts`,
-`tags.ts`, `navigation.ts`, `folderNav.ts`, `searchHighlight.ts`, `trapFocus.ts`,
-`remoteContent.ts`, `messageHtml.ts`); components in the same folder (`App.svelte` lives at
-`ui/src/App.svelte`). Tests are colocated as `*.test.ts` with harnesses in `ui/src/test/`.
+`tags.ts`, `navigation.ts`, `folderNav.ts`, `searchHighlight.ts`, `unreadList.ts`,
+`trapFocus.ts`, `remoteContent.ts`, `messageHtml.ts`); components in the same folder
+(`App.svelte` lives at `ui/src/App.svelte`), including `OrigamiArtwork.svelte` for empty
+and setup art. Tests are colocated as `*.test.ts` with harnesses in `ui/src/test/`.
 
 ## Gates
 
@@ -35,4 +36,4 @@ State and helpers in `ui/src/lib/` (`stores.svelte.ts`, `api.ts`, `types.ts`, `t
 
 ## Related
 
-- [[ui-state-and-rendering]] · [[message-model-and-threading]] · [[origami-app]]
+- [[ui-state-and-rendering]] · [[message-model-and-threading]] · [[unread-only-list-filter]] · [[sidebar-folders-tags-onboarding]] · [[origami-app]]
