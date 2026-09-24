@@ -4,6 +4,8 @@ Local Docker harness for live protocol tests.
 
 - **Dovecot 2.3** — IMAP on `127.0.0.1:10143` (plaintext, testing only).
   User `origami` / password `origami`, maildir seeded with 3 messages.
+  Committed filenames use `__c__` instead of `:` so the tree checks out on
+  Windows. The container restores real Maildir names (`:2,flags`) at start.
 - **GreenMail** — SMTP on `127.0.0.1:30025`, IMAP on `127.0.0.1:30143`
   (users are auto-created on first delivery; password = address local part).
 

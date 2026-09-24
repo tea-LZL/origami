@@ -6,7 +6,9 @@ services:
       - "10143:143" # IMAP (plaintext, local testing only)
     volumes:
       - ./dovecot/dovecot.conf:/etc/dovecot/dovecot.conf:ro
-      - ./dovecot/mail:/mail:rw
+      - ./dovecot/mail:/mail-src:ro
+      - ./dovecot/prepare-mail.sh:/prepare-mail.sh:ro
+    entrypoint: ["/bin/sh", "/prepare-mail.sh"]
 
   greenmail:
     image: greenmail/standalone:2.0.1

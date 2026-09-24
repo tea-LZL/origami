@@ -9,12 +9,11 @@ tests/harness/
 ├── docker-compose.yml          # 2 services
 ├── dovecot/
 │   ├── dovecot.conf             # minimal config
-│   └── mail/origami/            # pre-seeded maildir
-│       ├── cur/                 # 2 messages (read, \Seen)
-│       │   ├── 1752832801.0001.harness:2,S
-│       │   └── 1752841801.0002.harness:2,S
-│       └── new/                 # 1 message (unread)
-│           └── 1752912001.0003.harness
+│   ├── prepare-mail.sh          # restores ":" in Maildir names inside the container
+│   └── mail/origami/cur/        # seeded messages; "__c__" stands for ":"
+│       ├── 1752832801.0001.harness__c__2,S
+│       ├── 1752841801.0002.harness__c__2,S
+│       └── 1752912001.0003.harness__c__2,
 └── README.md
 ```
 
@@ -25,7 +24,7 @@ tests/harness/
 - IMAP on `127.0.0.1:10143`
 - Plaintext only (no TLS), static single user `origami` / password `origami`
 - Maildir backing store seeded with 3 RFC 822 messages
-- Messages in `cur/` carry the `\Seen` flag (read); the one in `new/` is unread
+- Committed cur/ names use `__c__` instead of `:`. The container rewrites them to Maildir `:2,flags` before Dovecot starts. `...,S` is `\Seen`. The third message is `:2,` (no flags).
 - Full CONDSTORE, QRESYNC, and IDLE support
 - **Purpose**: tests sync, flag, and fetch against a real RFC-compliant IMAP server
 
@@ -71,9 +70,9 @@ docker compose -f tests/harness/docker-compose.yml down
 
 | File | Subject | Flags | Notes |
 |---|---|---|---|
-| `1752832801.0001.harness:2,S` | Welcome to Origami | Seen | Plain text, `From: Alice Anders` with display name |
-| `1752841801.0002.harness:2,S` | Launch tomorrow? | Seen | Subject is RFC 2047 base64-encoded (`=?UTF-8?B?TGF1bmNoIHRvbW9ycm93Pw==?=`) |
-| `1752912001.0003.harness` | Weekly digest | _none_ | Multipart/alternative, in `new/` (unread) |
+| `1752832801.0001.harness__c__2,S` | Welcome to Origami | Seen | Plain text, `From: Alice Anders` with display name. Runtime name ends in `:2,S`. |
+| `1752841801.0002.harness__c__2,S` | Launch tomorrow? | Seen | Subject is RFC 2047 base64-encoded (`=?UTF-8?B?TGF1bmNoIHRvbW9ycm93Pw==?=`). Runtime name ends in `:2,S`. |
+| `1752912001.0003.harness__c__2,` | Weekly digest | _none_ | Multipart/alternative. Runtime name ends in `:2,`. |
 
 The RFC 2047 encoded subject is specifically there to verify that `decode_mime_words` decodes non-ASCII subjects correctly during envelope listing.
 
