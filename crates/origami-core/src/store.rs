@@ -6,7 +6,7 @@
 //! blocking contexts (`spawn_blocking`) — the sync engine already is one.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use rusqlite::types::Value;
@@ -123,7 +123,14 @@ impl Store {
         }
         let conn = Connection::open(path)?;
         private_fs::secure_existing_file(path)?;
-        Self::init(conn)
+        let store = Self::init(conn)?;
+        // SQLite creates WAL sidecars with the process umask; tighten them too.
+        for sidecar in ["-wal", "-shm", "-journal"] {
+            let mut name = path.as_os_str().to_os_string();
+            name.push(sidecar);
+            private_fs::secure_existing_file(&PathBuf::from(name))?;
+        }
+        Ok(store)
     }
 
     /// In-memory database for tests.

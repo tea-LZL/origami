@@ -19,6 +19,7 @@ pub struct BlobStore {
 impl BlobStore {
     pub fn open(root: &Path) -> Result<Self> {
         private_fs::create_private_dir(root)?;
+        private_fs::secure_existing_tree(root)?;
         Ok(Self {
             root: root.to_path_buf(),
         })

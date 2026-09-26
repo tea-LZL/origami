@@ -862,3 +862,92 @@ fn unread_only_unified_inbox_skips_seen() {
     assert_eq!(only_unread.len(), 1);
     assert_eq!(only_unread[0].subject, "inbox unread");
 }
+
+#[cfg(unix)]
+#[test]
+fn existing_data_perms_tightened() {
+    use origami_core::blob::BlobStore;
+    use origami_core::config;
+    use std::os::unix::fs::PermissionsExt;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn mode_of(path: &std::path::Path) -> u32 {
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+    fn loosen(path: &std::path::Path, mode: u32) {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+
+    // Database fixture: valid store first, then loosen perms like legacy data.
+    let db_dir = root.join("db");
+    let db_path = db_dir.join("db.sqlite3");
+    drop(Store::open(&db_path).unwrap());
+    loosen(&db_dir, 0o755);
+    loosen(&db_path, 0o644);
+
+    // Blob fixture with pre-existing loose files.
+    let blob_root = root.join("blobs");
+    let hash = format!("dead{}", "0".repeat(60));
+    let blob_path = blob_root.join("de").join("ad").join(&hash);
+    std::fs::create_dir_all(blob_path.parent().unwrap()).unwrap();
+    std::fs::write(&blob_path, b"blob-bytes").unwrap();
+    loosen(&blob_root, 0o755);
+    loosen(&blob_root.join("de"), 0o755);
+    loosen(&blob_root.join("de").join("ad"), 0o755);
+    loosen(&blob_path, 0o644);
+
+    // Config fixture under an isolated XDG_CONFIG_HOME.
+    let xdg = root.join("xdg");
+    let config_dir = xdg.join("origami");
+    let config_file = config_dir.join("config.toml");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    let config_bytes = toml::to_string_pretty(&config::Config::default()).unwrap();
+    std::fs::write(&config_file, &config_bytes).unwrap();
+    loosen(&config_dir, 0o755);
+    loosen(&config_file, 0o644);
+
+    let _env_guard = ENV_LOCK.lock().unwrap();
+    let previous_xdg = std::env::var("XDG_CONFIG_HOME").ok();
+    std::env::set_var("XDG_CONFIG_HOME", &xdg);
+
+    // Open paths exactly as the app does.
+    let store = Store::open(&db_path).unwrap();
+    let blobs = BlobStore::open(&blob_root).unwrap();
+    let loaded = config::load().unwrap();
+
+    if let Some(previous) = previous_xdg {
+        std::env::set_var("XDG_CONFIG_HOME", previous);
+    } else {
+        std::env::remove_var("XDG_CONFIG_HOME");
+    }
+    drop(_env_guard);
+
+    // Roots are 0700, files 0600, including WAL sidecars and blob subtrees.
+    assert_eq!(mode_of(&db_dir), 0o700, "db dir root");
+    assert_eq!(mode_of(&db_path), 0o600, "database file");
+    for sidecar in ["db.sqlite3-wal", "db.sqlite3-shm", "db.sqlite3-journal"] {
+        let path = db_dir.join(sidecar);
+        if path.exists() {
+            assert_eq!(mode_of(&path), 0o600, "{sidecar}");
+        }
+    }
+    assert_eq!(mode_of(&blob_root), 0o700, "blob root");
+    assert_eq!(mode_of(&blob_root.join("de")), 0o700, "blob shard aa");
+    assert_eq!(mode_of(&blob_root.join("de").join("ad")), 0o700, "blob shard bb");
+    assert_eq!(mode_of(&blob_path), 0o600, "blob file");
+    assert_eq!(mode_of(&config_dir), 0o700, "config dir root");
+    assert_eq!(mode_of(&config_file), 0o600, "config file");
+
+    // File contents are never altered by permission tightening.
+    assert_eq!(std::fs::read(&blob_path).unwrap(), b"blob-bytes");
+    assert_eq!(std::fs::read_to_string(&config_file).unwrap(), config_bytes);
+    drop(loaded);
+
+    drop(store);
+    drop(blobs);
+}

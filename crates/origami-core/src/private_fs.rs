@@ -22,6 +22,29 @@ pub(crate) fn secure_existing_file(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Tighten an existing directory tree: dirs `0700`, files `0600`.
+pub(crate) fn secure_existing_tree(root: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        if !root.exists() {
+            return Ok(());
+        }
+        fs::set_permissions(root, fs::Permissions::from_mode(0o700))?;
+        for entry in fs::read_dir(root)? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                secure_existing_tree(&entry.path())?;
+            } else {
+                fs::set_permissions(entry.path(), fs::Permissions::from_mode(0o600))?;
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = root;
+    Ok(())
+}
+
 pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let mut options = OpenOptions::new();
     options.write(true).create(true).truncate(true);
