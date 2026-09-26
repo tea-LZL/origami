@@ -4,6 +4,11 @@ use origami_core::message::ParsedMessage;
 use origami_core::Result;
 use std::collections::{HashMap, VecDeque};
 
+/// Cache key for a physical source; matches the open-path command signatures.
+pub fn display_key(folder_id: &str, server_uid: u32) -> String {
+    format!("{folder_id}:{server_uid}")
+}
+
 /// Least-recently-used cache of parsed display data, bounded by both a byte
 /// budget (estimated from the owned text/html buffers) and an entry count.
 /// Recency order: front = least recent, back = most recent.
@@ -52,6 +57,12 @@ impl DisplayLru {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.entries.clear();
+        self.recency.clear();
+        self.bytes_used = 0;
+    }
+
     fn evict_to_fit(&mut self) {
         while self.entries.len() > self.max_entries || self.bytes_used > self.max_bytes {
             let Some(oldest) = self.recency.pop_front() else {
@@ -94,6 +105,11 @@ fn estimated_bytes(value: &ParsedMessage) -> usize {
 mod tests {
     use super::*;
     use origami_core::message::ParsedMessage;
+
+    #[test]
+    fn display_key_formats_pair() {
+        assert_eq!(display_key("f1", 7), "f1:7");
+    }
 
     fn parsed(text: &str) -> ParsedMessage {
         ParsedMessage {

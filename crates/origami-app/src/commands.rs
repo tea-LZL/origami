@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tauri::State;
 
+use crate::display_lru::{display_key, parsed_with_cache};
 use crate::oauth_flow;
 use crate::state::{self, AppState};
 
@@ -365,6 +366,16 @@ fn message_dto(
     })
 }
 
+/// Drop one physical source's entry from the display LRU (message gone or
+/// moved locally).
+fn invalidate_display_lru(state: &AppState, folder_id: &str, server_uid: u32) {
+    state
+        .display_lru
+        .lock()
+        .unwrap()
+        .remove(&display_key(folder_id, server_uid));
+}
+
 /// Local cache only: never opens IMAP. None means the UI should show a
 /// skeleton and call `get_message`.
 #[tauri::command]
@@ -373,11 +384,17 @@ pub fn get_cached_message(
     folder_id: String,
     server_uid: u32,
 ) -> CmdResult<Option<MessageDto>> {
-    let Some(parsed) = state
-        .store
-        .parsed_message_for_logical_message(&folder_id, server_uid)
+    let key = display_key(&folder_id, server_uid);
+    let loaded = {
+        let mut lru = state.display_lru.lock().unwrap();
+        parsed_with_cache(&mut lru, &key, || {
+            state
+                .store
+                .parsed_message_for_logical_message(&folder_id, server_uid)
+        })
         .map_err(err)?
-    else {
+    };
+    let Some(parsed) = loaded else {
         return Ok(None);
     };
     message_dto(&state, &folder_id, server_uid, parsed).map(Some)
@@ -390,6 +407,10 @@ pub async fn get_message(
     folder_id: String,
     server_uid: u32,
 ) -> CmdResult<MessageDto> {
+    let key = display_key(&folder_id, server_uid);
+    if let Some(parsed) = state.display_lru.lock().unwrap().get(&key) {
+        return message_dto(&state, &folder_id, server_uid, parsed);
+    }
     let (account_config_id, _account_db_id, mailbox) =
         state.resolve_folder(&folder_id).map_err(err)?;
     let parsed: ParsedMessage = match state
@@ -443,6 +464,11 @@ pub async fn get_message(
         }
     };
 
+    state
+        .display_lru
+        .lock()
+        .unwrap()
+        .insert(key, parsed.clone());
     message_dto(&state, &folder_id, server_uid, parsed)
 }
 
@@ -660,6 +686,7 @@ pub async fn move_messages(
             .store
             .delete_message_by_uid(&folder_id, uid)
             .map_err(err)?;
+        invalidate_display_lru(&state, &folder_id, uid);
     }
     Ok(())
 }
@@ -693,6 +720,7 @@ pub async fn delete_messages(
             .store
             .delete_message_by_uid(&folder_id, uid)
             .map_err(err)?;
+        invalidate_display_lru(&state, &folder_id, uid);
     }
     Ok(())
 }
@@ -964,6 +992,9 @@ pub async fn remove_account(
 ) -> CmdResult<Vec<AccountDto>> {
     // Stop the running sync loop first (clean shutdown).
     state.stop_account_sync(&account_id);
+
+    // Everything this account cached in memory is now unreachable.
+    state.display_lru.lock().unwrap().clear();
 
     // Wipe keyring secrets for this account.
     let _ = origami_core::config::delete_keyring_secret(&account_id);

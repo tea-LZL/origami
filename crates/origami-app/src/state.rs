@@ -18,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 pub struct AppState {
     pub engine: Arc<SyncEngine>,
     pub store: Store,
+    pub display_lru: Mutex<crate::display_lru::DisplayLru>,
     config: Arc<RwLock<Config>>,
     cancel_tokens: Arc<Mutex<HashMap<String, CancellationToken>>>,
     pub(crate) account_errors: Arc<Mutex<HashMap<String, String>>>,
@@ -34,6 +35,10 @@ impl AppState {
         Ok(Self {
             engine,
             store,
+            display_lru: Mutex::new(crate::display_lru::DisplayLru::new(
+                32 * 1024 * 1024,
+                300,
+            )),
             config: Arc::new(RwLock::new(config)),
             cancel_tokens: Arc::new(Mutex::new(HashMap::new())),
             account_errors: Arc::new(Mutex::new(HashMap::new())),
