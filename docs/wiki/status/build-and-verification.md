@@ -60,11 +60,12 @@ navigation, and both themes.
 
 ## CI configuration
 
-- `.github/workflows/ci.yml` — GitHub Actions pipeline: rust, ui, and package_arch jobs
-  (Arch container, `makepkg`) on pull requests, `master` pushes, and manual dispatch; the
-  publish_arch job uploads the Arch package + checksum as a GitHub Release for `vX.Y.Z`
-  tags ([[github-cicd-md]]). First verified run: 36269969749 (2026-09-26) — ui, rust,
-  package_arch green; artifact `origami-master` (9.2 MB) uploaded.
+- `.github/workflows/ci.yml` — GitHub Actions pipeline: rust, ui, package_arch (Arch
+  container, `makepkg`) and package_windows (unsigned NSIS installer on `windows-latest`)
+  on pull requests, `master` pushes, and manual dispatch; the publish job uploads four
+  assets (Arch package + checksum, Windows installer + checksum) as a GitHub Release for
+  `vX.Y.Z` tags ([[github-cicd-md]]). First verified run: 36269969749 (2026-09-26) — ui,
+  rust, package_arch green; artifact `origami-master` (9.2 MB) uploaded.
 
 ## Related
 

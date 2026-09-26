@@ -204,11 +204,111 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-  publish_arch:
-    name: publish_arch
+  package_windows:
+    name: package_windows
+    runs-on: windows-latest
+    needs:
+      - rust
+      - ui
+    # Windows installer is experimental: allow failure on branch pushes and PRs,
+    # but a version tag must produce it before the release publishes.
+    continue-on-error: ${{ github.ref_type != 'tag' }}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      # Hosted Windows VMs are small. Workspace Cargo.toml uses fat LTO.
+      CARGO_PROFILE_RELEASE_LTO: "thin"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+      CARGO_PROFILE_RELEASE_STRIP: "none"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
+            Invoke-WebRequest -Uri 'https://win.rustup.rs/x86_64' -OutFile rustup-init.exe
+            & .\rustup-init.exe -y --default-toolchain 1.85.0 --default-host x86_64-pc-windows-msvc
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          rustup toolchain install 1.85.0 --profile minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup default 1.85.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Add-Content -Path $env:GITHUB_PATH -Value "$env:USERPROFILE\.cargo\bin"
+          $env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
+          rustup show
+          rustc --version
+          node --version
+          npm --version
+
+      - name: Install NSIS
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Cache cargo and npm registries
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cargo/registry/
+            .cargo/git/
+            .npm/
+          key: v2-win-${{ hashFiles('Cargo.lock', 'ui/package-lock.json') }}
+          restore-keys: |
+            v2-win-
+
+      - name: Check version consistency
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $cargoVersion = (Select-String -Path Cargo.toml -Pattern '^\s*version\s*=\s*"([^"]+)"' |
+            Select-Object -First 1).Matches.Groups[1].Value
+          $tauriVersion = node -p "JSON.parse(require('fs').readFileSync('crates/origami-app/tauri.conf.json','utf8')).version"
+          $uiVersion = node -p "JSON.parse(require('fs').readFileSync('ui/package.json','utf8')).version"
+          if ($cargoVersion -ne $tauriVersion -or $cargoVersion -ne $uiVersion) {
+            throw "version mismatch cargo=$cargoVersion tauri=$tauriVersion ui=$uiVersion"
+          }
+
+      - name: Build NSIS installer
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm ci --prefix ui
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm exec --prefix ui -- tauri build --ci `
+            --config crates/origami-app/tauri.conf.json `
+            --bundles nsis `
+            -- --locked --features custom-protocol
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $installer = Get-ChildItem -Path 'target/release/bundle/nsis' -Filter '*-setup.exe' |
+            Select-Object -First 1
+          if (-not $installer) { throw 'NSIS installer missing' }
+          $hash = (Get-FileHash -Algorithm SHA256 $installer.FullName).Hash.ToLower()
+          Set-Content -Path ($installer.FullName + '.sha256') -Value "$hash  $($installer.Name)"
+          Write-Host "built $($installer.Name) sha256=$hash"
+
+      - name: Compute artifact slug
+        id: slug
+        shell: bash
+        run: echo "value=$(echo "$GITHUB_REF_NAME" | sed 's/[^A-Za-z0-9._-]/-/g')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: origami-windows-${{ steps.slug.outputs.value }}
+          path: |
+            target/release/bundle/nsis/*-setup.exe
+            target/release/bundle/nsis/*-setup.exe.sha256
+          retention-days: 30
+          if-no-files-found: error
+
+  publish:
+    name: publish
     runs-on: ubuntu-latest
     needs:
       - package_arch
+      - package_windows
     if: github.ref_type == 'tag'
     permissions:
       contents: write
@@ -219,11 +319,17 @@ jobs:
         id: slug
         run: echo "value=$(echo "$GITHUB_REF_NAME" | sed 's/[^A-Za-z0-9._-]/-/g')" >> "$GITHUB_OUTPUT"
 
-      - name: Download package artifact
+      - name: Download Arch package artifact
         uses: actions/download-artifact@v4
         with:
           name: origami-${{ steps.slug.outputs.value }}
           path: packaging/arch
+
+      - name: Download Windows installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: origami-windows-${{ steps.slug.outputs.value }}
+          path: dist/windows
 
       - name: Publish GitHub release
         env:
@@ -237,9 +343,14 @@ jobs:
           test "${GITHUB_REF_NAME#v}" = "$pkgver"
           package_file="$(find packaging/arch -maxdepth 1 -type f -name 'origami-*.pkg.tar.zst' -print -quit)"
           test -n "$package_file"
+          installer="$(find dist/windows -maxdepth 1 -type f -name '*-setup.exe' -print -quit)"
+          test -n "$installer"
+          assets=("$package_file" "$package_file.sha256" "$installer" "$installer.sha256")
+          for f in "${assets[@]}"; do
+            test -f "$f" || { echo "missing release asset $f"; exit 1; }
+          done
           gh release create "$GITHUB_REF_NAME" \
             --title "Origami $GITHUB_REF_NAME" \
             --generate-notes \
-            "$package_file" "$package_file.sha256" \
-            || gh release upload "$GITHUB_REF_NAME" \
-            "$package_file" "$package_file.sha256" --clobber
+            "${assets[@]}" \
+            || gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber

@@ -1,10 +1,14 @@
 ## GitHub Actions CI
 
-The [workflow](.github/workflows/ci.yml) runs Rust and UI checks, then builds an
-Arch package with `makepkg` in an Arch Linux container. Pull requests, `master`
-pushes, and manual dispatch runs produce CI results and downloadable job artifacts.
+The [workflow](.github/workflows/ci.yml) runs Rust and UI checks, then builds
+packages. Pull requests, `master` pushes, and manual dispatch runs produce CI
+results and downloadable job artifacts.
 
-To reproduce the package build locally on Arch:
+Linux jobs run in an Arch Linux container. They verify the workspace, then
+`package_arch` builds an Arch package with `makepkg`. `package_windows` builds
+an unsigned NSIS installer (`*-setup.exe`) on GitHub-hosted Windows runners.
+
+To reproduce the Arch package locally:
 
 ```sh
 cd packaging/arch
@@ -15,7 +19,8 @@ The package recipe runs `npm ci`, builds `ui/`, builds the locked Rust release
 binary, and installs the binary, desktop entry, and hicolor icons into the
 package archive.
 
-Version tags publish the package and checksum as a GitHub Release:
+Version tags publish four assets as a GitHub Release: the Arch package and its
+checksum, and the Windows NSIS installer and its checksum.
 
 ```sh
 git push origin master
@@ -30,3 +35,20 @@ Tag version must match `Cargo.toml`,
 To run CI manually, open **Actions > CI > Run workflow** in GitHub and select
 branch or tag. Branch runs do not publish packages; only `vX.Y.Z` tags run the
 publish job.
+
+## Windows installer
+
+On `master` and `vX.Y.Z` tags, `package_windows` builds an unsigned NSIS
+installer (`*-setup.exe`) on GitHub-hosted Windows runners:
+
+```sh
+npm ci --prefix ui
+npm exec --prefix ui -- tauri build --ci \
+  --config crates/origami-app/tauri.conf.json \
+  --bundles nsis -- --locked --features custom-protocol
+```
+
+That artifact is **not a supported Windows release** — unsigned, so Windows
+SmartScreen warns on first run. The job allows failure on branch pushes
+(experimental) but must succeed for a version tag before the release publishes.
+Windows tests run in the Linux `rust` job; the Windows job only packages.

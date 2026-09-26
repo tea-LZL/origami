@@ -105,3 +105,14 @@ artifact `origami-master` 9.2 MB); publish_arch correctly skipped on branch push
 Updated [[known-drift]] Remote CI row, [[release-readiness]], and [[build-and-verification]]
 to record the verified run. Tag publish path still unproven. GitLab repo left standing
 (archive/delete is a human call).
+
+## [2026-09-27] ingest | Windows NSIS packaging + release asset fix
+Release bug root cause: `v0.1.0` tag pointed at pre-workflow commit, so publish never
+ran and no GitHub Release existed. Fix approved: force-move `v0.1.0` to new HEAD after
+CI green. Ported `ci/windows-nsis` branch work onto master: `@tauri-apps/cli` pin
+(cherry-pick 42c0179), Windows-safe harness mail paths (cherry-pick 1a99128 — `:` in
+filenames breaks checkout on NTFS), and `package_windows`/`publish` jobs in
+`.github/workflows/ci.yml` (unsigned NSIS `*-setup.exe` on `windows-latest`; single
+publish job emits 4 release assets). Distilled into [[github-cicd-md]], [[overview]],
+[[build-and-verification]]. Windows installer stays unsigned/experimental per the
+`ci/windows-nsis` docs stance.

@@ -32,6 +32,10 @@ sudo pacman -U ./origami-<version>-<pkgrel>-x86_64.pkg.tar.zst
 Package dependencies come from the official Arch repositories. A signed pacman
 repository is deferred until the application is more mature.
 
+Version tags also publish an unsigned Windows NSIS installer (`*-setup.exe`) in
+the same Release. That artifact is **not a supported Windows release** — it is
+unsigned and SmartScreen warns on first run.
+
 ## Layout
 
 - `crates/origami-core` — backend abstraction, sync engine, local store (UI-agnostic)
