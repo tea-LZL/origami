@@ -64,6 +64,16 @@ jobs:
       - name: test
         run: cargo test --workspace --locked
 
+      - name: Install cargo-audit and cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit,cargo-deny
+
+      - name: supply-chain policy
+        run: |
+          cargo audit
+          cargo deny check
+
   ui:
     name: ui
     runs-on: ubuntu-latest
