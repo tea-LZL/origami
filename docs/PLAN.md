@@ -258,7 +258,7 @@ Post-v1: PGP (sequoia), JMAP backend, conversation view across folders, filters/
 
 ## M6 — Ship
 - [ ] AUR PKGBUILD (`origami`, `origami-git`)
-- [x] GitLab Arch package workflow (artifacts, checksums)
+- [x] GitHub Actions Arch package workflow (artifacts, checksums)
 - [ ] Signed pacman repository (`pacman -S origami`) after the app matures
 - [~] .desktop + icon assets exist; package installation/integration is unverified
 - [ ] v1.0 tag

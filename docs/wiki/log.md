@@ -85,3 +85,14 @@ wizard) into [[ui-state-and-rendering]], [[accounts-and-secrets]], [[ui-frontend
 Scripted check over 36 pages: 0 unresolved wikilinks (same SCHEMA/log code-span false
 positives as 2026-09-12), 0 orphans, 0 missing `sources:` paths, 0 pages absent from
 [[index]].
+
+## [2026-09-22] ingest | CI moved back to GitHub
+Repo moved back to GitHub (`github.com/tea-LZL/origami`) from GitLab for larger free CI
+compute minutes. `.gitlab-ci.yml` removed; `.github/workflows/ci.yml` now carries the full
+pipeline (rust, ui, package_arch in an Arch container; publish_arch uploads the Arch
+package + checksum as a GitHub Release for `vX.Y.Z` tags). Source page renamed
+[[github-cicd-md]] (was `gitlab-cicd-md`, superseded); claims distilled into
+[[build-and-verification]], [[release-readiness]], [[known-drift]], [[overview]], and
+[[readme]]. `docs/GITLAB_CICD.md` replaced by `docs/GITHUB_CICD.md`; `PKGBUILD` url and
+README install links point at GitHub Releases. Historical excerpts (e.g. the gitlab remote
+in [[hermes-arch-local-release]]) left verbatim as record.

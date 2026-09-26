@@ -1,8 +1,8 @@
-## GitLab CI/CD
+## GitHub Actions CI
 
-The [GitLab pipeline](.gitlab-ci.yml) runs Rust and UI checks, then builds an
-Arch package with `makepkg` in an Arch Linux container. Merge requests and
-branch pushes produce CI results and downloadable job artifacts.
+The [workflow](.github/workflows/ci.yml) runs Rust and UI checks, then builds an
+Arch package with `makepkg` in an Arch Linux container. Pull requests, `master`
+pushes, and manual dispatch runs produce CI results and downloadable job artifacts.
 
 To reproduce the package build locally on Arch:
 
@@ -15,7 +15,7 @@ The package recipe runs `npm ci`, builds `ui/`, builds the locked Rust release
 binary, and installs the binary, desktop entry, and hicolor icons into the
 package archive.
 
-Version tags publish the package and checksum to GitLab's Package Registry:
+Version tags publish the package and checksum as a GitHub Release:
 
 ```sh
 git push origin master
@@ -27,6 +27,6 @@ Tag version must match `Cargo.toml`,
 `crates/origami-app/tauri.conf.json`, `ui/package.json`, and
 `packaging/arch/PKGBUILD`. Update all four before creating a release tag.
 
-To run CI manually, open **Build > Pipelines > Run pipeline** in GitLab and
-select branch or tag. Branch runs do not publish packages; only `vX.Y.Z` tags
-run the publish stage.
+To run CI manually, open **Actions > CI > Run workflow** in GitHub and select
+branch or tag. Branch runs do not publish packages; only `vX.Y.Z` tags run the
+publish job.

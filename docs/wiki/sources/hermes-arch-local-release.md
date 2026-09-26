@@ -2,7 +2,7 @@
 title: "Source: .hermes Arch local release plan"
 type: source
 status: current
-updated: 2026-09-12
+updated: 2026-09-22
 sources: [".hermes/plans/2026-08-18_225754-origami-arch-local-release.md"]
 ---
 
@@ -70,4 +70,4 @@ Plan complete and saved. Ready to execute using subagent-driven-development — 
 
 ## Fed into
 
-[[gitlab-cicd-md]] · [[build-and-verification]] · [[release-readiness]] · [[known-drift]]
+[[github-cicd-md]] · [[build-and-verification]] · [[release-readiness]] · [[known-drift]]

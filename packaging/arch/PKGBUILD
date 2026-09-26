@@ -6,7 +6,7 @@ pkgver=0.1.0
 pkgrel=8
 pkgdesc="A fast, offline-first desktop email client"
 arch=('x86_64')
-url="https://gitlab.com/tea-LZL/origami"
+url="https://github.com/tea-LZL/origami"
 license=('MIT' 'Apache-2.0')
 depends=(
   'webkit2gtk-4.1'

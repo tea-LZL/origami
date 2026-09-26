@@ -2,7 +2,7 @@
 title: Overview
 type: overview
 status: current
-updated: 2026-09-19
+updated: 2026-09-22
 sources:
   - README.md
   - docs/PLAN.md
@@ -26,7 +26,7 @@ Version `0.1.0`; workspace edition 2021, `rust-version` 1.85.
 | Debug surface | Rust CLI — `origami-cli` |
 | Persistence | SQLite/WAL + FTS5 + content-addressed blobs |
 | Protocols | IMAP and SMTP behind Origami-owned traits |
-| Packaging | Arch PKGBUILD via GitLab CI (signed pacman repo deferred) |
+| Packaging | Arch PKGBUILD via GitHub Actions (signed pacman repo deferred) |
 
 Tracked source was ~17,700 lines across 66 Rust/Svelte/TS/CSS files as of 2026-08-24
 ([[memory-md]]); later work includes trap-focus dialogs, the tag catalog, nested folders,

@@ -3,35 +3,54 @@ name: CI
 on:
   push:
     branches: [master]
+    tags: ['v*.*.*']
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+permissions:
+  contents: read
 
 env:
+  CARGO_HOME: ${{ github.workspace }}/.cargo
   CARGO_TERM_COLOR: always
+  NPM_CONFIG_CACHE: ${{ github.workspace }}/.npm
+
+# Jobs run in an Arch Linux container so `makepkg` builds and validates the same
+# package a user installs. `target/` intentionally NOT cached. It is large and
+# caching it fills the runner disk (No space left on device) when jobs download
+# the cache and then build more on top. The registry cache alone keeps builds fast.
 
 jobs:
   rust:
-    name: Rust (fmt, clippy, check, test)
+    name: rust
     runs-on: ubuntu-latest
+    container: archlinux:latest
+    defaults:
+      run:
+        shell: bash
     steps:
+      - name: Install Arch packages
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel rust nodejs npm git curl file openssl \
+            webkit2gtk-4.1 gtk3 librsvg libsoup3 libsecret \
+            libayatana-appindicator dbus xdg-utils desktop-file-utils
+
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registries
+        uses: actions/cache@v4
         with:
-          components: rustfmt, clippy
-
-      - name: Install Tauri system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev \
-            librsvg2-dev \
-            libayatana-appindicator3-dev \
-            build-essential curl wget file
-
-      - uses: Swatinem/rust-cache@v2
+          path: |
+            .cargo/registry/
+            .cargo/git/
+          key: v2-rust-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            v2-rust-
 
       - name: fmt
         run: cargo fmt --all -- --check
@@ -40,28 +59,187 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: check
-        run: cargo check --workspace
+        run: cargo check --workspace --locked
 
       - name: test
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
 
   ui:
-    name: UI (svelte-check, build)
+    name: ui
     runs-on: ubuntu-latest
+    container: archlinux:latest
     defaults:
       run:
-        working-directory: ui
+        shell: bash
+    steps:
+      - name: Install Arch packages
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel rust nodejs npm git curl file openssl \
+            webkit2gtk-4.1 gtk3 librsvg libsoup3 libsecret \
+            libayatana-appindicator dbus xdg-utils desktop-file-utils
+
+      - uses: actions/checkout@v4
+
+      - name: Cache npm registry
+        uses: actions/cache@v4
+        with:
+          path: .npm/
+          key: v2-ui-${{ hashFiles('ui/package-lock.json') }}
+          restore-keys: |
+            v2-ui-
+
+      - name: test
+        run: |
+          npm ci --prefix ui
+          npm audit --prefix ui --audit-level=moderate
+          npm test --prefix ui -- --run
+
+      - name: check
+        run: npm run check --prefix ui
+
+      - name: build
+        run: npm run build --prefix ui
+
+  package_arch:
+    name: package_arch
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    needs:
+      - rust
+      - ui
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install Arch packages
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel rust nodejs npm git curl file openssl \
+            webkit2gtk-4.1 gtk3 librsvg libsoup3 libsecret \
+            libayatana-appindicator dbus xdg-utils desktop-file-utils
+
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo and npm registries
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cargo/registry/
+            .cargo/git/
+            .npm/
+          key: v2-pkg-${{ hashFiles('Cargo.lock', 'ui/package-lock.json') }}
+          restore-keys: |
+            v2-pkg-
+
+      - name: Check version consistency
+        run: |
+          source packaging/arch/PKGBUILD
+          cargo_version="$(awk -F'"' '/^[[:space:]]*version = "/ { print $2; exit }' Cargo.toml)"
+          tauri_version="$(node -p "JSON.parse(require('fs').readFileSync('crates/origami-app/tauri.conf.json', 'utf8')).version")"
+          ui_version="$(node -p "JSON.parse(require('fs').readFileSync('ui/package.json', 'utf8')).version")"
+          test "$pkgver" = "$cargo_version"
+          test "$pkgver" = "$tauri_version"
+          test "$pkgver" = "$ui_version"
+
+      - name: Check icons match generated SVG sizes
+        run: |
+          icon_check_dir="$(mktemp -d)"
+          trap 'rm -rf "$icon_check_dir"' EXIT
+          for icon in '32:32x32.png' '64:64x64.png' '128:128x128.png' '256:128x128@2x.png' '512:icon.png'; do
+            size="${icon%%:*}"
+            name="${icon#*:}"
+            rsvg-convert -w "$size" -h "$size" \
+              -o "$icon_check_dir/$name" assets/origami-bird.svg
+            cmp "$icon_check_dir/$name" "crates/origami-app/icons/$name"
+          done
+
+      - name: Build package
+        run: |
+          useradd --create-home --shell /bin/bash builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          runuser -u builder -- env \
+            GITHUB_WORKSPACE="$GITHUB_WORKSPACE" \
+            CARGO_HOME="$CARGO_HOME" \
+            NPM_CONFIG_CACHE="$NPM_CONFIG_CACHE" \
+            HOME=/home/builder \
+            bash -c 'cd "$GITHUB_WORKSPACE/packaging/arch" && makepkg --cleanbuild --force --noconfirm'
+
+      - name: Verify package
+        run: |
+          package_file="$(find packaging/arch -maxdepth 1 -type f -name 'origami-*.pkg.tar.zst' -print -quit)"
+          test -n "$package_file"
+          package_dir="$(dirname "$package_file")"
+          package_name="$(basename "$package_file")"
+          (cd "$package_dir" && sha256sum "$package_name" > "$package_name.sha256")
+          rm -rf package-check
+          mkdir package-check
+          tar -xf "$package_file" -C package-check
+          test -x package-check/usr/bin/origami
+          desktop-file-validate package-check/usr/share/applications/origami.desktop
+          if ! strings package-check/usr/bin/origami | grep -F '/assets/index-' >/dev/null; then
+            echo 'package does not contain embedded Vite assets'
+            exit 1
+          fi
+          if ! strings package-check/usr/bin/origami | grep -F '/index.html' >/dev/null; then
+            echo 'package does not contain embedded frontend entrypoint'
+            exit 1
+          fi
+          pacman -Qp "$package_file"
+          pacman -U --noconfirm "$package_file"
+          pacman -Ql origami
+          tar -tf "$package_file" | sort
+
+      - name: Compute artifact slug
+        id: slug
+        run: echo "value=$(echo "$GITHUB_REF_NAME" | sed 's/[^A-Za-z0-9._-]/-/g')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: origami-${{ steps.slug.outputs.value }}
+          path: |
+            packaging/arch/*.pkg.tar.zst
+            packaging/arch/*.pkg.tar.zst.sha256
+          retention-days: 30
+          if-no-files-found: error
+
+  publish_arch:
+    name: publish_arch
+    runs-on: ubuntu-latest
+    needs:
+      - package_arch
+    if: github.ref_type == 'tag'
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
+      - name: Compute artifact slug
+        id: slug
+        run: echo "value=$(echo "$GITHUB_REF_NAME" | sed 's/[^A-Za-z0-9._-]/-/g')" >> "$GITHUB_OUTPUT"
 
-      - run: npm ci
-      - run: npm audit --audit-level=moderate
-      - run: npm test -- --run
-      - run: npm run check
-      - run: npm run build
+      - name: Download package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: origami-${{ steps.slug.outputs.value }}
+          path: packaging/arch
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "tag $GITHUB_REF_NAME is not a release version tag"
+            exit 1
+          }
+          source packaging/arch/PKGBUILD
+          test "${GITHUB_REF_NAME#v}" = "$pkgver"
+          package_file="$(find packaging/arch -maxdepth 1 -type f -name 'origami-*.pkg.tar.zst' -print -quit)"
+          test -n "$package_file"
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Origami $GITHUB_REF_NAME" \
+            --generate-notes \
+            "$package_file" "$package_file.sha256" \
+            || gh release upload "$GITHUB_REF_NAME" \
+            "$package_file" "$package_file.sha256" --clobber

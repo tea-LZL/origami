@@ -2,11 +2,10 @@
 title: Build and verification
 type: status
 status: current
-updated: 2026-09-12
+updated: 2026-09-22
 sources:
   - MEMORY.md
   - .github/workflows/ci.yml
-  - .gitlab-ci.yml
 ---
 
 # Build and verification
@@ -59,9 +58,10 @@ navigation, and both themes.
 
 ## CI configuration
 
-- `.github/workflows/ci.yml` — the original GitHub baseline (Rust and UI gates).
-- `.gitlab-ci.yml` — watches merge requests, branches, and semantic version tags; builds and
-  publishes the Arch package for `vX.Y.Z` tags ([[gitlab-cicd-md]]).
+- `.github/workflows/ci.yml` — GitHub Actions pipeline: rust, ui, and package_arch jobs
+  (Arch container, `makepkg`) on pull requests, `master` pushes, and manual dispatch; the
+  publish_arch job uploads the Arch package + checksum as a GitHub Release for `vX.Y.Z`
+  tags ([[github-cicd-md]]).
 
 ## Related
 

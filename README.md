@@ -20,8 +20,8 @@ cargo tauri build
 
 ## Install (Arch)
 
-GitLab publishes an Arch package and checksum for version tags. Download both
-files from the project's [Package Registry](https://gitlab.com/tea-LZL/origami/-/packages),
+GitHub Actions publishes an Arch package and checksum for version tags. Download
+both files from the project's [Releases](https://github.com/tea-LZL/origami/releases),
 then install with:
 
 ```sh
@@ -39,4 +39,4 @@ repository is deferred until the application is more mature.
 - `crates/origami-cli` — debug CLI
 - `ui/` — Svelte 5 + Vite + TypeScript frontend
 - `docs/` — plan and ADRs
-- `packaging/arch` — Arch PKGBUILD used by GitLab CI
+- `packaging/arch` — Arch PKGBUILD used by GitHub Actions

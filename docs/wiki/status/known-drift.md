@@ -2,7 +2,7 @@
 title: Known drift
 type: status
 status: current
-updated: 2026-09-19
+updated: 2026-09-22
 sources:
   - MEMORY.md
   - docs/PLAN.md
@@ -21,12 +21,12 @@ trusted. Precedence is defined in [[SCHEMA]]: code wins for *current*, plans win
 | Architecture prose | `docs/PLAN.md` architecture sections mix implemented behavior with target-state language | Verify symbols against source before relying | Treat plan architecture text as **target state** unless a page in `architecture/` confirms it |
 | UI stack | Plan UI tree mentions Tailwind and `components/routes/stores` | Custom CSS tokens in `ui/src/app.css`; flat `ui/src/lib` structure; no Tailwind dependency | [[ui-frontend]] is authoritative |
 | Secret store | Plan names `oo7`/libsecret | Implemented with the `keyring` crate v3 (`sync-secret-service`) | [[accounts-and-secrets]] records the actual dependency |
-| Repo layout | Plan's layout block says `packaging/arch/PKGBUILD` is "not tracked yet" | `packaging/arch/PKGBUILD` **is** tracked | [[gitlab-cicd-md]], [[hermes-arch-local-release]] |
-| Remote CI | "Remote pipeline is not yet verified" | GitLab CI exists; first remote pipeline/release still pending | [[release-readiness]] |
+| Repo layout | Plan's layout block says `packaging/arch/PKGBUILD` is "not tracked yet" | `packaging/arch/PKGBUILD` **is** tracked | [[github-cicd-md]], [[hermes-arch-local-release]] |
+| Remote CI | "Remote pipeline is not yet verified" | GitHub Actions CI exists (moved back from GitLab 2026-09-22 for larger free compute minutes); first remote pipeline/release still pending | [[release-readiness]], [[github-cicd-md]] |
 | Release checkboxes | `docs/PLAN.md` and `docs/IMPROVEMENT_PLAN.md` checkboxes | Checkbox state is **not** release evidence | Only real build/provider/package/native-smoke evidence updates release status |
 | File permissions | Audit found `0755` dirs and `0644` files | Worktree enforces `0700`/`0600` on next open/write; existing-data smoke outstanding | [[release-readiness]], [[store-and-search]] |
 | SMTP E2E | Send/receive E2E expected | GreenMail round-trip tolerates an `io-smtp` greeting bug via diagnostic skip | [[test-suite-md]], [[backend-seam]] |
-| Version surfaces | Tag version must match four files | `Cargo.toml`, `tauri.conf.json`, `ui/package.json`, `PKGBUILD` all report `0.1.0` today | [[gitlab-cicd-md]] |
+| Version surfaces | Tag version must match four files | `Cargo.toml`, `tauri.conf.json`, `ui/package.json`, `PKGBUILD` all report `0.1.0` today | [[github-cicd-md]] |
 | Gmail onboarding | Overview previously listed "Gmail/Microsoft OAuth"; `provider_hints` still maps Gmail to `Xoauth2`; config still has `oauth.google_client_id` | The add-account wizard uses a Gmail **app password** and does not offer Google OAuth. Microsoft OAuth remains the wizard's OAuth path. | [[accounts-and-secrets]], [[sidebar-folders-tags-onboarding]] |
 
 ## Open follow-ups

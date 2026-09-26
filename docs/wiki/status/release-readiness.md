@@ -2,7 +2,7 @@
 title: Release readiness
 type: status
 status: current
-updated: 2026-09-12
+updated: 2026-09-22
 sources:
   - MEMORY.md
   - docs/IMPROVEMENT_PLAN.md
@@ -21,8 +21,9 @@ several proof and distribution gates are absent.
 ## Blockers
 
 ### 1. Distribution and automation
-- GitLab CI verifies Rust/UI, builds an Arch package in an Arch container, and publishes
-  tagged package/checksum artifacts — **the remote pipeline is not yet verified**.
+- GitHub Actions CI verifies Rust/UI, builds an Arch package in an Arch container, and
+  publishes tagged package/checksum artifacts as GitHub Release assets — **the remote
+  pipeline is not yet verified** ([[github-cicd-md]]).
 - `packaging/arch/PKGBUILD` is tracked and installs the native binary, desktop entry, and
   hicolor icons.
 - The Tauri `deb` target remains, while Arch distribution uses the tracked PKGBUILD.

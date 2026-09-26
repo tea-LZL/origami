@@ -65,7 +65,7 @@ Status · Sources.
 - [[plan-md]] — master plan: locked decisions, milestones, risks.
 - [[improvement-plan-md]] — P0–P7 daily-driver backlog.
 - [[test-suite-md]] — Docker Dovecot/GreenMail integration harness.
-- [[gitlab-cicd-md]] — GitLab pipeline, Arch package, release tags.
+- [[github-cicd-md]] — GitHub Actions pipeline, Arch package, release tags.
 - [[hermes-sent-tray-background]] — plan: unified Sent projection + tray lifecycle.
 - [[hermes-arch-local-release]] — plan: PKGBUILD and local pacman install.
 - [[unread-only-list-filter]] — sticky unread-only thread list (store filter, keep-selected, chrome).
