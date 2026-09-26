@@ -22,8 +22,9 @@ several proof and distribution gates are absent.
 
 ### 1. Distribution and automation
 - GitHub Actions CI verifies Rust/UI, builds an Arch package in an Arch container, and
-  publishes tagged package/checksum artifacts as GitHub Release assets — **the remote
-  pipeline is not yet verified** ([[github-cicd-md]]).
+  publishes tagged package/checksum artifacts as GitHub Release assets. The pipeline ran
+  green on GitHub 2026-09-26 (run 36269969749, artifact `origami-master` 9.2 MB); the
+  **tag publish path is still unproven** ([[github-cicd-md]]).
 - `packaging/arch/PKGBUILD` is tracked and installs the native binary, desktop entry, and
   hicolor icons.
 - The Tauri `deb` target remains, while Arch distribution uses the tracked PKGBUILD.

@@ -96,3 +96,12 @@ package + checksum as a GitHub Release for `vX.Y.Z` tags). Source page renamed
 [[readme]]. `docs/GITLAB_CICD.md` replaced by `docs/GITHUB_CICD.md`; `PKGBUILD` url and
 README install links point at GitHub Releases. Historical excerpts (e.g. the gitlab remote
 in [[hermes-arch-local-release]]) left verbatim as record.
+
+## [2026-09-26] update | GitHub move executed, first pipeline green
+Repo created and pushed: `github.com/tea-LZL/origami` (public), master + `v0.1.0`.
+Commit `cca0328` ("ci(CICD): move CI/CD back to GitHub Actions") carries the migration.
+First GitHub Actions run 36269969749 green: ui (1m), rust (6m), package_arch (13m,
+artifact `origami-master` 9.2 MB); publish_arch correctly skipped on branch push.
+Updated [[known-drift]] Remote CI row, [[release-readiness]], and [[build-and-verification]]
+to record the verified run. Tag publish path still unproven. GitLab repo left standing
+(archive/delete is a human call).

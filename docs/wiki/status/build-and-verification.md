@@ -50,8 +50,10 @@ As of the 2026-08-15 verification (and 2026-08-24 package check):
 
 ## What this does **not** cover
 
-Remote CI, Docker/live-provider tests, package installation, accessibility/performance
-gates, and a native daily-driver smoke. For native release confidence, also build/run the
+Docker/live-provider tests, package installation on a user machine, accessibility/performance
+gates, and a native daily-driver smoke. Remote CI ran green for verify + package on
+2026-09-26 (GitHub run 36269969749); the tag publish path remains unproven. For native
+release confidence, also build/run the
 Tauri app on WebKitGTK and smoke: account onboarding, cached opening, sync/reconnect, search,
 compose/send/outbox, tray restore/quit, external links, remote-content controls, keyboard
 navigation, and both themes.
@@ -61,7 +63,8 @@ navigation, and both themes.
 - `.github/workflows/ci.yml` — GitHub Actions pipeline: rust, ui, and package_arch jobs
   (Arch container, `makepkg`) on pull requests, `master` pushes, and manual dispatch; the
   publish_arch job uploads the Arch package + checksum as a GitHub Release for `vX.Y.Z`
-  tags ([[github-cicd-md]]).
+  tags ([[github-cicd-md]]). First verified run: 36269969749 (2026-09-26) — ui, rust,
+  package_arch green; artifact `origami-master` (9.2 MB) uploaded.
 
 ## Related
 

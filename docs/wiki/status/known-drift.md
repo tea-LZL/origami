@@ -22,7 +22,7 @@ trusted. Precedence is defined in [[SCHEMA]]: code wins for *current*, plans win
 | UI stack | Plan UI tree mentions Tailwind and `components/routes/stores` | Custom CSS tokens in `ui/src/app.css`; flat `ui/src/lib` structure; no Tailwind dependency | [[ui-frontend]] is authoritative |
 | Secret store | Plan names `oo7`/libsecret | Implemented with the `keyring` crate v3 (`sync-secret-service`) | [[accounts-and-secrets]] records the actual dependency |
 | Repo layout | Plan's layout block says `packaging/arch/PKGBUILD` is "not tracked yet" | `packaging/arch/PKGBUILD` **is** tracked | [[github-cicd-md]], [[hermes-arch-local-release]] |
-| Remote CI | "Remote pipeline is not yet verified" | GitHub Actions CI exists (moved back from GitLab 2026-09-22 for larger free compute minutes); first remote pipeline/release still pending | [[release-readiness]], [[github-cicd-md]] |
+| Remote CI | "Remote pipeline is not yet verified" | GitHub Actions pipeline verified green 2026-09-26 (run 36269969749: ui, rust, package_arch + artifact); tag publish (`publish_arch` → GitHub Release) still unproven | [[release-readiness]], [[github-cicd-md]] |
 | Release checkboxes | `docs/PLAN.md` and `docs/IMPROVEMENT_PLAN.md` checkboxes | Checkbox state is **not** release evidence | Only real build/provider/package/native-smoke evidence updates release status |
 | File permissions | Audit found `0755` dirs and `0644` files | Worktree enforces `0700`/`0600` on next open/write; existing-data smoke outstanding | [[release-readiness]], [[store-and-search]] |
 | SMTP E2E | Send/receive E2E expected | GreenMail round-trip tolerates an `io-smtp` greeting bug via diagnostic skip | [[test-suite-md]], [[backend-seam]] |
