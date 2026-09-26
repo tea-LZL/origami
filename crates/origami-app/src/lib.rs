@@ -1,4 +1,5 @@
 mod commands;
+pub mod display_lru;
 mod notifications;
 mod oauth_flow;
 mod state;
