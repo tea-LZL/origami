@@ -33,6 +33,10 @@ pub(crate) fn secure_existing_tree(root: &Path) -> io::Result<()> {
         for entry in fs::read_dir(root)? {
             let entry = entry?;
             let file_type = entry.file_type()?;
+            // Symlink targets may live outside the tree; never chmod through them.
+            if file_type.is_symlink() {
+                continue;
+            }
             if file_type.is_dir() {
                 secure_existing_tree(&entry.path())?;
             } else {
@@ -94,6 +98,41 @@ mod tests {
         assert_eq!(
             fs::metadata(&file).unwrap().permissions().mode() & 0o777,
             0o600
+        );
+    }
+
+    #[test]
+    fn secure_existing_tree_skips_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().unwrap();
+        let outside_file = temp.path().join("outside-file");
+        let outside_dir = temp.path().join("outside-dir");
+        fs::write(&outside_file, b"keep my mode").unwrap();
+        fs::create_dir(&outside_dir).unwrap();
+        fs::set_permissions(&outside_file, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(&outside_dir, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let tree = temp.path().join("tree");
+        fs::create_dir(&tree).unwrap();
+        symlink(&outside_file, tree.join("link-to-file")).unwrap();
+        symlink(&outside_dir, tree.join("link-to-dir")).unwrap();
+
+        secure_existing_tree(&tree).unwrap();
+
+        assert_eq!(
+            fs::metadata(&outside_file).unwrap().permissions().mode() & 0o777,
+            0o755,
+            "symlink target file mode must be untouched"
+        );
+        assert_eq!(
+            fs::metadata(&outside_dir).unwrap().permissions().mode() & 0o777,
+            0o755,
+            "symlink target dir mode must be untouched"
+        );
+        assert_eq!(
+            fs::metadata(&tree).unwrap().permissions().mode() & 0o777,
+            0o700
         );
     }
 }
