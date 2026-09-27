@@ -55,4 +55,31 @@ describe("Outbox", () => {
     expect(mocks.reopenOutboxEntry).toHaveBeenCalledWith(7);
     await waitFor(() => expect(mocks.listOutbox).toHaveBeenCalledTimes(2));
   });
+
+  it("outbox_chips_have_labels", async () => {
+    mocks.listOutbox.mockResolvedValue([
+      {
+        id: 1,
+        kind: "Send",
+        detail: "Send a queued message",
+        createdAt: 0,
+        attempts: 0,
+        lastError: null,
+        failedAt: null,
+      },
+      {
+        id: 2,
+        kind: "Send",
+        detail: "Send a queued message",
+        createdAt: 0,
+        attempts: 3,
+        lastError: "auth failed",
+        failedAt: 123,
+      },
+    ]);
+    render(Outbox);
+
+    expect(await screen.findByText("Pending")).toBeInTheDocument();
+    expect(screen.getByText("Failed")).toBeInTheDocument();
+  });
 });

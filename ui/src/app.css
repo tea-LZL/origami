@@ -26,7 +26,11 @@
   --accent-2: #6050b0;
   --accent-2-fg: #ffffff;
   --success: #256b52;
+  --success-fg: #ffffff;
   --warning: #93601c;
+  --warning-fg: #ffffff;
+  --info: #256b8c;
+  --info-fg: #ffffff;
   --danger: #aa3c4c;
   --danger-fg: #ffffff;
   --overlay: rgba(26, 31, 43, 0.46);
@@ -108,7 +112,11 @@
   --accent-2: #c3b1ff;
   --accent-2-fg: #241e3c;
   --success: #78d3a5;
+  --success-fg: #0b2418;
   --warning: #f2bd6c;
+  --warning-fg: #2b1d07;
+  --info: #7fc4e8;
+  --info-fg: #0b1d29;
   --danger: #ff91a0;
   --danger-fg: #35101a;
   --overlay: rgba(3, 8, 18, 0.68);

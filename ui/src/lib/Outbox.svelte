@@ -119,7 +119,7 @@
                   <pre>{entry.lastError}</pre>
                 </details>
               {:else}
-                <span class="waiting">Waiting to sync</span>
+                <span class="chip pending-chip">Pending</span>
               {/if}
               {#if entry.failedAt !== null}
                 <button
@@ -167,11 +167,12 @@
   article.failed { border-color: color-mix(in oklab, var(--danger) 34%, var(--border)); }
   .chip { padding: 1px 8px; border-radius: 999px; font-size: 9px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
   .failed-chip { color: var(--danger-fg); background: var(--danger); }
+  .pending-chip { color: var(--info-fg); background: var(--info); }
   .retry-entry { justify-self: start; padding: 3px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 11px; cursor: pointer; }
   .retry-entry:hover { background: var(--bg-sunken); }
   .operation { display: flex; justify-content: space-between; gap: 12px; }
   .operation strong { font-size: 12px; }
-  time, .waiting { color: var(--fg-subtle); font-size: 9px; }
+  time { color: var(--fg-subtle); font-size: 9px; }
   article p { margin: 4px 0 7px; color: var(--fg-muted); font-size: 11px; }
   details { color: var(--danger); font-size: 10px; }
   summary { cursor: pointer; font-weight: 700; }

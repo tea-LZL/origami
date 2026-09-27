@@ -24,6 +24,28 @@ export type FolderRow = {
   expanded: boolean;
 };
 
+export type FolderHue =
+  | "inbox"
+  | "drafts"
+  | "sent"
+  | "junk"
+  | "trash"
+  | "archive"
+  | "neutral";
+
+/** Decorative hue for a special-role folder (the label is the a11y name). */
+export function folderRoleHue(role: string | null | undefined): FolderHue {
+  switch (role) {
+    case "Inbox": return "inbox";
+    case "Drafts": return "drafts";
+    case "Sent": return "sent";
+    case "Junk": return "junk";
+    case "Trash": return "trash";
+    case "Archive": return "archive";
+    default: return "neutral";
+  }
+}
+
 export function sidebarFolders(folders: Mailbox[]): Mailbox[] {
   const tree = sidebarTree(folders);
   return flattenFolderTree(tree, allExpandablePaths(tree))
