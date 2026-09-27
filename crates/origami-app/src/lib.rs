@@ -240,6 +240,7 @@ pub fn run() {
             commands::remove_account,
             commands::account_statuses,
             commands::list_outbox,
+            commands::reopen_outbox_entry,
             commands::retry_outbox,
             commands::get_notification_settings,
             commands::update_notification_settings,

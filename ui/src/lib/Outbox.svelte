@@ -52,6 +52,19 @@
     }
   }
 
+  async function reopen(id: number) {
+    const accountId = app.value.outboxAccountId;
+    if (!accountId) return;
+    error = "";
+    try {
+      await api.reopenOutboxEntry(id);
+      await load(accountId);
+      await pollAccountErrors();
+    } catch (cause) {
+      error = String(cause);
+    }
+  }
+
   function close() {
     generation += 1;
     app.value.outboxAccountId = null;
@@ -91,9 +104,12 @@
           </div>
         {:else}
           {#each entries as entry (entry.id)}
-            <article class:failed={entry.lastError !== null}>
+            <article class:failed={entry.failedAt !== null}>
               <div class="operation">
                 <strong>{entry.kind}</strong>
+                {#if entry.failedAt !== null}
+                  <span class="chip failed-chip">Failed</span>
+                {/if}
                 <time datetime={new Date(entry.createdAt * 1000).toISOString()}>{queuedAt(entry.createdAt)}</time>
               </div>
               <p>{entry.detail}</p>
@@ -104,6 +120,13 @@
                 </details>
               {:else}
                 <span class="waiting">Waiting to sync</span>
+              {/if}
+              {#if entry.failedAt !== null}
+                <button
+                  type="button"
+                  class="retry-entry"
+                  onclick={() => reopen(entry.id)}
+                >Retry</button>
               {/if}
             </article>
           {/each}
@@ -142,6 +165,10 @@
   .list { overflow-y: auto; display: grid; align-content: start; gap: 8px; padding-right: 3px; }
   article { padding: 11px; border: 1px solid var(--border); border-radius: var(--radius-md); background: color-mix(in oklab, var(--bg-sunken) 78%, var(--bg-raised)); box-shadow: inset 0 1px var(--paper-highlight); }
   article.failed { border-color: color-mix(in oklab, var(--danger) 34%, var(--border)); }
+  .chip { padding: 1px 8px; border-radius: 999px; font-size: 9px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+  .failed-chip { color: var(--danger-fg); background: var(--danger); }
+  .retry-entry { justify-self: start; padding: 3px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 11px; cursor: pointer; }
+  .retry-entry:hover { background: var(--bg-sunken); }
   .operation { display: flex; justify-content: space-between; gap: 12px; }
   .operation strong { font-size: 12px; }
   time, .waiting { color: var(--fg-subtle); font-size: 9px; }

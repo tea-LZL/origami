@@ -745,6 +745,9 @@ impl SyncEngine {
         config: &AccountConfig,
     ) {
         for entry in self.store.outbox_list(account_db_id).unwrap_or_default() {
+            if entry.failed_at.is_some() {
+                continue;
+            }
             let result = match &entry.op {
                 OutboxOp::StoreFlags {
                     mailbox,
@@ -828,7 +831,11 @@ impl SyncEngine {
                         &error.to_string(),
                         &secrets.iter().map(String::as_str).collect::<Vec<_>>(),
                     );
-                    let _ = self.store.outbox_mark_failed(entry.id, &message);
+                    if outbox_failure_is_terminal(&error, entry.attempts + 1) {
+                        let _ = self.store.outbox_fail_permanent(entry.id, &message);
+                    } else {
+                        let _ = self.store.outbox_mark_failed(entry.id, &message);
+                    }
                 }
             }
         }
@@ -991,6 +998,15 @@ fn jitter_seed(salt: u32) -> u64 {
         .wrapping_add(u64::from(salt))
 }
 
+/// Poison rule for outbox replay failures: permanent errors go terminal
+/// immediately; transient errors retry until `MAX_OUTBOX_ATTEMPTS` then stop
+/// (no infinite retry).
+fn outbox_failure_is_terminal(error: &Error, attempts_after_this: u32) -> bool {
+    !is_transient(error) || attempts_after_this >= MAX_OUTBOX_ATTEMPTS
+}
+
+const MAX_OUTBOX_ATTEMPTS: u32 = 5;
+
 /// Wait before retrying a failed sync. Transient errors use the limiter's
 /// growing backoff; permanent errors (auth/config) drop straight to the 60s
 /// slow mode — the account loop never dies and never hot-retries.
@@ -1151,6 +1167,18 @@ mod tests {
         // Growth reaches the cap.
         assert!(backoff_delay(10, base, cap, 0) <= cap);
         assert!(backoff_delay(30, base, cap, 0) <= cap);
+    }
+
+    #[test]
+    fn outbox_poison_rule() {
+        let permanent = Error::Config("bad auth".into());
+        let transient = Error::Backend("connection reset".into());
+        // Permanent errors go terminal on the first failure.
+        assert!(outbox_failure_is_terminal(&permanent, 1));
+        // Transient errors retry until the poison bound.
+        assert!(!outbox_failure_is_terminal(&transient, 1));
+        assert!(!outbox_failure_is_terminal(&transient, 4));
+        assert!(outbox_failure_is_terminal(&transient, 5));
     }
 
     #[test]

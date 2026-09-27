@@ -1058,3 +1058,63 @@ fn blob_path_rejects_traversal() {
     assert_eq!(blobs.get(&hash).unwrap(), b"legit bytes");
     assert!(blobs.contains(&hash));
 }
+
+#[test]
+fn outbox_poison_goes_terminal() {
+    let (store, account, _folder) = setup();
+    let id = store
+        .outbox_add(
+            &account,
+            &OutboxOp::StoreFlags {
+                mailbox: "INBOX".into(),
+                server_uid: 1,
+                flags: vec![Flag::Seen],
+                keywords: None,
+            },
+        )
+        .unwrap();
+
+    store.outbox_fail_permanent(id, "auth failed").unwrap();
+
+    let entry = store
+        .outbox_list(&account)
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.id == id)
+        .unwrap();
+    assert!(entry.failed_at.is_some(), "poisoned op must be terminal");
+    assert_eq!(
+        store.outbox_count(&account).unwrap(),
+        0,
+        "failed rows are not pending"
+    );
+}
+
+#[test]
+fn outbox_reopen_resets() {
+    let (store, account, _folder) = setup();
+    let id = store
+        .outbox_add(
+            &account,
+            &OutboxOp::StoreFlags {
+                mailbox: "INBOX".into(),
+                server_uid: 1,
+                flags: vec![Flag::Seen],
+                keywords: None,
+            },
+        )
+        .unwrap();
+    store.outbox_fail_permanent(id, "auth failed").unwrap();
+
+    store.outbox_reopen(id).unwrap();
+
+    let entry = store
+        .outbox_list(&account)
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.id == id)
+        .unwrap();
+    assert!(entry.failed_at.is_none(), "reopened row is active again");
+    assert_eq!(entry.attempts, 0);
+    assert_eq!(store.outbox_count(&account).unwrap(), 1);
+}

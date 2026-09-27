@@ -1079,6 +1079,7 @@ pub struct OutboxSummaryDto {
     created_at: i64,
     attempts: u32,
     last_error: Option<String>,
+    failed_at: Option<i64>,
 }
 
 #[tauri::command]
@@ -1146,7 +1147,14 @@ fn summarize_outbox_entry(entry: OutboxEntry) -> OutboxSummaryDto {
         created_at: entry.created_at,
         attempts: entry.attempts,
         last_error: entry.last_error,
+        failed_at: entry.failed_at,
     }
+}
+
+/// Reopen a terminal-failed outbox op for another attempt (user action).
+#[tauri::command]
+pub fn reopen_outbox_entry(state: State<'_, AppState>, id: i64) -> CmdResult<()> {
+    state.store.outbox_reopen(id).map_err(err)
 }
 
 #[tauri::command]
@@ -1816,6 +1824,7 @@ mod tests {
             created_at: 1,
             attempts: 0,
             last_error: None,
+            failed_at: None,
         });
 
         assert_eq!(summary.kind, "Send");

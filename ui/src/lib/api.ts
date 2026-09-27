@@ -24,6 +24,7 @@ export interface OutboxSummary {
   createdAt: number;
   attempts: number;
   lastError: string | null;
+  failedAt: number | null;
 }
 
 export interface AttachmentMeta {
@@ -192,6 +193,7 @@ export const api = {
   accountStatuses: () => invoke<Record<string, AccountStatusDto>>("account_statuses"),
   listOutbox: (accountId: string) => invoke<OutboxSummary[]>("list_outbox", { accountId }),
   retryOutbox: (accountId: string) => invoke<void>("retry_outbox", { accountId }),
+  reopenOutboxEntry: (id: number) => invoke<void>("reopen_outbox_entry", { id }),
   getNotificationSettings: () =>
     invoke<NotificationSettings>("get_notification_settings"),
   updateNotificationSettings: (settings: NotificationSettings) =>

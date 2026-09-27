@@ -265,6 +265,16 @@ impl Store {
             conn.execute("DELETE FROM message_cache", [])?;
             conn.pragma_update(None, "user_version", 8)?;
         }
+        if version < 9 {
+            // Terminal failure state for poisoned outbox ops (NULL = active).
+            let has_col: bool = conn
+                .prepare("SELECT 1 FROM pragma_table_info('outbox') WHERE name = 'failed_at'")?
+                .exists([])?;
+            if !has_col {
+                conn.execute("ALTER TABLE outbox ADD COLUMN failed_at INTEGER", [])?;
+            }
+            conn.pragma_update(None, "user_version", 9)?;
+        }
         Ok(())
     }
 
@@ -1802,7 +1812,7 @@ impl Store {
     pub fn outbox_list(&self, account_id: &str) -> Result<Vec<OutboxEntry>> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, account_id, op_json, created_at, attempts, last_error
+            "SELECT id, account_id, op_json, created_at, attempts, last_error, failed_at
                FROM outbox WHERE account_id = ?1 ORDER BY id",
         )?;
         let rows = stmt.query_map(params![account_id], |r| {
@@ -1813,11 +1823,12 @@ impl Store {
                 r.get::<_, i64>(3)?,
                 r.get::<_, i64>(4)?,
                 r.get::<_, Option<String>>(5)?,
+                r.get::<_, Option<i64>>(6)?,
             ))
         })?;
         let mut out = Vec::new();
         for row in rows {
-            let (id, account_id, op_json, created_at, attempts, last_error) = row?;
+            let (id, account_id, op_json, created_at, attempts, last_error, failed_at) = row?;
             let op: OutboxOp = serde_json::from_str(&op_json)
                 .map_err(|e| Error::Backend(format!("outbox op parse: {e}")))?;
             out.push(OutboxEntry {
@@ -1827,6 +1838,7 @@ impl Store {
                 created_at,
                 attempts: attempts as u32,
                 last_error,
+                failed_at,
             });
         }
         Ok(out)
@@ -1834,7 +1846,7 @@ impl Store {
 
     pub fn outbox_count(&self, account_id: &str) -> Result<u32> {
         let count: i64 = self.conn()?.query_row(
-            "SELECT COUNT(*) FROM outbox WHERE account_id = ?1",
+            "SELECT COUNT(*) FROM outbox WHERE account_id = ?1 AND failed_at IS NULL",
             params![account_id],
             |row| row.get(0),
         )?;
@@ -1854,6 +1866,27 @@ impl Store {
         conn.execute(
             "UPDATE outbox SET attempts = attempts + 1, last_error = ?2 WHERE id = ?1",
             params![id, redacted],
+        )?;
+        Ok(())
+    }
+
+    /// Move an op to the terminal failed state (poison: never auto-retried).
+    pub fn outbox_fail_permanent(&self, id: i64, error: &str) -> Result<()> {
+        let conn = self.conn()?;
+        let redacted = crate::redact::redact_secrets(error);
+        conn.execute(
+            "UPDATE outbox SET failed_at = unixepoch(), last_error = ?2 WHERE id = ?1",
+            params![id, redacted],
+        )?;
+        Ok(())
+    }
+
+    /// Reopen a terminal-failed op for retry (explicit user action).
+    pub fn outbox_reopen(&self, id: i64) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute(
+            "UPDATE outbox SET failed_at = NULL, attempts = 0, last_error = NULL WHERE id = ?1",
+            params![id],
         )?;
         Ok(())
     }
