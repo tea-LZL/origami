@@ -149,4 +149,11 @@ instant header paint), [[offline-outbox]] (terminal `failed_at` + per-row Retry)
 resolved), [[build-and-verification]] (gates + PR run 36308544416 + cached-open budget),
 [[index]]. CI green on all four jobs; Docker-harness end-to-end and the manual
 GUI/forced-colors pass remain owed.
-(docs(wiki): ingest PR #1 caching, hardening, and palette work)
+
+## [2026-09-27] update | unread-only stale-selection defect fixed
+Root cause and product fix (product code): first-open Seen now refreshes `selectedEnvelope`
+from the freshly patched page, and `mergeSelectedIntoUnreadPage` no longer lets a stale
+selection overwrite an extra already taken from `previous`. Regression:
+`keeps_the_patched_seen_row_when_selection_state_is_stale`
+(`ui/src/lib/unreadList.test.ts`). [[known-drift]] follow-up resolved;
+[[unread-only-list-filter]] defect note flipped to resolved.
