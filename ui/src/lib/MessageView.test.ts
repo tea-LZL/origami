@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
       layout: "three-pane",
       message: null as unknown,
       messageLoading: false,
+      messageZoom: 100,
       envelopes: [],
       selectedEnvelope: null as unknown,
       lastError: null,
@@ -76,6 +77,7 @@ describe("MessageView", () => {
       layout: "three-pane",
       message,
       messageLoading: false,
+      messageZoom: 100,
       envelopes: [],
       selectedEnvelope: message.envelope,
       lastError: null,
@@ -199,6 +201,16 @@ describe("MessageView", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Details" }));
     expect(screen.getByText("Message-ID")).toBeInTheDocument();
+  });
+
+  it("applies_message_zoom_to_text_body", () => {
+    mocks.app.value.message = { ...message, html: null, text: "plain body" };
+    mocks.app.value.messageZoom = 150;
+    const { container } = render(MessageView);
+
+    const body = container.querySelector(".body");
+    expect(body).toBeTruthy();
+    expect(body?.getAttribute("style")).toContain("font-size: 150%");
   });
 
   it("header_paints_from_envelope_while_loading", () => {

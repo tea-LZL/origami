@@ -160,6 +160,42 @@
             onValueChange={(layout) => setLayout(layout as "three-pane" | "two-pane" | "reading")}
           />
         </label>
+
+        <label>
+          Message zoom
+          <Select
+            value={String(app.value.messageZoom)}
+            ariaLabel="Message zoom"
+            options={[
+              { value: "75", label: "75%" },
+              { value: "90", label: "90%" },
+              { value: "100", label: "100%" },
+              { value: "110", label: "110%" },
+              { value: "125", label: "125%" },
+              { value: "150", label: "150%" },
+              { value: "200", label: "200%" },
+            ]}
+            onValueChange={(zoom) => setPreferences({ messageZoom: Number(zoom) })}
+          />
+        </label>
+      </section>
+
+      <section aria-labelledby="reading-title">
+        <h3 id="reading-title">Reading</h3>
+        <label>
+          Mark as read
+          <Select
+            value={String(app.value.markReadDelay)}
+            ariaLabel="Mark as read"
+            options={[
+              { value: "0", label: "Immediately" },
+              { value: "3", label: "After 3 seconds" },
+              { value: "10", label: "After 10 seconds" },
+              { value: "-1", label: "Never" },
+            ]}
+            onValueChange={(delay) => setPreferences({ markReadDelay: Number(delay) })}
+          />
+        </label>
       </section>
 
       <section aria-labelledby="remote-content-title">

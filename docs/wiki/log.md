@@ -171,3 +171,12 @@ selection overwrite an extra already taken from `previous`. Regression:
 `keeps_the_patched_seen_row_when_selection_state_is_stale`
 (`ui/src/lib/unreadList.test.ts`). [[known-drift]] follow-up resolved;
 [[unread-only-list-filter]] defect note flipped to resolved.
+
+## [2026-09-27] update | delayed mark-as-read + message zoom
+QoL item delivered: `markReadDelay` preference (immediately / 3 s / 10 s / never) gates the
+first-open Seen flip — delayed flips fire only while the same message stays selected, and
+the pending timer is cancelled on selection change. `messageZoom` preference (50–300 %,
+persisted) scales the reading pane: text mode via body font-size, HTML mode via the iframe
+document root font-size, with Ctrl+= / Ctrl+- / Ctrl+0 shortcuts in the message view and a
+Preferences select for both. Tests: `stores.markread.test.ts` (6) +
+`applies_message_zoom_to_text_body`. [[release-readiness]] QoL order item 4 delivered.
