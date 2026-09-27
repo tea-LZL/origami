@@ -862,3 +862,334 @@ fn unread_only_unified_inbox_skips_seen() {
     assert_eq!(only_unread.len(), 1);
     assert_eq!(only_unread[0].subject, "inbox unread");
 }
+
+#[cfg(unix)]
+#[test]
+fn existing_data_perms_tightened() {
+    use origami_core::blob::BlobStore;
+    use origami_core::config;
+    use std::os::unix::fs::PermissionsExt;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn mode_of(path: &std::path::Path) -> u32 {
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+    fn loosen(path: &std::path::Path, mode: u32) {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+
+    // Database fixture: valid store first, then loosen perms like legacy data.
+    let db_dir = root.join("db");
+    let db_path = db_dir.join("db.sqlite3");
+    drop(Store::open(&db_path).unwrap());
+    loosen(&db_dir, 0o755);
+    loosen(&db_path, 0o644);
+
+    // Blob fixture with pre-existing loose files.
+    let blob_root = root.join("blobs");
+    let hash = format!("dead{}", "0".repeat(60));
+    let blob_path = blob_root.join("de").join("ad").join(&hash);
+    std::fs::create_dir_all(blob_path.parent().unwrap()).unwrap();
+    std::fs::write(&blob_path, b"blob-bytes").unwrap();
+    loosen(&blob_root, 0o755);
+    loosen(&blob_root.join("de"), 0o755);
+    loosen(&blob_root.join("de").join("ad"), 0o755);
+    loosen(&blob_path, 0o644);
+
+    // Config fixture under an isolated XDG_CONFIG_HOME.
+    let xdg = root.join("xdg");
+    let config_dir = xdg.join("origami");
+    let config_file = config_dir.join("config.toml");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    let config_bytes = toml::to_string_pretty(&config::Config::default()).unwrap();
+    std::fs::write(&config_file, &config_bytes).unwrap();
+    loosen(&config_dir, 0o755);
+    loosen(&config_file, 0o644);
+
+    let _env_guard = ENV_LOCK.lock().unwrap();
+    let previous_xdg = std::env::var("XDG_CONFIG_HOME").ok();
+    std::env::set_var("XDG_CONFIG_HOME", &xdg);
+
+    // Open paths exactly as the app does.
+    let store = Store::open(&db_path).unwrap();
+    let blobs = BlobStore::open(&blob_root).unwrap();
+    let loaded = config::load().unwrap();
+
+    if let Some(previous) = previous_xdg {
+        std::env::set_var("XDG_CONFIG_HOME", previous);
+    } else {
+        std::env::remove_var("XDG_CONFIG_HOME");
+    }
+    drop(_env_guard);
+
+    // Roots are 0700, files 0600, including WAL sidecars and blob subtrees.
+    assert_eq!(mode_of(&db_dir), 0o700, "db dir root");
+    assert_eq!(mode_of(&db_path), 0o600, "database file");
+    for sidecar in ["db.sqlite3-wal", "db.sqlite3-shm", "db.sqlite3-journal"] {
+        let path = db_dir.join(sidecar);
+        if path.exists() {
+            assert_eq!(mode_of(&path), 0o600, "{sidecar}");
+        }
+    }
+    assert_eq!(mode_of(&blob_root), 0o700, "blob root");
+    assert_eq!(mode_of(&blob_root.join("de")), 0o700, "blob shard aa");
+    assert_eq!(
+        mode_of(&blob_root.join("de").join("ad")),
+        0o700,
+        "blob shard bb"
+    );
+    assert_eq!(mode_of(&blob_path), 0o600, "blob file");
+    assert_eq!(mode_of(&config_dir), 0o700, "config dir root");
+    assert_eq!(mode_of(&config_file), 0o600, "config file");
+
+    // File contents are never altered by permission tightening.
+    assert_eq!(std::fs::read(&blob_path).unwrap(), b"blob-bytes");
+    assert_eq!(std::fs::read_to_string(&config_file).unwrap(), config_bytes);
+    drop(loaded);
+
+    drop(store);
+    drop(blobs);
+}
+
+fn cache_display_row(store: &Store, folder: &str, uid: u32, received_at: i64) {
+    let mut envelope = envelope(uid, &format!("subject {uid}"));
+    envelope.received_at = Some(received_at);
+    store.upsert_envelope(folder, &envelope).unwrap();
+    store
+        .set_parsed_message_and_index(folder, uid, &ParsedMessage::default(), "thread")
+        .unwrap();
+}
+
+#[test]
+fn evict_display_cache_age() {
+    let (store, _account, folder) = setup();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let day = 24 * 60 * 60;
+    cache_display_row(&store, &folder, 1, now - 40 * day);
+    cache_display_row(&store, &folder, 2, now - day);
+
+    let removed = store.evict_display_cache(2000, 30).unwrap();
+    assert_eq!(removed, 1, "only the stale row is age-evicted");
+    assert!(store.parsed_message(&folder, 2).unwrap().is_some());
+    assert!(store.parsed_message(&folder, 1).unwrap().is_none());
+}
+
+#[test]
+fn evict_display_cache_count() {
+    let (store, _account, folder) = setup();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    cache_display_row(&store, &folder, 1, now - 3000);
+    cache_display_row(&store, &folder, 2, now - 2000);
+    cache_display_row(&store, &folder, 3, now - 1000);
+
+    let removed = store.evict_display_cache(2, 3650).unwrap();
+    assert_eq!(removed, 1, "oldest received is evicted first");
+    assert!(store.parsed_message(&folder, 1).unwrap().is_none());
+    assert!(store.parsed_message(&folder, 2).unwrap().is_some());
+    assert!(store.parsed_message(&folder, 3).unwrap().is_some());
+}
+
+#[test]
+fn outbox_last_error_redacted() {
+    let (store, account, _folder) = setup();
+    let id = store
+        .outbox_add(
+            &account,
+            &OutboxOp::StoreFlags {
+                mailbox: "INBOX".into(),
+                server_uid: 1,
+                flags: vec![Flag::Seen],
+                keywords: None,
+            },
+        )
+        .unwrap();
+
+    store
+        .outbox_mark_failed(
+            id,
+            "login failed: password=hunter2 Authorization: Bearer tok-99",
+        )
+        .unwrap();
+
+    let entry = store
+        .outbox_list(&account)
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.id == id)
+        .unwrap();
+    let error = entry.last_error.unwrap();
+    assert!(!error.contains("hunter2"), "password leaked: {error}");
+    assert!(!error.contains("tok-99"), "token leaked: {error}");
+    assert!(error.contains("[redacted]"), "mask missing: {error}");
+}
+
+#[test]
+fn blob_path_rejects_traversal() {
+    use origami_core::blob::BlobStore;
+
+    let temp = tempfile::tempdir().unwrap();
+    let blobs = BlobStore::open(&temp.path().join("blobs")).unwrap();
+
+    for hostile in [
+        "../../etc/passwd",
+        "aa/../../x",
+        "..",
+        "deadbeef",
+        &"z".repeat(64),
+        &"a".repeat(63),
+        &"a".repeat(65),
+    ] {
+        assert!(
+            blobs.get(hostile).is_err(),
+            "hostile hash must be rejected: {hostile}"
+        );
+        assert!(
+            !blobs.contains(hostile),
+            "contains must be false: {hostile}"
+        );
+    }
+
+    // Legitimate content-addressed access still works.
+    let hash = blobs.put(b"legit bytes").unwrap();
+    assert_eq!(blobs.get(&hash).unwrap(), b"legit bytes");
+    assert!(blobs.contains(&hash));
+}
+
+#[test]
+fn outbox_poison_goes_terminal() {
+    let (store, account, _folder) = setup();
+    let id = store
+        .outbox_add(
+            &account,
+            &OutboxOp::StoreFlags {
+                mailbox: "INBOX".into(),
+                server_uid: 1,
+                flags: vec![Flag::Seen],
+                keywords: None,
+            },
+        )
+        .unwrap();
+
+    store.outbox_fail_permanent(id, "auth failed").unwrap();
+
+    let entry = store
+        .outbox_list(&account)
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.id == id)
+        .unwrap();
+    assert!(entry.failed_at.is_some(), "poisoned op must be terminal");
+    assert_eq!(
+        store.outbox_count(&account).unwrap(),
+        0,
+        "failed rows are not pending"
+    );
+}
+
+#[test]
+fn outbox_reopen_resets() {
+    let (store, account, _folder) = setup();
+    let id = store
+        .outbox_add(
+            &account,
+            &OutboxOp::StoreFlags {
+                mailbox: "INBOX".into(),
+                server_uid: 1,
+                flags: vec![Flag::Seen],
+                keywords: None,
+            },
+        )
+        .unwrap();
+    store.outbox_fail_permanent(id, "auth failed").unwrap();
+
+    store.outbox_reopen(id).unwrap();
+
+    let entry = store
+        .outbox_list(&account)
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.id == id)
+        .unwrap();
+    assert!(entry.failed_at.is_none(), "reopened row is active again");
+    assert_eq!(entry.attempts, 0);
+    assert_eq!(store.outbox_count(&account).unwrap(), 1);
+}
+
+#[test]
+fn outbox_failed_count_counts_terminal() {
+    let (store, account, _folder) = setup();
+    let id = store
+        .outbox_add(
+            &account,
+            &OutboxOp::StoreFlags {
+                mailbox: "INBOX".into(),
+                server_uid: 1,
+                flags: vec![Flag::Seen],
+                keywords: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(store.outbox_failed_count(&account).unwrap(), 0);
+
+    store.outbox_fail_permanent(id, "auth failed").unwrap();
+    assert_eq!(
+        store.outbox_failed_count(&account).unwrap(),
+        1,
+        "terminal rows must be reachable for the Outbox entry points"
+    );
+    assert_eq!(store.outbox_count(&account).unwrap(), 0);
+}
+
+fn seeded_flags(store: &Store, folder: &str) {
+    for uid in [1u32, 2, 3] {
+        let mut envelope = envelope(uid, &format!("m{uid}"));
+        envelope.flags.clear();
+        store.upsert_envelope(folder, &envelope).unwrap();
+    }
+}
+
+#[test]
+fn shutdown_flush_checkpoints() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("db.sqlite3");
+    {
+        let store = Store::open(&db_path).unwrap();
+        let account = store
+            .upsert_account("test", "Test", "t@example.org")
+            .unwrap();
+        let folder = store
+            .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
+            .unwrap();
+        seeded_flags(&store, &folder);
+        store.shutdown_flush().unwrap();
+    }
+    let wal = dir.path().join("db.sqlite3-wal");
+    if wal.exists() {
+        assert_eq!(
+            std::fs::metadata(&wal).unwrap().len(),
+            0,
+            "wal must be truncated by shutdown_flush"
+        );
+    }
+    // Data survives the checkpoint.
+    let store = Store::open(&db_path).unwrap();
+    let account = store
+        .upsert_account("test", "Test", "t@example.org")
+        .unwrap();
+    let folder = store
+        .folder_id(&account, "INBOX")
+        .unwrap()
+        .expect("folder survives");
+    assert_eq!(store.message_uids(&folder).unwrap(), vec![1, 2, 3]);
+}

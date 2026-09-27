@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeMessageHtml } from "./messageHtml";
+import { allowedLinkHref, sanitizeMessageHtml } from "./messageHtml";
 
 describe("sanitizeMessageHtml", () => {
   it("removes active content and blocks remote image requests", () => {
@@ -64,6 +64,20 @@ describe("sanitizeMessageHtml", () => {
     expect(result.blockedResources).toBe(0);
   });
 
+  it("cid_images_stay_inert", () => {
+    const result = sanitizeMessageHtml(
+      '<img src="cid:part1@example.org" />'
+        + '<img src="file:///etc/passwd" />'
+        + '<img src="data:image/png;base64,AAAA" />',
+    );
+
+    // cid: stays exactly as-is — never rewritten to a fetchable scheme.
+    expect(result.html).toContain('src="cid:part1@example.org"');
+    // file: sources are stripped, never served.
+    expect(result.html).not.toContain("file://");
+    expect(result.html).not.toContain("/etc/passwd");
+  });
+
   it("allows only explicitly permitted origins", () => {
     const result = sanitizeMessageHtml(
       '<img src="https://images.example/photo.png" />'
@@ -90,5 +104,37 @@ describe("sanitizeMessageHtml", () => {
     expect(result.html).toContain('src="http://cdn.example/pixel"');
     expect(result.blockedResources).toBe(0);
     expect(result.srcdoc).toContain("img-src data: cid: http: https:");
+  });
+});
+
+describe("allowedLinkHref", () => {
+  it("rejects_javascript_links", () => {
+    expect(allowedLinkHref("javascript:alert(1)")).toBeNull();
+    expect(allowedLinkHref("JaVaScRiPt:alert(1)")).toBeNull();
+    expect(allowedLinkHref("java\tscript:alert(1)")).toBeNull();
+    expect(allowedLinkHref("java\nscript:alert(1)")).toBeNull();
+    expect(allowedLinkHref("  javascript:alert(1)")).toBeNull();
+  });
+
+  it("rejects_file_links", () => {
+    expect(allowedLinkHref("file:///etc/passwd")).toBeNull();
+    expect(allowedLinkHref("FILE:///etc/passwd")).toBeNull();
+  });
+
+  it("rejects_data_links", () => {
+    expect(allowedLinkHref("data:text/html,<script>alert(1)</script>")).toBeNull();
+  });
+
+  it("rejects_vbscript_and_custom_schemes", () => {
+    expect(allowedLinkHref("vbscript:msgbox(1)")).toBeNull();
+    expect(allowedLinkHref("chrome://settings")).toBeNull();
+    expect(allowedLinkHref("about:blank")).toBeNull();
+    expect(allowedLinkHref("ftp://example.org/x")).toBeNull();
+  });
+
+  it("allows_http_https_mailto", () => {
+    expect(allowedLinkHref("https://example.org/x")).toBe("https://example.org/x");
+    expect(allowedLinkHref("http://example.org")).toBe("http://example.org/");
+    expect(allowedLinkHref("mailto:a@example.org")).toBe("mailto:a@example.org");
   });
 });

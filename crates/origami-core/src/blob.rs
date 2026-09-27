@@ -19,6 +19,7 @@ pub struct BlobStore {
 impl BlobStore {
     pub fn open(root: &Path) -> Result<Self> {
         private_fs::create_private_dir(root)?;
+        private_fs::secure_existing_tree(root)?;
         Ok(Self {
             root: root.to_path_buf(),
         })
@@ -56,7 +57,7 @@ impl BlobStore {
     }
 
     pub fn get(&self, hash: &str) -> Result<Vec<u8>> {
-        let path = self.path_for(hash);
+        let path = self.path_for(validated_hash(hash)?);
         std::fs::read(&path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 Error::Backend(format!("blob not found: {hash}"))
@@ -67,13 +68,29 @@ impl BlobStore {
     }
 
     pub fn contains(&self, hash: &str) -> bool {
-        self.path_for(hash).exists()
+        validated_hash(hash)
+            .map(|hash| self.path_for(hash).exists())
+            .unwrap_or(false)
     }
 
     pub fn path_for(&self, hash: &str) -> PathBuf {
         let (aa, rest) = hash.split_at(2.min(hash.len()));
         let (bb, _) = rest.split_at(2.min(rest.len()));
         self.root.join(aa).join(bb).join(hash)
+    }
+}
+
+/// Content-address gate: only exact lowercase-hex SHA-256 digests may name a
+/// blob, so a hostile "hash" can never traverse outside `root`.
+fn validated_hash(hash: &str) -> Result<&str> {
+    let hex = hash.len() == 64
+        && hash
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    if hex {
+        Ok(hash)
+    } else {
+        Err(Error::Backend(format!("invalid blob hash: {hash}")))
     }
 }
 

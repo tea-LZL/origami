@@ -12,7 +12,7 @@
   import type { Mailbox } from "./types";
   import AccountSettings from "./AccountSettings.svelte";
   import { sidebarKeyboard } from "./navigation";
-  import { flattenFolderTree, sidebarTree, type FolderRow } from "./folderNav";
+  import { flattenFolderTree, folderRoleHue, sidebarTree, type FolderRow } from "./folderNav";
   import { tagColor } from "./tags";
   import { trapFocus } from "./trapFocus";
 
@@ -245,11 +245,11 @@
             </details>
           </section>
         {/if}
-        {#if accountStatus?.pendingOperations}
+        {#if accountStatus && accountStatus.pendingOperations + (accountStatus.failedOperations ?? 0) > 0}
           <button type="button" class="outbox-status" onclick={() => app.value.outboxAccountId = account.id}>
             <span>Outbox</span>
-            <strong>{accountStatus.pendingOperations}</strong>
-            <small>pending {accountStatus.pendingOperations === 1 ? "operation" : "operations"}</small>
+            <strong>{accountStatus.pendingOperations + (accountStatus.failedOperations ?? 0)}</strong>
+            <small>pending {accountStatus.pendingOperations + (accountStatus.failedOperations ?? 0) === 1 ? "operation" : "operations"}</small>
           </button>
         {/if}
         <div role="tree" aria-label={`${account.name} folders`}>
@@ -281,6 +281,12 @@
                 oncontextmenu={(event) => row.folder && openFolderMenu(event, row.folder)}
               >
                 <span class="folder-name">
+                  {#if row.folder}
+                    <span
+                      class="role-hue-dot role-hue-{folderRoleHue(row.folder.role)}"
+                      aria-hidden="true"
+                    ></span>
+                  {/if}
                   {row.folder && roleLabel(row.folder.role) !== "Other" ? roleLabel(row.folder.role) : row.label}
                 </span>
                 <span class="counts">
@@ -583,7 +589,14 @@
   .twist:focus-visible {
     outline-offset: -2px;
   }
-  .folder-name { text-align: left; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .folder-name { text-align: left; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; gap: 8px; }
+  .role-hue-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--fg-subtle); }
+  .role-hue-inbox { background: var(--accent); }
+  .role-hue-drafts { background: var(--warning); }
+  .role-hue-sent { background: var(--tag-teal); }
+  .role-hue-junk { background: var(--tag-rose); }
+  .role-hue-trash { background: var(--fg-subtle); }
+  .role-hue-archive { background: var(--tag-violet); }
   .counts { display: flex; gap: 6px; align-items: center; }
   .unread {
     background: var(--accent);

@@ -18,13 +18,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tauri::State;
 
+use crate::display_lru::{display_key, parsed_with_cache};
 use crate::oauth_flow;
 use crate::state::{self, AppState};
 
 type CmdResult<T> = Result<T, String>;
 
 fn err<E: std::fmt::Display>(e: E) -> String {
-    e.to_string()
+    origami_core::redact::redact_secrets(&e.to_string())
 }
 
 fn classify_login_error(message: &str, app_password: bool) -> String {
@@ -365,6 +366,16 @@ fn message_dto(
     })
 }
 
+/// Drop one physical source's entry from the display LRU (message gone or
+/// moved locally).
+fn invalidate_display_lru(state: &AppState, folder_id: &str, server_uid: u32) {
+    state
+        .display_lru
+        .lock()
+        .unwrap()
+        .remove(&display_key(folder_id, server_uid));
+}
+
 /// Local cache only: never opens IMAP. None means the UI should show a
 /// skeleton and call `get_message`.
 #[tauri::command]
@@ -373,11 +384,17 @@ pub fn get_cached_message(
     folder_id: String,
     server_uid: u32,
 ) -> CmdResult<Option<MessageDto>> {
-    let Some(parsed) = state
-        .store
-        .parsed_message_for_logical_message(&folder_id, server_uid)
+    let key = display_key(&folder_id, server_uid);
+    let loaded = {
+        let mut lru = state.display_lru.lock().unwrap();
+        parsed_with_cache(&mut lru, &key, || {
+            state
+                .store
+                .parsed_message_for_logical_message(&folder_id, server_uid)
+        })
         .map_err(err)?
-    else {
+    };
+    let Some(parsed) = loaded else {
         return Ok(None);
     };
     message_dto(&state, &folder_id, server_uid, parsed).map(Some)
@@ -390,6 +407,10 @@ pub async fn get_message(
     folder_id: String,
     server_uid: u32,
 ) -> CmdResult<MessageDto> {
+    let key = display_key(&folder_id, server_uid);
+    if let Some(parsed) = state.display_lru.lock().unwrap().get(&key) {
+        return message_dto(&state, &folder_id, server_uid, parsed);
+    }
     let (account_config_id, _account_db_id, mailbox) =
         state.resolve_folder(&folder_id).map_err(err)?;
     let parsed: ParsedMessage = match state
@@ -407,7 +428,11 @@ pub async fn get_message(
                     .map_err(err)?
             } else {
                 let backend = state.backend(&account_config_id).await.map_err(err)?;
-                match backend.fetch_display_message(&mailbox, server_uid).await {
+                match origami_core::sync::with_network_timeout(
+                    backend.fetch_display_message(&mailbox, server_uid),
+                )
+                .await
+                {
                     Ok(display) => match state
                         .engine
                         .cache_display_message(&folder_id, server_uid, &display)
@@ -443,6 +468,11 @@ pub async fn get_message(
         }
     };
 
+    state
+        .display_lru
+        .lock()
+        .unwrap()
+        .insert(key, parsed.clone());
     message_dto(&state, &folder_id, server_uid, parsed)
 }
 
@@ -471,10 +501,13 @@ pub async fn get_attachment(
         origami_core::message::attachment_bytes(&raw, index).ok_or("attachment not found")?
     } else {
         let backend = state.backend(&account_config_id).await.map_err(err)?;
-        backend
-            .fetch_attachment_section(&mailbox, server_uid, &attachment.part_path)
-            .await
-            .map_err(err)?
+        origami_core::sync::with_network_timeout(backend.fetch_attachment_section(
+            &mailbox,
+            server_uid,
+            &attachment.part_path,
+        ))
+        .await
+        .map_err(err)?
     };
     Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
 }
@@ -528,6 +561,7 @@ pub async fn store_flags_batch(
     let (account_config_id, account_db_id, mailbox) =
         state.resolve_folder(&folder_id).map_err(err)?;
     let backend = state.backend(&account_config_id).await.ok();
+    let mut local_updates: Vec<(u32, Vec<Flag>)> = Vec::new();
 
     for update in updates {
         let stored = if let Some(backend) = &backend {
@@ -540,10 +574,7 @@ pub async fn store_flags_batch(
         };
 
         if stored {
-            state
-                .store
-                .update_flags(&folder_id, update.server_uid, &update.flags)
-                .map_err(err)?;
+            local_updates.push((update.server_uid, update.flags));
         } else {
             state
                 .engine
@@ -556,6 +587,12 @@ pub async fn store_flags_batch(
                 )
                 .map_err(err)?;
         }
+    }
+    if !local_updates.is_empty() {
+        state
+            .store
+            .update_flags_batch(&folder_id, &local_updates)
+            .map_err(err)?;
     }
     Ok(())
 }
@@ -578,6 +615,8 @@ pub async fn store_keywords_batch(
     let (account_config_id, account_db_id, mailbox) =
         state.resolve_folder(&folder_id).map_err(err)?;
     let backend = state.backend(&account_config_id).await.ok();
+    let mut local_flags: Vec<(u32, Vec<Flag>)> = Vec::new();
+    let mut local_keywords: Vec<(u32, Vec<String>)> = Vec::new();
 
     for update in updates {
         let stored = if let Some(backend) = &backend {
@@ -594,14 +633,8 @@ pub async fn store_keywords_batch(
             false
         };
         if stored {
-            state
-                .store
-                .update_flags(&folder_id, update.server_uid, &update.flags)
-                .map_err(err)?;
-            state
-                .store
-                .update_keywords(&folder_id, update.server_uid, &update.keywords)
-                .map_err(err)?;
+            local_flags.push((update.server_uid, update.flags));
+            local_keywords.push((update.server_uid, update.keywords));
         } else {
             state
                 .engine
@@ -615,6 +648,16 @@ pub async fn store_keywords_batch(
                 )
                 .map_err(err)?;
         }
+    }
+    if !local_flags.is_empty() {
+        state
+            .store
+            .update_flags_batch(&folder_id, &local_flags)
+            .map_err(err)?;
+        state
+            .store
+            .update_keywords_batch(&folder_id, &local_keywords)
+            .map_err(err)?;
     }
     Ok(())
 }
@@ -655,11 +698,12 @@ pub async fn move_messages(
             )
             .map_err(err)?;
     }
+    state
+        .store
+        .delete_messages_by_uids(&folder_id, &server_uids)
+        .map_err(err)?;
     for uid in server_uids {
-        state
-            .store
-            .delete_message_by_uid(&folder_id, uid)
-            .map_err(err)?;
+        invalidate_display_lru(&state, &folder_id, uid);
     }
     Ok(())
 }
@@ -688,11 +732,12 @@ pub async fn delete_messages(
             .queue_delete_messages(&account_db_id, &mailbox, &server_uids)
             .map_err(err)?;
     }
+    state
+        .store
+        .delete_messages_by_uids(&folder_id, &server_uids)
+        .map_err(err)?;
     for uid in server_uids {
-        state
-            .store
-            .delete_message_by_uid(&folder_id, uid)
-            .map_err(err)?;
+        invalidate_display_lru(&state, &folder_id, uid);
     }
     Ok(())
 }
@@ -965,6 +1010,12 @@ pub async fn remove_account(
     // Stop the running sync loop first (clean shutdown).
     state.stop_account_sync(&account_id);
 
+    // Everything this account cached in memory is now unreachable.
+    state.display_lru.lock().unwrap().clear();
+    // Global cancel is fine here: queued prefetch for other accounts is
+    // cheap to re-request, and in-flight fetches discard stale writes.
+    state.engine.prefetch_queue().cancel_all();
+
     // Wipe keyring secrets for this account.
     let _ = origami_core::config::delete_keyring_secret(&account_id);
     let _ = origami_core::config::delete_keyring_secret(&format!("{account_id}-refresh"));
@@ -1001,6 +1052,7 @@ pub struct AccountStatusDto {
     state: &'static str,
     error: Option<String>,
     pending_operations: u32,
+    failed_operations: u32,
 }
 
 #[tauri::command]
@@ -1030,6 +1082,7 @@ pub fn account_statuses(
                 state: phase,
                 error,
                 pending_operations: state.store.outbox_count(&db_id).map_err(err)?,
+                failed_operations: state.store.outbox_failed_count(&db_id).map_err(err)?,
             },
         );
     }
@@ -1045,6 +1098,7 @@ pub struct OutboxSummaryDto {
     created_at: i64,
     attempts: u32,
     last_error: Option<String>,
+    failed_at: Option<i64>,
 }
 
 #[tauri::command]
@@ -1112,7 +1166,14 @@ fn summarize_outbox_entry(entry: OutboxEntry) -> OutboxSummaryDto {
         created_at: entry.created_at,
         attempts: entry.attempts,
         last_error: entry.last_error,
+        failed_at: entry.failed_at,
     }
+}
+
+/// Reopen a terminal-failed outbox op for another attempt (user action).
+#[tauri::command]
+pub fn reopen_outbox_entry(state: State<'_, AppState>, id: i64) -> CmdResult<()> {
+    state.store.outbox_reopen(id).map_err(err)
 }
 
 #[tauri::command]
@@ -1408,6 +1469,56 @@ pub async fn sync_now(state: State<'_, AppState>, account_id: Option<String>) ->
                 .engine
                 .spawn_recent_prefetch(id.clone(), account.clone(), None);
         }
+    }
+    Ok(())
+}
+
+/// One queued display prefetch request from the UI.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrefetchRequestDto {
+    pub folder_id: String,
+    pub server_uid: u32,
+    pub priority: String,
+}
+
+/// Enqueue display-MIME prefetch for predicted/viewport rows. Never touches
+/// flags; cached sources are skipped. Fire-and-forget for the UI.
+#[tauri::command]
+pub async fn prefetch_display(
+    state: State<'_, AppState>,
+    requests: Vec<PrefetchRequestDto>,
+) -> CmdResult<()> {
+    state.ensure_prefetch_workers();
+    let account_errors = state.account_errors_snapshot();
+    for request in requests {
+        let priority = match request.priority.as_str() {
+            "open" => origami_core::prefetch_queue::PrefetchPriority::Open,
+            "predictive" => origami_core::prefetch_queue::PrefetchPriority::Predictive,
+            "viewport" => origami_core::prefetch_queue::PrefetchPriority::Viewport,
+            other => return Err(format!("unknown prefetch priority: {other}")),
+        };
+        if state
+            .store
+            .parsed_message_for_logical_message(&request.folder_id, request.server_uid)
+            .map_err(err)?
+            .is_some()
+        {
+            continue;
+        }
+        // Accounts in an error state skip prefetch until they recover.
+        if let Ok((account_config_id, _, _)) = state.resolve_folder(&request.folder_id) {
+            if account_errors.contains_key(&account_config_id) {
+                continue;
+            }
+        }
+        let key = display_key(&request.folder_id, request.server_uid);
+        state
+            .engine
+            .prefetch_queue()
+            .enqueue(origami_core::prefetch_queue::PrefetchRequest::new(
+                key, priority,
+            ));
     }
     Ok(())
 }
@@ -1734,6 +1845,7 @@ mod tests {
             created_at: 1,
             attempts: 0,
             last_error: None,
+            failed_at: None,
         });
 
         assert_eq!(summary.kind, "Send");

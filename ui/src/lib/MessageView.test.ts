@@ -115,7 +115,9 @@ describe("MessageView", () => {
     mocks.app.value.messageLoading = true;
     render(MessageView);
 
-    const status = screen.getByRole("status");
+    // Header meta keeps its own "Fetching…" status; the skeleton one is
+    // the region carrying "Loading message".
+    const status = screen.getByText("Loading message").closest('[role="status"]')!;
     expect(status).toHaveTextContent("Loading message");
     expect(status.querySelector('[aria-hidden="true"]')).not.toBeNull();
   });
@@ -197,5 +199,41 @@ describe("MessageView", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Details" }));
     expect(screen.getByText("Message-ID")).toBeInTheDocument();
+  });
+
+  it("header_paints_from_envelope_while_loading", () => {
+    mocks.app.value.message = null;
+    mocks.app.value.messageLoading = true;
+    mocks.app.value.selectedEnvelope = {
+      ...message.envelope,
+      subject: "Warm subject",
+    };
+    render(MessageView);
+
+    expect(screen.getByRole("heading", { name: "Warm subject" })).toBeInTheDocument();
+    expect(document.querySelector(".message-skeleton")).toBeTruthy();
+  });
+
+  it("skeleton_confined_to_body", () => {
+    mocks.app.value.message = null;
+    mocks.app.value.messageLoading = true;
+    mocks.app.value.selectedEnvelope = message.envelope;
+    const { container } = render(MessageView);
+
+    expect(container.querySelector("header .message-skeleton")).toBeNull();
+    expect(container.querySelector("header")).toBeTruthy();
+  });
+
+  it("header_switches_to_message_when_loaded", () => {
+    mocks.app.value.messageLoading = false;
+    mocks.app.value.selectedEnvelope = {
+      ...message.envelope,
+      subject: "Stale envelope subject",
+    };
+    mocks.app.value.message = message;
+    render(MessageView);
+
+    expect(screen.getByRole("heading", { name: "Remote images" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Stale envelope subject" })).toBeNull();
   });
 });

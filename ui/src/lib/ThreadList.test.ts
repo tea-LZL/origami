@@ -49,6 +49,12 @@ const mocks = vi.hoisted(() => ({
   recordFolderScroll: vi.fn(),
   restoredFolderScroll: vi.fn(() => null),
   setUnreadOnly: vi.fn(),
+  prefetcher: {
+    hover: vi.fn(),
+    focusMove: vi.fn(),
+    viewport: vi.fn(),
+    cancel: vi.fn(),
+  },
 }));
 
 vi.mock("./stores.svelte", () => mocks);

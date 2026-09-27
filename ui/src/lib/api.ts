@@ -15,6 +15,7 @@ export interface AccountStatusDto {
   state: "online" | "syncing" | "error";
   error: string | null;
   pendingOperations: number;
+  failedOperations: number;
 }
 
 export interface OutboxSummary {
@@ -24,6 +25,7 @@ export interface OutboxSummary {
   createdAt: number;
   attempts: number;
   lastError: string | null;
+  failedAt: number | null;
 }
 
 export interface AttachmentMeta {
@@ -151,6 +153,9 @@ export const api = {
     invoke<Envelope[]>("list_unified_inbox", { page, pageSize, unreadOnly }),
   prefetchSelectedFolder: (folderId: string) =>
     invoke<void>("prefetch_selected_folder", { folderId }),
+  prefetchDisplay: (
+    requests: { folderId: string; serverUid: number; priority: "open" | "predictive" | "viewport" }[],
+  ) => invoke<void>("prefetch_display", { requests }),
   getCachedMessage: (folderId: string, serverUid: number) =>
     invoke<MessageDto | null>("get_cached_message", { folderId, serverUid }),
   getMessage: (folderId: string, serverUid: number) =>
@@ -189,6 +194,7 @@ export const api = {
   accountStatuses: () => invoke<Record<string, AccountStatusDto>>("account_statuses"),
   listOutbox: (accountId: string) => invoke<OutboxSummary[]>("list_outbox", { accountId }),
   retryOutbox: (accountId: string) => invoke<void>("retry_outbox", { accountId }),
+  reopenOutboxEntry: (id: number) => invoke<void>("reopen_outbox_entry", { id }),
   getNotificationSettings: () =>
     invoke<NotificationSettings>("get_notification_settings"),
   updateNotificationSettings: (settings: NotificationSettings) =>

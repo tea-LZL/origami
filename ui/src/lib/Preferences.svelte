@@ -113,8 +113,10 @@
               { value: "system", label: "Follow system" },
               { value: "light", label: "Paper light" },
               { value: "dark", label: "Midnight blue" },
+              { value: "ember", label: "Ember warm dark" },
             ]}
-            onValueChange={(theme) => setPreferences({ theme: theme as "system" | "light" | "dark" })}
+            onValueChange={(theme) =>
+              setPreferences({ theme: theme as "system" | "light" | "dark" | "ember" })}
           />
         </label>
 

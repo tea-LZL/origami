@@ -6,7 +6,7 @@
 //! blocking contexts (`spawn_blocking`) — the sync engine already is one.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use rusqlite::types::Value;
@@ -123,7 +123,14 @@ impl Store {
         }
         let conn = Connection::open(path)?;
         private_fs::secure_existing_file(path)?;
-        Self::init(conn)
+        let store = Self::init(conn)?;
+        // SQLite creates WAL sidecars with the process umask; tighten them too.
+        for sidecar in ["-wal", "-shm", "-journal"] {
+            let mut name = path.as_os_str().to_os_string();
+            name.push(sidecar);
+            private_fs::secure_existing_file(&PathBuf::from(name))?;
+        }
+        Ok(store)
     }
 
     /// In-memory database for tests.
@@ -257,6 +264,16 @@ impl Store {
             // and remain available for local reparsing.
             conn.execute("DELETE FROM message_cache", [])?;
             conn.pragma_update(None, "user_version", 8)?;
+        }
+        if version < 9 {
+            // Terminal failure state for poisoned outbox ops (NULL = active).
+            let has_col: bool = conn
+                .prepare("SELECT 1 FROM pragma_table_info('outbox') WHERE name = 'failed_at'")?
+                .exists([])?;
+            if !has_col {
+                conn.execute("ALTER TABLE outbox ADD COLUMN failed_at INTEGER", [])?;
+            }
+            conn.pragma_update(None, "user_version", 9)?;
         }
         Ok(())
     }
@@ -666,6 +683,94 @@ impl Store {
         Ok(n > 0)
     }
 
+    /// Apply a same-folder flag batch in one transaction: partial batches
+    /// are never visible.
+    pub fn update_flags_batch(&self, folder_id: &str, updates: &[(u32, Vec<Flag>)]) -> Result<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        for (server_uid, flags) in updates {
+            let flags_json = serde_json::to_string(flags)
+                .map_err(|e| Error::Backend(format!("flags json: {e}")))?;
+            tx.execute(
+                "UPDATE messages SET flags_json = ?3
+                 WHERE folder_id = ?1 AND server_uid = ?2",
+                params![folder_id, *server_uid as i64, flags_json],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Apply a same-folder keyword batch in one transaction: partial batches
+    /// are never visible.
+    pub fn update_keywords_batch(
+        &self,
+        folder_id: &str,
+        updates: &[(u32, Vec<String>)],
+    ) -> Result<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        for (server_uid, keywords) in updates {
+            let keywords_json = serde_json::to_string(keywords)
+                .map_err(|e| Error::Backend(format!("keywords json: {e}")))?;
+            tx.execute(
+                "UPDATE messages SET keywords_json = ?3
+                 WHERE folder_id = ?1 AND server_uid = ?2",
+                params![folder_id, *server_uid as i64, keywords_json],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Apply a flag (and optional keyword) change and queue its outbox op in
+    /// one transaction, so a crash can never leave a changed message without
+    /// its replay entry.
+    pub fn update_flags_with_outbox(
+        &self,
+        account_id: &str,
+        folder_id: &str,
+        mailbox: &str,
+        server_uid: u32,
+        flags: &[Flag],
+        keywords: Option<&[String]>,
+    ) -> Result<i64> {
+        let mut conn = self.conn()?;
+        let flags_json =
+            serde_json::to_string(flags).map_err(|e| Error::Backend(format!("flags json: {e}")))?;
+        let op = OutboxOp::StoreFlags {
+            mailbox: mailbox.to_string(),
+            server_uid,
+            flags: flags.to_vec(),
+            keywords: keywords.map(|keywords| keywords.to_vec()),
+        };
+        let op_json = serde_json::to_string(&op)
+            .map_err(|e| Error::Backend(format!("outbox op json: {e}")))?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            "UPDATE messages SET flags_json = ?3
+             WHERE folder_id = ?1 AND server_uid = ?2",
+            params![folder_id, server_uid as i64, flags_json],
+        )?;
+        if let Some(keywords) = keywords {
+            let keywords_json = serde_json::to_string(keywords)
+                .map_err(|e| Error::Backend(format!("keywords json: {e}")))?;
+            tx.execute(
+                "UPDATE messages SET keywords_json = ?3
+                 WHERE folder_id = ?1 AND server_uid = ?2",
+                params![folder_id, server_uid as i64, keywords_json],
+            )?;
+        }
+        tx.execute(
+            "INSERT INTO outbox (account_id, op_json, created_at)
+             VALUES (?1, ?2, unixepoch())",
+            params![account_id, op_json],
+        )?;
+        let id = tx.last_insert_rowid();
+        tx.commit()?;
+        Ok(id)
+    }
+
     /// Replace user-defined IMAP keywords for one message.
     pub fn update_keywords(
         &self,
@@ -697,6 +802,35 @@ impl Store {
             params![folder_id, server_uid as i64],
         )?;
         Ok(n > 0)
+    }
+
+    /// Delete a same-folder UID batch in one transaction: partial batches
+    /// are never visible.
+    pub fn delete_messages_by_uids(&self, folder_id: &str, server_uids: &[u32]) -> Result<u32> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let mut deleted = 0u32;
+        for server_uid in server_uids {
+            tx.execute(
+                "DELETE FROM messages_fts WHERE rowid IN
+                   (SELECT rowid FROM messages WHERE folder_id = ?1 AND server_uid = ?2)",
+                params![folder_id, *server_uid as i64],
+            )?;
+            deleted += tx.execute(
+                "DELETE FROM messages WHERE folder_id = ?1 AND server_uid = ?2",
+                params![folder_id, *server_uid as i64],
+            )? as u32;
+        }
+        tx.commit()?;
+        Ok(deleted)
+    }
+
+    /// Flush the WAL on shutdown so a hard kill right after leaves a clean
+    /// checkpointed database.
+    pub fn shutdown_flush(&self) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+        Ok(())
     }
 
     /// Highest server UID stored for a folder (0 when empty).
@@ -870,6 +1004,35 @@ impl Store {
             .skip(offset)
             .take(page_size as usize)
             .collect())
+    }
+
+    /// Bound the parsed-display cache: drop rows older than `max_age_days`
+    /// (by message received time, falling back to cache time), then keep only
+    /// the newest `max_rows`. `message_cache` is a pure cache — blobs, FTS,
+    /// and envelope rows are untouched. Returns the number of rows deleted.
+    pub fn evict_display_cache(&self, max_rows: u32, max_age_days: u32) -> Result<u32> {
+        let conn = self.conn()?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|error| Error::Backend(format!("system clock before Unix epoch: {error}")))?
+            .as_secs() as i64;
+        let cutoff = now - i64::from(max_age_days) * 24 * 60 * 60;
+        let aged = conn.execute(
+            "DELETE FROM message_cache WHERE message_id IN (
+                 SELECT c.message_id FROM message_cache c
+                 JOIN messages m ON m.id = c.message_id
+                 WHERE COALESCE(m.received_at, c.cached_at) < ?1)",
+            params![cutoff],
+        )?;
+        let capped = conn.execute(
+            "DELETE FROM message_cache WHERE message_id IN (
+                 SELECT c.message_id FROM message_cache c
+                 JOIN messages m ON m.id = c.message_id
+                 ORDER BY COALESCE(m.received_at, c.cached_at) DESC
+                 LIMIT -1 OFFSET ?1)",
+            params![max_rows],
+        )?;
+        Ok((aged + capped) as u32)
     }
 
     /// List recent messages whose display data is not cached locally.
@@ -1766,7 +1929,7 @@ impl Store {
     pub fn outbox_list(&self, account_id: &str) -> Result<Vec<OutboxEntry>> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, account_id, op_json, created_at, attempts, last_error
+            "SELECT id, account_id, op_json, created_at, attempts, last_error, failed_at
                FROM outbox WHERE account_id = ?1 ORDER BY id",
         )?;
         let rows = stmt.query_map(params![account_id], |r| {
@@ -1777,11 +1940,12 @@ impl Store {
                 r.get::<_, i64>(3)?,
                 r.get::<_, i64>(4)?,
                 r.get::<_, Option<String>>(5)?,
+                r.get::<_, Option<i64>>(6)?,
             ))
         })?;
         let mut out = Vec::new();
         for row in rows {
-            let (id, account_id, op_json, created_at, attempts, last_error) = row?;
+            let (id, account_id, op_json, created_at, attempts, last_error, failed_at) = row?;
             let op: OutboxOp = serde_json::from_str(&op_json)
                 .map_err(|e| Error::Backend(format!("outbox op parse: {e}")))?;
             out.push(OutboxEntry {
@@ -1791,6 +1955,7 @@ impl Store {
                 created_at,
                 attempts: attempts as u32,
                 last_error,
+                failed_at,
             });
         }
         Ok(out)
@@ -1798,7 +1963,18 @@ impl Store {
 
     pub fn outbox_count(&self, account_id: &str) -> Result<u32> {
         let count: i64 = self.conn()?.query_row(
-            "SELECT COUNT(*) FROM outbox WHERE account_id = ?1",
+            "SELECT COUNT(*) FROM outbox WHERE account_id = ?1 AND failed_at IS NULL",
+            params![account_id],
+            |row| row.get(0),
+        )?;
+        u32::try_from(count).map_err(|_| Error::Backend("outbox count exceeds u32".into()))
+    }
+
+    /// Terminal-failed rows; the Outbox entry points surface these so a fully
+    /// poisoned outbox stays reachable (with per-row Retry).
+    pub fn outbox_failed_count(&self, account_id: &str) -> Result<u32> {
+        let count: i64 = self.conn()?.query_row(
+            "SELECT COUNT(*) FROM outbox WHERE account_id = ?1 AND failed_at IS NOT NULL",
             params![account_id],
             |row| row.get(0),
         )?;
@@ -1813,9 +1989,32 @@ impl Store {
 
     pub fn outbox_mark_failed(&self, id: i64, error: &str) -> Result<()> {
         let conn = self.conn()?;
+        // Errors can embed credentials from protocol chatter; never persist them.
+        let redacted = crate::redact::redact_secrets(error);
         conn.execute(
             "UPDATE outbox SET attempts = attempts + 1, last_error = ?2 WHERE id = ?1",
-            params![id, error],
+            params![id, redacted],
+        )?;
+        Ok(())
+    }
+
+    /// Move an op to the terminal failed state (poison: never auto-retried).
+    pub fn outbox_fail_permanent(&self, id: i64, error: &str) -> Result<()> {
+        let conn = self.conn()?;
+        let redacted = crate::redact::redact_secrets(error);
+        conn.execute(
+            "UPDATE outbox SET failed_at = unixepoch(), last_error = ?2 WHERE id = ?1",
+            params![id, redacted],
+        )?;
+        Ok(())
+    }
+
+    /// Reopen a terminal-failed op for retry (explicit user action).
+    pub fn outbox_reopen(&self, id: i64) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute(
+            "UPDATE outbox SET failed_at = NULL, attempts = 0, last_error = NULL WHERE id = ?1",
+            params![id],
         )?;
         Ok(())
     }
@@ -1912,4 +2111,208 @@ fn like_pattern(value: &str) -> String {
             .replace('%', "\\%")
             .replace('_', "\\_")
     )
+}
+
+/// Test/debug invariant check: no orphan message rows and no FTS rows
+/// pointing at deleted messages. Physical-source retention is guaranteed by
+/// the row model itself (a source IS a row) and pinned by the dedupe tests.
+pub fn assert_store_invariants(conn: &Connection) -> Result<()> {
+    let orphan_messages: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM messages m
+          LEFT JOIN folders f ON f.id = m.folder_id
+         WHERE f.id IS NULL",
+        [],
+        |row| row.get(0),
+    )?;
+    if orphan_messages > 0 {
+        return Err(Error::Backend(format!(
+            "{orphan_messages} messages reference missing folders"
+        )));
+    }
+    let orphan_fts: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM messages_fts f
+          LEFT JOIN messages m ON m.rowid = f.rowid
+         WHERE m.rowid IS NULL",
+        [],
+        |row| row.get(0),
+    )?;
+    if orphan_fts > 0 {
+        return Err(Error::Backend(format!(
+            "{orphan_fts} fts rows reference missing messages"
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{Address, Envelope, Flag, MailboxRole};
+
+    fn make_envelope(uid: u32, subject: &str) -> Envelope {
+        Envelope {
+            id: format!("msg-{uid}"),
+            mailbox_id: String::new(),
+            subject: subject.to_string(),
+            from: vec![Address {
+                name: None,
+                addr: "a@example.org".into(),
+            }],
+            to: vec![],
+            date: None,
+            received_at: None,
+            flags: vec![],
+            keywords: vec![],
+            has_attachment: false,
+            size: 10,
+            server_uid: Some(uid),
+            message_id: Some(format!("<m{uid}@example.org>")),
+            thread_id: Some(format!("<m{uid}@example.org>")),
+            sources: Vec::new(),
+        }
+    }
+
+    fn fixture() -> (Store, String, String) {
+        let store = Store::open_in_memory().unwrap();
+        let account = store
+            .upsert_account("test", "Test", "t@example.org")
+            .unwrap();
+        let folder = store
+            .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
+            .unwrap();
+        for uid in [1u32, 2, 3] {
+            let mut envelope = make_envelope(uid, &format!("m{uid}"));
+            envelope.mailbox_id = folder.clone();
+            store.upsert_envelope(&folder, &envelope).unwrap();
+        }
+        (store, account, folder)
+    }
+
+    fn flags_of(store: &Store, folder: &str, uid: u32) -> Vec<Flag> {
+        store
+            .list_envelopes(folder, 1, 10)
+            .unwrap()
+            .into_iter()
+            .find(|envelope| envelope.server_uid == Some(uid))
+            .unwrap()
+            .flags
+    }
+
+    #[test]
+    fn multi_row_writes_atomic() {
+        let (store, _account, folder) = fixture();
+        store
+            .conn()
+            .unwrap()
+            .execute_batch(
+                "CREATE TRIGGER boom BEFORE UPDATE ON messages
+                 WHEN NEW.server_uid = 2 BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+            )
+            .unwrap();
+
+        let updates = vec![
+            (1u32, vec![Flag::Seen]),
+            (2, vec![Flag::Seen]),
+            (3, vec![Flag::Seen]),
+        ];
+        assert!(store.update_flags_batch(&folder, &updates).is_err());
+        assert_eq!(
+            flags_of(&store, &folder, 1),
+            Vec::<Flag>::new(),
+            "first row must roll back with the failed batch"
+        );
+    }
+
+    #[test]
+    fn flag_and_outbox_write_is_atomic() {
+        let (store, account, folder) = fixture();
+        store
+            .conn()
+            .unwrap()
+            .execute_batch(
+                "CREATE TRIGGER boom BEFORE INSERT ON outbox
+                 BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+            )
+            .unwrap();
+
+        assert!(store
+            .update_flags_with_outbox(&account, &folder, "INBOX", 1, &[Flag::Seen], None)
+            .is_err());
+        assert_eq!(
+            flags_of(&store, &folder, 1),
+            Vec::<Flag>::new(),
+            "flag change must roll back when the outbox row fails"
+        );
+    }
+
+    #[test]
+    fn delete_batch_is_atomic() {
+        let (store, _account, folder) = fixture();
+        store
+            .conn()
+            .unwrap()
+            .execute_batch(
+                "CREATE TRIGGER boom BEFORE DELETE ON messages
+                 WHEN OLD.server_uid = 2 BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+            )
+            .unwrap();
+
+        assert!(store
+            .delete_messages_by_uids(&folder, &[1u32, 2, 3])
+            .is_err());
+        assert_eq!(
+            store.list_envelopes(&folder, 1, 10).unwrap().len(),
+            3,
+            "first delete must roll back with the failed batch"
+        );
+    }
+
+    #[test]
+    fn foreign_keys_enforced() {
+        let (store, _account, _folder) = fixture();
+        let err = store.conn().unwrap().execute(
+            "INSERT INTO messages (id, folder_id, server_uid) VALUES ('x', 'missing-folder', 1)",
+            [],
+        );
+        assert!(err.is_err(), "orphan folder reference must be rejected");
+    }
+
+    #[test]
+    fn physical_sources_never_orphaned() {
+        let (store, account, folder) = fixture();
+        // A second physical copy of logical message "<m1@example.org>".
+        let folder2 = store
+            .upsert_folder(&account, "Archive", MailboxRole::Archive)
+            .unwrap();
+        let mut copy = make_envelope(1, "m1");
+        copy.mailbox_id = folder2.clone();
+        copy.id = "msg-1b".into();
+        store.upsert_envelope(&folder2, &copy).unwrap();
+
+        // Both physical copies show when the query spans both folders.
+        let merged = store
+            .list_envelopes_in_folders(&[folder.clone(), folder2.clone()], 1, 10, false)
+            .unwrap()
+            .into_iter()
+            .find(|envelope| envelope.message_id.as_deref() == Some("<m1@example.org>"))
+            .expect("logical message present");
+        assert_eq!(merged.sources.len(), 2, "both physical copies retained");
+
+        store.delete_message_by_uid(&folder2, 1).unwrap();
+        let merged = store
+            .list_envelopes_in_folders(&[folder.clone(), folder2.clone()], 1, 10, false)
+            .unwrap()
+            .into_iter()
+            .find(|envelope| envelope.message_id.as_deref() == Some("<m1@example.org>"))
+            .unwrap();
+        assert_eq!(merged.sources.len(), 1, "surviving source retained");
+        assert_eq!(merged.sources[0].mailbox_id, folder);
+    }
+
+    #[test]
+    fn assert_store_invariants_clean_on_fixture() {
+        let (store, _account, folder) = fixture();
+        assert_store_invariants(&store.conn().unwrap()).unwrap();
+        let _ = folder;
+    }
 }

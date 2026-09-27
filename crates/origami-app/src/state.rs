@@ -18,10 +18,12 @@ use tokio_util::sync::CancellationToken;
 pub struct AppState {
     pub engine: Arc<SyncEngine>,
     pub store: Store,
+    pub display_lru: Mutex<crate::display_lru::DisplayLru>,
     config: Arc<RwLock<Config>>,
     cancel_tokens: Arc<Mutex<HashMap<String, CancellationToken>>>,
     pub(crate) account_errors: Arc<Mutex<HashMap<String, String>>>,
     pub(crate) syncing_accounts: Arc<Mutex<HashSet<String>>>,
+    prefetch_started: std::sync::Once,
 }
 
 impl AppState {
@@ -34,10 +36,12 @@ impl AppState {
         Ok(Self {
             engine,
             store,
+            display_lru: Mutex::new(crate::display_lru::DisplayLru::new(32 * 1024 * 1024, 300)),
             config: Arc::new(RwLock::new(config)),
             cancel_tokens: Arc::new(Mutex::new(HashMap::new())),
             account_errors: Arc::new(Mutex::new(HashMap::new())),
             syncing_accounts: Arc::new(Mutex::new(HashSet::new())),
+            prefetch_started: std::sync::Once::new(),
         })
     }
 
@@ -114,8 +118,11 @@ impl AppState {
                 account_errors.lock().unwrap().remove(&initial_account_id);
             }
             engine
-                .run_account_loop(aid, sync_account, token_clone)
+                .run_account_loop(aid.clone(), sync_account, token_clone)
                 .await;
+            // The "syncing" marker is event-driven (AccountSyncStarted /
+            // Error / AccountSynced) plus stop paths; removing it here would
+            // race a restarted loop's fresh marker.
         });
 
         if let Some(oauth) = oauth {
@@ -206,7 +213,8 @@ impl AppState {
             .imap
             .as_ref()
             .ok_or_else(|| Error::Config(format!("account `{account_config_id}` has no IMAP")))?;
-        ImapBackend::connect(account_config_id, imap).await
+        origami_core::sync::with_network_timeout(ImapBackend::connect(account_config_id, imap))
+            .await
     }
 
     /// Resolve a folder UUID to (account_config_id, account_db_id, mailbox name).
@@ -221,6 +229,112 @@ impl AppState {
             .ok_or_else(|| Error::Backend(format!("unknown account {account_db_id}")))?;
         Ok((account_config_id, account_db_id, name))
     }
+
+    /// Start the display-prefetch workers once. Must be called from inside
+    /// the Tokio runtime (async command context); `Once` keeps it idempotent.
+    pub fn ensure_prefetch_workers(&self) {
+        let engine = self.engine.clone();
+        let store = self.store.clone();
+        let config = self.config.clone();
+        let account_errors = self.account_errors.clone();
+        self.prefetch_started.call_once(|| {
+            let fetch_engine = engine.clone();
+            engine.prefetch_queue().run(move |key: String| {
+                prefetch_display_key(
+                    fetch_engine.clone(),
+                    store.clone(),
+                    config.clone(),
+                    account_errors.clone(),
+                    key,
+                )
+            });
+        });
+    }
+}
+
+/// Fetch display MIME for one physical source and cache it. Never touches
+/// flags. Writes after a `cancel_all` are dropped (generation protocol).
+/// Accounts in an error state and benign misses are skipped without
+/// counting toward the queue's failure streak.
+async fn prefetch_display_key(
+    engine: Arc<SyncEngine>,
+    store: Store,
+    config: Arc<RwLock<Config>>,
+    account_errors: Arc<Mutex<HashMap<String, String>>>,
+    key: String,
+) -> std::result::Result<(), String> {
+    let Some((folder_id, uid)) = key.rsplit_once(':') else {
+        // Malformed keys are a local mistake, not a fetch failure.
+        return Ok(());
+    };
+    let Ok(server_uid) = uid.parse::<u32>() else {
+        return Ok(());
+    };
+    let folder_id = folder_id.to_string();
+    if store
+        .parsed_message_for_logical_message(&folder_id, server_uid)
+        .map_err(|error| error.to_string())?
+        .is_some()
+    {
+        return Ok(());
+    }
+    let Some((account_db_id, mailbox)) = store
+        .folder_account_and_name(&folder_id)
+        .map_err(|error| error.to_string())?
+    else {
+        // Folder vanished since the UI enqueued the request.
+        return Ok(());
+    };
+    let Some(account_config_id) = store
+        .account_config_id(&account_db_id)
+        .map_err(|error| error.to_string())?
+    else {
+        return Ok(());
+    };
+    if account_errors
+        .lock()
+        .unwrap()
+        .contains_key(&account_config_id)
+    {
+        // Account in error state: prefetch waits for recovery.
+        return Ok(());
+    }
+    let account = {
+        let config = config.read().unwrap();
+        config.accounts.get(&account_config_id).cloned()
+    };
+    let Some(account) = account else {
+        // Account removed since the UI enqueued the request.
+        return Ok(());
+    };
+    let Some(imap) = account.imap else {
+        return Ok(());
+    };
+    let generation = engine.prefetch_queue().generation();
+    let backend =
+        origami_core::sync::with_network_timeout(ImapBackend::connect(&account_config_id, &imap))
+            .await
+            .map_err(|error| error.to_string())?;
+    let display = origami_core::sync::with_network_timeout(
+        backend.fetch_display_message(&mailbox, server_uid),
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    if engine.prefetch_queue().generation() != generation {
+        return Ok(());
+    }
+    let envelope = store
+        .get_envelope(&folder_id, server_uid)
+        .map_err(|error| error.to_string())?;
+    let Some(envelope) = envelope else {
+        // Message deleted since the UI enqueued the request.
+        return Ok(());
+    };
+    let fallback = format!("display:{folder_id}:{server_uid}");
+    engine
+        .cache_display_message_sources(&envelope.sources, &display, &fallback)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 async fn refresh_oauth_token(
@@ -290,4 +404,144 @@ pub fn account_from_config<'c>(
 /// XDG data dir for Origami (~/.local/share/origami).
 pub fn data_dir() -> PathBuf {
     origami_core::config::data_dir()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use origami_core::model::MailboxRole;
+
+    #[tokio::test]
+    async fn benign_prefetch_misses_do_not_disable_queue() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_memory().unwrap();
+        let blobs = origami_core::blob::BlobStore::open(&dir.path().join("blobs")).unwrap();
+        let engine = Arc::new(SyncEngine::new(store.clone(), blobs));
+        let config = Arc::new(RwLock::new(Config::default()));
+
+        let account = store
+            .upsert_account("test", "Test", "t@example.org")
+            .unwrap();
+        let folder = store
+            .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
+            .unwrap();
+
+        // Malformed key, unknown folder, and envelope-gone are benign skips.
+        for key in [
+            "nope".to_string(),
+            "missing-folder:7".to_string(),
+            format!("{folder}:99"),
+        ] {
+            let result = prefetch_display_key(
+                engine.clone(),
+                store.clone(),
+                config.clone(),
+                Arc::new(Mutex::new(HashMap::new())),
+                key.clone(),
+            )
+            .await;
+            assert!(result.is_ok(), "benign miss must not be an error: {key}");
+            // Mirror the worker's streak accounting for an Ok outcome.
+            engine.prefetch_queue().note_success();
+        }
+
+        assert!(
+            engine
+                .prefetch_queue()
+                .enqueue(origami_core::prefetch_queue::PrefetchRequest::new(
+                    "k",
+                    origami_core::prefetch_queue::PrefetchPriority::Viewport,
+                )),
+            "benign misses must not trip the failure kill switch"
+        );
+    }
+
+    #[tokio::test]
+    async fn prefetch_noop_when_account_error() {
+        use origami_core::config::{ImapConfig, Secret};
+        use origami_core::model::{Address, Envelope, Flag};
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_memory().unwrap();
+        let blobs = origami_core::blob::BlobStore::open(&dir.path().join("blobs")).unwrap();
+        let engine = Arc::new(SyncEngine::new(store.clone(), blobs));
+
+        // Account points at a dead port so a real fetch attempt errors.
+        let mut config = Config::default();
+        config.accounts.insert(
+            "test".to_string(),
+            AccountConfig {
+                name: "Test".into(),
+                email: "t@example.org".into(),
+                default: true,
+                imap: Some(ImapConfig {
+                    host: "127.0.0.1".into(),
+                    port: Some(1),
+                    tls: false,
+                    starttls: false,
+                    auth: AuthMechanism::Login,
+                    username: "u".into(),
+                    secret: Some(Secret::Raw { raw: "p".into() }),
+                }),
+                smtp: None,
+            },
+        );
+        let config = Arc::new(RwLock::new(config));
+
+        let account = store
+            .upsert_account("test", "Test", "t@example.org")
+            .unwrap();
+        let folder = store
+            .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
+            .unwrap();
+        let envelope = Envelope {
+            id: "msg-7".to_string(),
+            mailbox_id: folder.clone(),
+            subject: "warm".into(),
+            from: vec![Address {
+                name: None,
+                addr: "a@example.org".into(),
+            }],
+            to: vec![],
+            date: None,
+            received_at: None,
+            flags: vec![Flag::Seen],
+            keywords: vec![],
+            has_attachment: false,
+            size: 10,
+            server_uid: Some(7),
+            message_id: Some("<warm@example.org>".into()),
+            thread_id: Some("<warm@example.org>".into()),
+            sources: Vec::new(),
+        };
+        store.upsert_envelope(&folder, &envelope).unwrap();
+
+        let account_errors: Arc<Mutex<HashMap<String, String>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        account_errors
+            .lock()
+            .unwrap()
+            .insert("test".to_string(), "IMAP down".to_string());
+
+        for _ in 0..6 {
+            let result = prefetch_display_key(
+                engine.clone(),
+                store.clone(),
+                config.clone(),
+                account_errors.clone(),
+                format!("{folder}:7"),
+            )
+            .await;
+            assert!(result.is_ok(), "error-state account must be a benign skip");
+        }
+        assert!(
+            engine
+                .prefetch_queue()
+                .enqueue(origami_core::prefetch_queue::PrefetchRequest::new(
+                    "k",
+                    origami_core::prefetch_queue::PrefetchPriority::Viewport,
+                )),
+            "account-error skips must not trip the failure kill switch"
+        );
+    }
 }

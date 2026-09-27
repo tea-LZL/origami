@@ -252,6 +252,8 @@ pub struct OutboxEntry {
     pub created_at: i64,
     pub attempts: u32,
     pub last_error: Option<String>,
+    /// Terminal failure timestamp (epoch seconds); None while active.
+    pub failed_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Mailbox } from "./types";
-import { flattenFolderTree, sidebarFolders, sidebarTree } from "./folderNav";
+import { flattenFolderTree, folderRoleHue, sidebarFolders, sidebarTree } from "./folderNav";
 
 function folder(partial: Partial<Mailbox> & Pick<Mailbox, "id" | "name" | "role">): Mailbox {
   return {
@@ -60,6 +60,26 @@ describe("sidebarFolders", () => {
     expect(rows[0]?.id).toBe("virtual:Work");
     expect(rows[0]?.unread).toBe(3);
     expect(rows[0]?.folder).toBeNull();
+  });
+});
+
+describe("folderRoleHue", () => {
+  it("folder_role_hue_maps_specials", () => {
+    expect(folderRoleHue("Inbox")).toBe("inbox");
+    expect(folderRoleHue("Drafts")).toBe("drafts");
+    expect(folderRoleHue("Sent")).toBe("sent");
+    expect(folderRoleHue("Junk")).toBe("junk");
+    expect(folderRoleHue("Trash")).toBe("trash");
+    expect(folderRoleHue("Archive")).toBe("archive");
+    expect(folderRoleHue("Other")).toBe("neutral");
+    expect(folderRoleHue(null)).toBe("neutral");
+  });
+
+  it("semantic_surfaces_have_text", () => {
+    const folders = [folder({ id: "inbox", name: "INBOX", role: "Inbox" })];
+    const rows = flattenFolderTree(sidebarTree(folders), new Set());
+    // The hue is decoration; the node label is the accessible name source.
+    expect(rows[0]?.label).toBe("Inbox");
   });
 });
 

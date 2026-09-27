@@ -83,8 +83,116 @@ pub struct DisplayMessage {
     pub sections: Vec<DisplaySection>,
 }
 
-/// Parse a raw message into displayable parts.
+/// Maximum nested MIME multipart depth accepted before parsing is refused.
+pub const MAX_MIME_PART_DEPTH: u32 = 32;
+/// Maximum size of the raw header block accepted before parsing is refused.
+pub const MAX_HEADER_BYTES: usize = 64 * 1024;
+/// Maximum decoded attachment payload; oversized decodes are refused.
+pub const MAX_ATTACH_DECODE_BYTES: usize = 64 * 1024 * 1024;
+
+/// Parse a raw message into displayable parts. Total: never panics and never
+/// allocates unbounded; caps trip `parse_warnings` and return a truncated-safe
+/// result instead.
 pub fn parse(raw: &[u8]) -> Option<ParsedMessage> {
+    if let Some(warning) = mime_limit_warning(raw) {
+        return Some(ParsedMessage {
+            parse_warnings: vec![warning],
+            ..Default::default()
+        });
+    }
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parse_inner(raw))).unwrap_or_else(
+        |_| {
+            Some(ParsedMessage {
+                parse_warnings: vec!["MIME parsing failed safely".to_string()],
+                ..Default::default()
+            })
+        },
+    )
+}
+
+fn mime_limit_warning(raw: &[u8]) -> Option<String> {
+    let scan = unfold_for_scan(raw);
+    let depth = count_token(&scan, b"multipart/") + count_token(&scan, b"message/rfc822");
+    if depth > MAX_MIME_PART_DEPTH {
+        return Some(format!(
+            "MIME nesting exceeds the depth limit of {MAX_MIME_PART_DEPTH}"
+        ));
+    }
+    if header_block_len(raw) > MAX_HEADER_BYTES {
+        return Some(format!(
+            "MIME header block exceeds the {MAX_HEADER_BYTES}-byte limit"
+        ));
+    }
+    None
+}
+
+/// Undo RFC 5322 folding whitespace (and CR) so split tokens like
+/// `multi\r\n part/` rejoin into `multipart/` for scanning. Bounded by input.
+fn unfold_for_scan(raw: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(raw.len());
+    let mut i = 0;
+    while i < raw.len() {
+        match raw[i] {
+            b'\r' => i += 1,
+            b'\n' => {
+                i += 1;
+                while i < raw.len() && (raw[i] == b' ' || raw[i] == b'\t') {
+                    i += 1;
+                }
+            }
+            byte => {
+                out.push(byte);
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+fn count_token(haystack: &[u8], needle: &[u8]) -> u32 {
+    let mut count = 0u32;
+    let mut offset = 0usize;
+    while let Some(found) = find_ascii_ignore_case(&haystack[offset..], needle) {
+        count += 1;
+        offset += found + needle.len();
+        if count > MAX_MIME_PART_DEPTH || offset >= haystack.len() {
+            break;
+        }
+    }
+    count
+}
+
+fn header_block_len(raw: &[u8]) -> usize {
+    let crlf = find_bytes(raw, b"\r\n\r\n");
+    let lf = find_bytes(raw, b"\n\n");
+    match (crlf, lf) {
+        (Some(a), Some(b)) => a.min(b),
+        (Some(a), None) => a,
+        (None, Some(b)) => b,
+        (None, None) => raw.len(),
+    }
+}
+
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    (0..=haystack.len() - needle.len()).find(|&i| &haystack[i..i + needle.len()] == needle)
+}
+
+fn find_ascii_ignore_case(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    (0..=haystack.len() - needle.len()).find(|&i| {
+        haystack[i..i + needle.len()]
+            .iter()
+            .zip(needle)
+            .all(|(a, b)| a.eq_ignore_ascii_case(b))
+    })
+}
+
+fn parse_inner(raw: &[u8]) -> Option<ParsedMessage> {
     let message = MessageParser::default().parse(raw)?;
     let text = message.body_text(0).map(|c| c.into_owned());
     let html = message.body_html(0).map(|c| c.into_owned());
@@ -206,20 +314,31 @@ pub fn parse_display(display: &DisplayMessage) -> Option<ParsedMessage> {
 
 /// Decode one independently fetched MIME part using its MIME headers.
 pub fn decode_mime_part(mime_headers: &[u8], body: &[u8]) -> Option<Vec<u8>> {
+    if body.len() > MAX_ATTACH_DECODE_BYTES {
+        return None;
+    }
     let mut raw = mime_headers.to_vec();
     if !raw.ends_with(b"\r\n\r\n") && !raw.ends_with(b"\n\n") {
         raw.extend_from_slice(b"\r\n");
     }
     raw.extend_from_slice(body);
     let message = MessageParser::default().parse(&raw)?;
-    Some(message.parts.first()?.contents().to_vec())
+    let contents = message.parts.first()?.contents().to_vec();
+    if contents.len() > MAX_ATTACH_DECODE_BYTES {
+        return None;
+    }
+    Some(contents)
 }
 
 /// Extract the decoded bytes of the attachment at `index`.
 pub fn attachment_bytes(raw: &[u8], index: usize) -> Option<Vec<u8>> {
     let message = MessageParser::default().parse(raw)?;
     let part_id = *message.attachments.get(index)?;
-    Some(message.parts.get(part_id as usize)?.contents().to_vec())
+    let contents = message.parts.get(part_id as usize)?.contents().to_vec();
+    if contents.len() > MAX_ATTACH_DECODE_BYTES {
+        return None;
+    }
+    Some(contents)
 }
 
 /// Text suitable for local indexing without parsing the raw message again.
@@ -381,6 +500,21 @@ mod tests {
     fn attachment_bytes_are_decoded() {
         let bytes = attachment_bytes(RAW.as_bytes(), 0).unwrap();
         assert_eq!(bytes, b"hello");
+    }
+
+    #[test]
+    fn attachment_bytes_rejects_bad_index() {
+        assert!(attachment_bytes(RAW.as_bytes(), 5).is_none());
+        assert!(attachment_bytes(RAW.as_bytes(), usize::MAX).is_none());
+    }
+
+    #[test]
+    fn attachment_extraction_scoped_to_own_raw() {
+        let other = RAW.replace("aGVsbG8=", "Z29vZGJ5ZQ=="); // "goodbye"
+        let from_first = attachment_bytes(RAW.as_bytes(), 0).unwrap();
+        let from_second = attachment_bytes(other.as_bytes(), 0).unwrap();
+        assert_eq!(from_first, b"hello");
+        assert_eq!(from_second, b"goodbye");
     }
 
     #[test]

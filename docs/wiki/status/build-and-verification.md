@@ -68,6 +68,19 @@ navigation, and both themes.
   `vX.Y.Z` tags ([[github-cicd-md]]). First verified run: 36269969749 (2026-09-26) — ui,
   rust, package_arch green; artifact `origami-master` (9.2 MB) uploaded.
 
+## Palette verification (2026-09-27)
+
+- Automated: `npm test --prefix ui` (91 tests incl. theme resolution, ember warmth,
+  folder-role hues, outbox chips), `npm run check --prefix ui` (0 errors),
+  `node ui/scripts/check-contrast.mjs` (WCAG AA gate over light/dark/ember token
+  pairs — `npm run check:contrast`).
+- `forced-colors` paths unchanged by the palette work (app.css + component blocks
+  intact); pip/tint rules verified by inspection only.
+- **Manual pass still owed** (GUI not runnable in the automated environment): open
+  each theme (light/dark/ember) and check sidebar role dots, 12 tag chips, outbox
+  chips, unread pip, skeletons, composer, dialogs; flip OS scheme with preference
+  "system"; run once under `forced-colors: active`.
+
 ## Related
 
 - [[release-readiness]] · [[test-suite-md]] · [[ui-frontend]] · [[origami-core]]

@@ -8,7 +8,10 @@
   let maximized = $state(false);
   let statuses = $derived(Object.values(app.value.accountStatuses));
   let pendingOperations = $derived(
-    statuses.reduce((total, status) => total + status.pendingOperations, 0),
+    statuses.reduce(
+      (total, status) => total + status.pendingOperations + (status.failedOperations ?? 0),
+      0,
+    ),
   );
   let aggregateState = $derived(
     statuses.some((status) => status.state === "error")

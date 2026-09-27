@@ -159,3 +159,20 @@ function escapeAttribute(value: string): string {
 function protectStyleText(value: string): string {
   return value.replace(/<\/style/gi, "<\\/style");
 }
+
+const ALLOWED_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
+
+/**
+ * Normalized external href, or null when the scheme is not system-openable.
+ * Rejects javascript:, file:, data:, vbscript:, and custom schemes — including
+ * case and ASCII tab/newline obfuscations.
+ */
+export function allowedLinkHref(href: string): string | null {
+  const cleaned = href.trim().replace(/[\t\n\r]/g, "");
+  try {
+    const url = new URL(cleaned);
+    return ALLOWED_LINK_PROTOCOLS.has(url.protocol.toLowerCase()) ? url.href : null;
+  } catch {
+    return null;
+  }
+}

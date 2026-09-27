@@ -3,6 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import {
     app,
+    applyThemePreference,
     bootstrap,
     closeComposer,
     commitPaneWidth,
@@ -41,8 +42,7 @@
 
   $effect(() => {
     const root = document.documentElement;
-    if (app.value.theme === "system") delete root.dataset.theme;
-    else root.dataset.theme = app.value.theme;
+    applyThemePreference(app.value.theme);
     root.dataset.density = app.value.density;
     root.dataset.motion = app.value.motion;
   });

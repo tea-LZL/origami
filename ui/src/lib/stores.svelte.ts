@@ -13,6 +13,7 @@ import {
   type AccountStatusDto,
 } from "./api";
 import { withUnreadToken } from "./searchHighlight";
+import { createPrefetcher } from "./prefetch";
 import {
   applyUnreadListReload,
   folderViewKey as unreadFolderViewKey,
@@ -20,6 +21,46 @@ import {
   unreadKeepIds,
 } from "./unreadList";
 import type { Envelope, EnvelopeSource, Flag, Mailbox, MailboxRole } from "./types";
+
+/// Shared display-prefetch scheduler (hover/keyboard predicted, viewport later).
+export const prefetcher = createPrefetcher();
+
+export type ThemePref = "system" | "light" | "dark" | "ember";
+export type ThemeName = Exclude<ThemePref, "system">;
+
+/** Resolve a preference to a concrete theme attribute value. */
+export function resolveTheme(pref: ThemePref, prefersDark: boolean): ThemeName {
+  return pref === "system" ? (prefersDark ? "dark" : "light") : pref;
+}
+
+/** Saved preference values outside the known set fall back to "system". */
+export function normalizeThemePref(raw: unknown): ThemePref {
+  return raw === "system" || raw === "light" || raw === "dark" || raw === "ember"
+    ? raw
+    : "system";
+}
+
+let appliedPref: ThemePref = "system";
+let systemListenerBound = false;
+
+/**
+ * Apply the theme preference as a concrete `data-theme` attribute (never
+ * absent — the CSS has no media-query fallback) and follow OS scheme flips
+ * while the preference stays "system".
+ */
+export function applyThemePreference(pref: ThemePref): void {
+  appliedPref = pref;
+  const media = typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia("(prefers-color-scheme: dark)")
+    : null;
+  document.documentElement.dataset.theme = resolveTheme(pref, media?.matches ?? false);
+  if (media && !systemListenerBound) {
+    systemListenerBound = true;
+    media.addEventListener("change", (event) => {
+      document.documentElement.dataset.theme = resolveTheme(appliedPref, event.matches);
+    });
+  }
+}
 
 export type WorkspaceLayout = "three-pane" | "two-pane" | "reading";
 
@@ -73,7 +114,7 @@ export interface State {
   accountStatuses: Record<string, AccountStatusDto>;
   preferencesOpen: boolean;
   outboxAccountId: string | null;
-  theme: "system" | "light" | "dark";
+  theme: ThemePref;
   density: "comfortable" | "compact";
   motion: "system" | "full" | "reduced";
   layout: WorkspaceLayout;
@@ -205,8 +246,7 @@ function loadPreferences() {
   try {
     const saved = JSON.parse(localStorage.getItem("origami-preferences") ?? "{}") as Partial<State>;
     patch({
-      theme: ["system", "light", "dark"].includes(saved.theme ?? "")
-        ? saved.theme as State["theme"] : "system",
+      theme: normalizeThemePref(saved.theme),
       density: ["comfortable", "compact"].includes(saved.density ?? "")
         ? saved.density as State["density"] : "comfortable",
       motion: ["system", "full", "reduced"].includes(saved.motion ?? "")
@@ -382,6 +422,7 @@ export async function selectFolder(folderId: string) {
   }
   snapshotFolderView();
   messageRequest += 1;
+  prefetcher.cancel();
   const cached = folderViews.get(folderViewKey(folderId));
   folderScrollTop = cached?.scrollTop ?? 0;
   patch({
@@ -411,6 +452,7 @@ export async function selectFolder(folderId: string) {
 
 export async function selectUnifiedInbox() {
   messageRequest += 1;
+  prefetcher.cancel();
   patch({
     selectedFolderId: null,
     unifiedInbox: true,
@@ -560,6 +602,7 @@ export async function selectEnvelope(envelope: Envelope) {
   ) ?? sources[0];
   if (!primary) return;
   const request = ++messageRequest;
+  prefetcher.cancel();
   patch({ selectedEnvelope: envelope, messageLoading: true });
   try {
     let message: MessageDto | null = null;
@@ -614,6 +657,7 @@ export async function selectEnvelope(envelope: Envelope) {
         item.id === envelope.id ? { ...item, hasAttachment: attachmentState } : item
       ),
     });
+    prefetcher.focusMove(envelope);
     // First-open marks as read: optimistic local flip + command.
     if (!messageWithAttachmentState.envelope.flags.includes("Seen")) {
       const next: Flag[] = Array.from(new Set([...messageWithAttachmentState.envelope.flags, "Seen"]));
@@ -644,6 +688,7 @@ export async function selectEnvelope(envelope: Envelope) {
 
 export async function searchMessages(query: string) {
   const normalized = query.trim();
+  prefetcher.cancel();
   patch({
     searchQuery: query,
     selectedMessageIds: [],

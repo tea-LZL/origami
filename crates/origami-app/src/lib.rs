@@ -1,4 +1,5 @@
 mod commands;
+pub mod display_lru;
 mod notifications;
 mod oauth_flow;
 mod state;
@@ -108,7 +109,11 @@ pub fn run() {
                         if event.id == open_id {
                             show_main_window(app);
                         } else if event.id == quit_id {
-                            app.state::<state::AppState>().stop_all_sync();
+                            let state = app.state::<state::AppState>();
+                            state.stop_all_sync();
+                            if let Err(error) = state.store.shutdown_flush() {
+                                tracing::warn!("wal checkpoint on quit failed: {error}");
+                            }
                             app.exit(0);
                         }
                     })
@@ -218,6 +223,7 @@ pub fn run() {
             commands::move_messages,
             commands::delete_messages,
             commands::sync_now,
+            commands::prefetch_display,
             commands::prefetch_selected_folder,
             commands::search,
             commands::search_page,
@@ -238,6 +244,7 @@ pub fn run() {
             commands::remove_account,
             commands::account_statuses,
             commands::list_outbox,
+            commands::reopen_outbox_entry,
             commands::retry_outbox,
             commands::get_notification_settings,
             commands::update_notification_settings,
