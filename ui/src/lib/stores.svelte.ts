@@ -110,6 +110,8 @@ export interface State {
   };
   composerRecovered: boolean;
   composerDiscarded: boolean;
+  markReadDelay: number;
+  messageZoom: number;
   syncing: boolean;
   lastError: string | null;
   lastNotice: string | null;
@@ -158,6 +160,8 @@ const initial: State = {
   composerThreading: { inReplyTo: null, references: [] },
   composerRecovered: false,
   composerDiscarded: false,
+  markReadDelay: 0,
+  messageZoom: 100,
   syncing: false,
   lastError: null,
   lastNotice: null,
@@ -178,6 +182,7 @@ export const app: { value: State } = $state({ value: { ...initial } });
 
 let envelopeRequest = 0;
 let messageRequest = 0;
+let markReadTimer: ReturnType<typeof setTimeout> | null = null;
 let folderRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let undoToken = 0;
 let pendingUndo: {
@@ -242,6 +247,12 @@ function patch(partial: Partial<State>) {
   Object.assign(app.value, partial);
 }
 
+/** Mark-as-read delay seconds: 0 = immediately, -1 = never. */
+function clampMarkReadDelay(value: unknown): number {
+  if (value === -1 || value === 3 || value === 10 || value === 0) return value;
+  return 0;
+}
+
 function bounded(value: unknown, fallback: number, min: number, max: number): number {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.min(max, Math.max(min, Math.round(value)))
@@ -262,6 +273,8 @@ function loadPreferences() {
       sidebarWidth: bounded(saved.sidebarWidth, 260, 200, 420),
       threadListWidth: bounded(saved.threadListWidth, 360, 280, 520),
       unreadOnly: typeof saved.unreadOnly === "boolean" ? saved.unreadOnly : false,
+      markReadDelay: clampMarkReadDelay(saved.markReadDelay),
+      messageZoom: bounded(saved.messageZoom, 100, 50, 300),
     });
   } catch {
     // Invalid preferences fall back to defaults.
@@ -277,11 +290,20 @@ function savePreferences() {
     sidebarWidth: app.value.sidebarWidth,
     threadListWidth: app.value.threadListWidth,
     unreadOnly: app.value.unreadOnly,
+    markReadDelay: app.value.markReadDelay,
+    messageZoom: app.value.messageZoom,
   }));
 }
 
-export function setPreferences(preferences: Partial<Pick<State, "theme" | "density" | "motion">>) {
-  patch(preferences);
+export function setPreferences(
+  preferences: Partial<Pick<State, "theme" | "density" | "motion" | "markReadDelay" | "messageZoom">>,
+) {
+  const patchable = { ...preferences } as typeof preferences;
+  if ("markReadDelay" in patchable) patchable.markReadDelay = clampMarkReadDelay(patchable.markReadDelay);
+  if ("messageZoom" in patchable) {
+    patchable.messageZoom = bounded(patchable.messageZoom, 100, 50, 300);
+  }
+  patch(patchable);
   savePreferences();
 }
 
@@ -611,6 +633,10 @@ export async function selectEnvelope(envelope: Envelope) {
   if (!primary) return;
   const request = ++messageRequest;
   prefetcher.cancel();
+  if (markReadTimer !== null) {
+    clearTimeout(markReadTimer);
+    markReadTimer = null;
+  }
   patch({ selectedEnvelope: envelope, messageLoading: true });
   try {
     let message: MessageDto | null = null;
@@ -666,31 +692,46 @@ export async function selectEnvelope(envelope: Envelope) {
       ),
     });
     prefetcher.focusMove(envelope);
-    // First-open marks as read: optimistic local flip + command.
-    if (!messageWithAttachmentState.envelope.flags.includes("Seen")) {
-      const next: Flag[] = Array.from(new Set([...messageWithAttachmentState.envelope.flags, "Seen"]));
-      const envelopes = retainForUnreadFilter(app.value.envelopes.map((item) =>
-        item.id === envelope.id ? { ...item, flags: next } : item
-      ));
-      const selectedNext =
-        envelopes.find((item) => item.id === envelope.id) ?? app.value.selectedEnvelope;
-      patch({
-        envelopes,
-        // Keep the selection state in sync with the page patch — a stale
-        // unseen copy would otherwise win later merges (see known-drift).
-        selectedEnvelope: selectedNext,
-        message: {
-          ...messageWithAttachmentState,
-          envelope: { ...messageWithAttachmentState.envelope, flags: next },
-        },
-      });
-      try {
-        await Promise.all(
-          sources.map((source) => api.storeFlags(source.mailboxId, source.serverUid, next)),
-        );
-        await refreshAfterMessageAction();
-      } catch (e) {
-        patch({ lastError: String(e) });
+    // First-open marks as read per the configured delay: optimistic local
+    // flip + command. Delayed flips fire only if the same message is still
+    // selected when the timer lands.
+    const delay = app.value.markReadDelay;
+    if (delay !== -1 && !messageWithAttachmentState.envelope.flags.includes("Seen")) {
+      const markSeen = async () => {
+        if (request !== messageRequest || app.value.selectedEnvelope?.id !== envelope.id) return;
+        const next: Flag[] = Array.from(new Set([...messageWithAttachmentState.envelope.flags, "Seen"]));
+        const envelopes = retainForUnreadFilter(app.value.envelopes.map((item) =>
+          item.id === envelope.id ? { ...item, flags: next } : item
+        ));
+        const selectedNext =
+          envelopes.find((item) => item.id === envelope.id) ?? app.value.selectedEnvelope;
+        patch({
+          envelopes,
+          // Keep the selection state in sync with the page patch — a stale
+          // unseen copy would otherwise win later merges (see known-drift).
+          selectedEnvelope: selectedNext,
+          message: {
+            ...messageWithAttachmentState,
+            envelope: { ...messageWithAttachmentState.envelope, flags: next },
+          },
+        });
+        try {
+          await Promise.all(
+            sources.map((source) => api.storeFlags(source.mailboxId, source.serverUid, next)),
+          );
+          await refreshAfterMessageAction();
+        } catch (e) {
+          patch({ lastError: String(e) });
+        }
+      };
+      if (delay > 0) {
+        if (markReadTimer !== null) clearTimeout(markReadTimer);
+        markReadTimer = setTimeout(() => {
+          markReadTimer = null;
+          void markSeen();
+        }, delay * 1000);
+      } else {
+        await markSeen();
       }
     }
   } catch (e) {

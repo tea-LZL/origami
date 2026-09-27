@@ -7,6 +7,7 @@
     openReplyComposer,
     selectEnvelopeExclusive,
     setLayout,
+    setPreferences,
     setSelectedFlag,
   } from "./stores.svelte";
   import { api } from "./api";
@@ -30,6 +31,37 @@
   let allowedRemoteOrigins = $state<string[]>([]);
   let senderRemoteContentAllowed = $state(false);
   let frameResizeObserver: ResizeObserver | null = null;
+  let emailFrame: HTMLIFrameElement | null = null;
+
+  function applyFrameZoom() {
+    const doc = emailFrame?.contentDocument;
+    if (doc) doc.documentElement.style.fontSize = `${app.value.messageZoom}%`;
+  }
+
+  function onBodyKeydown(event: KeyboardEvent) {
+    if (!(event.ctrlKey || event.metaKey)) return;
+    if (event.key === "=" || event.key === "+") {
+      event.preventDefault();
+      setPreferences({ messageZoom: Math.min(300, app.value.messageZoom + 10) });
+    } else if (event.key === "-") {
+      event.preventDefault();
+      setPreferences({ messageZoom: Math.max(50, app.value.messageZoom - 10) });
+    } else if (event.key === "0") {
+      event.preventDefault();
+      setPreferences({ messageZoom: 100 });
+    }
+  }
+
+  $effect(() => {
+    void app.value.messageZoom;
+    applyFrameZoom();
+  });
+
+  $effect(() => {
+    if (typeof window === "undefined") return;
+    window.addEventListener("keydown", onBodyKeydown);
+    return () => window.removeEventListener("keydown", onBodyKeydown);
+  });
 
   function senderAddress(): string {
     return normalizeRemoteSender(app.value.message?.envelope.from[0]?.addr ?? "") ?? "";
@@ -106,6 +138,8 @@
     if (!(frame instanceof HTMLIFrameElement)) return;
     const document = frame.contentDocument;
     if (!document) return;
+    emailFrame = frame;
+    document.documentElement.style.fontSize = `${app.value.messageZoom}%`;
 
     document.addEventListener("click", openExternalLink);
     const resize = () => {
@@ -331,7 +365,14 @@
       {/if}
 
       {#key env.id}
-      <div class="body" data-navigation="message-body" tabindex="-1" aria-label="Message body" use:messageBodyKeyboard>
+      <div
+        class="body"
+        data-navigation="message-body"
+        tabindex="-1"
+        aria-label="Message body"
+        style:font-size="{app.value.messageZoom ?? 100}%"
+        use:messageBodyKeyboard
+      >
         {#if safeHtml.html && (contentMode === "html" || !safeText)}
           <iframe
             class="email-frame"
