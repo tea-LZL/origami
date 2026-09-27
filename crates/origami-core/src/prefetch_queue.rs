@@ -261,7 +261,11 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
         let order = ORDER.lock().unwrap().clone();
-        assert_eq!(order.first().map(String::as_str), Some("o1"), "open must run first: {order:?}");
+        assert_eq!(
+            order.first().map(String::as_str),
+            Some("o1"),
+            "open must run first: {order:?}"
+        );
         assert_eq!(order.len(), 4, "all four fetched: {order:?}");
     }
 
@@ -310,7 +314,11 @@ mod tests {
         queue.cancel_all();
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        assert_eq!(wrote.load(Ordering::SeqCst), 0, "results after cancel_all must not be written");
+        assert_eq!(
+            wrote.load(Ordering::SeqCst),
+            0,
+            "results after cancel_all must not be written"
+        );
     }
 
     #[tokio::test]
@@ -326,11 +334,19 @@ mod tests {
             })
         });
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        assert_eq!(CALLS.load(Ordering::SeqCst), 0, "paused queue must not fetch");
+        assert_eq!(
+            CALLS.load(Ordering::SeqCst),
+            0,
+            "paused queue must not fetch"
+        );
 
         queue.set_paused(false);
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        assert_eq!(CALLS.load(Ordering::SeqCst), 1, "unpause must drain the queue");
+        assert_eq!(
+            CALLS.load(Ordering::SeqCst),
+            1,
+            "unpause must drain the queue"
+        );
     }
 
     #[tokio::test]
@@ -357,7 +373,10 @@ mod tests {
         assert!(queue.note_failure());
         assert!(queue.note_failure());
         assert!(queue.note_failure());
-        assert!(!queue.note_failure(), "fifth consecutive failure disables prefetch");
+        assert!(
+            !queue.note_failure(),
+            "fifth consecutive failure disables prefetch"
+        );
 
         assert!(!queue.enqueue(PrefetchRequest::new("k", PrefetchPriority::Viewport)));
         queue.set_enabled(true);
@@ -396,7 +415,11 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
         let started = STARTED.lock().unwrap().clone();
-        assert_eq!(started, vec!["slow".to_string()], "popped-but-waiting request must not start after cancel: {started:?}");
+        assert_eq!(
+            started,
+            vec!["slow".to_string()],
+            "popped-but-waiting request must not start after cancel: {started:?}"
+        );
     }
 
     #[tokio::test]

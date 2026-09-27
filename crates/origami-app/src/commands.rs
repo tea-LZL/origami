@@ -1516,7 +1516,9 @@ pub async fn prefetch_display(
         state
             .engine
             .prefetch_queue()
-            .enqueue(origami_core::prefetch_queue::PrefetchRequest::new(key, priority));
+            .enqueue(origami_core::prefetch_queue::PrefetchRequest::new(
+                key, priority,
+            ));
     }
     Ok(())
 }

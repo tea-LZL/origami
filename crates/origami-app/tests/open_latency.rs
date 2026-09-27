@@ -21,11 +21,13 @@ fn cached_open_under_budget() {
     let iterations = 1_000u32;
     let start = std::time::Instant::now();
     for _ in 0..iterations {
-        let hit = parsed_with_cache(&mut cache, "k", || -> origami_core::Result<
-            Option<ParsedMessage>,
-        > {
-            panic!("cache hit must skip the loader");
-        })
+        let hit = parsed_with_cache(
+            &mut cache,
+            "k",
+            || -> origami_core::Result<Option<ParsedMessage>> {
+                panic!("cache hit must skip the loader");
+            },
+        )
         .unwrap();
         assert!(hit.is_some());
     }

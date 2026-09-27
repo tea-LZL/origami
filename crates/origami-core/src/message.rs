@@ -100,13 +100,14 @@ pub fn parse(raw: &[u8]) -> Option<ParsedMessage> {
             ..Default::default()
         });
     }
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parse_inner(raw)))
-        .unwrap_or_else(|_| {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parse_inner(raw))).unwrap_or_else(
+        |_| {
             Some(ParsedMessage {
                 parse_warnings: vec!["MIME parsing failed safely".to_string()],
                 ..Default::default()
             })
-        })
+        },
+    )
 }
 
 fn mime_limit_warning(raw: &[u8]) -> Option<String> {

@@ -36,10 +36,7 @@ impl AppState {
         Ok(Self {
             engine,
             store,
-            display_lru: Mutex::new(crate::display_lru::DisplayLru::new(
-                32 * 1024 * 1024,
-                300,
-            )),
+            display_lru: Mutex::new(crate::display_lru::DisplayLru::new(32 * 1024 * 1024, 300)),
             config: Arc::new(RwLock::new(config)),
             cancel_tokens: Arc::new(Mutex::new(HashMap::new())),
             account_errors: Arc::new(Mutex::new(HashMap::new())),
@@ -294,7 +291,11 @@ async fn prefetch_display_key(
     else {
         return Ok(());
     };
-    if account_errors.lock().unwrap().contains_key(&account_config_id) {
+    if account_errors
+        .lock()
+        .unwrap()
+        .contains_key(&account_config_id)
+    {
         // Account in error state: prefetch waits for recovery.
         return Ok(());
     }
@@ -310,12 +311,10 @@ async fn prefetch_display_key(
         return Ok(());
     };
     let generation = engine.prefetch_queue().generation();
-    let backend = origami_core::sync::with_network_timeout(ImapBackend::connect(
-        &account_config_id,
-        &imap,
-    ))
-    .await
-    .map_err(|error| error.to_string())?;
+    let backend =
+        origami_core::sync::with_network_timeout(ImapBackend::connect(&account_config_id, &imap))
+            .await
+            .map_err(|error| error.to_string())?;
     let display = origami_core::sync::with_network_timeout(
         backend.fetch_display_message(&mailbox, server_uid),
     )

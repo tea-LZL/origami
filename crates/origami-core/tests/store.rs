@@ -938,7 +938,11 @@ fn existing_data_perms_tightened() {
     }
     assert_eq!(mode_of(&blob_root), 0o700, "blob root");
     assert_eq!(mode_of(&blob_root.join("de")), 0o700, "blob shard aa");
-    assert_eq!(mode_of(&blob_root.join("de").join("ad")), 0o700, "blob shard bb");
+    assert_eq!(
+        mode_of(&blob_root.join("de").join("ad")),
+        0o700,
+        "blob shard bb"
+    );
     assert_eq!(mode_of(&blob_path), 0o600, "blob file");
     assert_eq!(mode_of(&config_dir), 0o700, "config dir root");
     assert_eq!(mode_of(&config_file), 0o600, "config file");
@@ -1050,7 +1054,10 @@ fn blob_path_rejects_traversal() {
             blobs.get(hostile).is_err(),
             "hostile hash must be rejected: {hostile}"
         );
-        assert!(!blobs.contains(hostile), "contains must be false: {hostile}");
+        assert!(
+            !blobs.contains(hostile),
+            "contains must be false: {hostile}"
+        );
     }
 
     // Legitimate content-addressed access still works.

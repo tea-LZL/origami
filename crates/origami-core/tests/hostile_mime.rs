@@ -49,9 +49,7 @@ fn build_cid_bomb(refs: usize) -> Vec<u8> {
 
 fn build_malformed_base64() -> Vec<u8> {
     let mut raw = headers("bad64");
-    raw.extend_from_slice(
-        b"Content-Type: multipart/mixed; boundary=bb\r\n\r\n--bb\r\n",
-    );
+    raw.extend_from_slice(b"Content-Type: multipart/mixed; boundary=bb\r\n\r\n--bb\r\n");
     raw.extend_from_slice(
         b"Content-Type: application/octet-stream\r\nContent-Transfer-Encoding: base64\r\n\r\n",
     );
@@ -62,9 +60,7 @@ fn build_malformed_base64() -> Vec<u8> {
 fn build_attachment_size_lie() -> Vec<u8> {
     let mut raw = headers("liar");
     raw.extend_from_slice(b"Content-Length: 4294967295\r\n");
-    raw.extend_from_slice(
-        b"Content-Type: multipart/mixed; boundary=cc\r\n\r\n--cc\r\n",
-    );
+    raw.extend_from_slice(b"Content-Type: multipart/mixed; boundary=cc\r\n\r\n--cc\r\n");
     raw.extend_from_slice(
         b"Content-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=\"big.bin\"\r\n\r\n",
     );
@@ -126,7 +122,11 @@ fn cid_bomb() {
     let parsed = parse(&raw).expect("parse returns");
     // Output must stay proportional to input, not to ref count squared.
     let html_len = parsed.html.as_deref().map(str::len).unwrap_or(0);
-    assert!(html_len <= raw.len() * 2, "html blew up: {html_len} vs {}", raw.len());
+    assert!(
+        html_len <= raw.len() * 2,
+        "html blew up: {html_len} vs {}",
+        raw.len()
+    );
 }
 
 #[test]
@@ -142,7 +142,10 @@ fn attachment_size_lie() {
     let raw = build_attachment_size_lie();
     let parsed = parse(&raw).expect("parse returns");
     let text_len = parsed.text.as_deref().map(str::len).unwrap_or(0);
-    assert!(text_len <= raw.len() * 2, "declared size trusted: {text_len}");
+    assert!(
+        text_len <= raw.len() * 2,
+        "declared size trusted: {text_len}"
+    );
 }
 
 #[test]
@@ -162,7 +165,10 @@ fn attachment_decode_respects_byte_cap() {
     raw.extend_from_slice(
         b"Content-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=\"big.bin\"\r\n\r\n",
     );
-    raw.extend(std::iter::repeat_n(b'b', origami_core::message::MAX_ATTACH_DECODE_BYTES + 1));
+    raw.extend(std::iter::repeat_n(
+        b'b',
+        origami_core::message::MAX_ATTACH_DECODE_BYTES + 1,
+    ));
     raw.extend_from_slice(b"\r\n--zz--\r\n");
     assert!(
         attachment_bytes(&raw, 0).is_none(),

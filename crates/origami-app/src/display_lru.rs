@@ -155,7 +155,10 @@ mod tests {
         cache.insert("b".to_string(), parsed("0123456789")); // 20 bytes
         cache.insert("c".to_string(), parsed("0123456789")); // would be 30 > 25
 
-        assert!(cache.get("a").is_none(), "oldest entry evicted for byte cap");
+        assert!(
+            cache.get("a").is_none(),
+            "oldest entry evicted for byte cap"
+        );
         assert!(cache.get("b").is_some());
         assert!(cache.get("c").is_some());
     }

@@ -2270,13 +2270,10 @@ mod tests {
     #[test]
     fn foreign_keys_enforced() {
         let (store, _account, _folder) = fixture();
-        let err = store
-            .conn()
-            .unwrap()
-            .execute(
-                "INSERT INTO messages (id, folder_id, server_uid) VALUES ('x', 'missing-folder', 1)",
-                [],
-            );
+        let err = store.conn().unwrap().execute(
+            "INSERT INTO messages (id, folder_id, server_uid) VALUES ('x', 'missing-folder', 1)",
+            [],
+        );
         assert!(err.is_err(), "orphan folder reference must be rejected");
     }
 

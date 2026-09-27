@@ -392,7 +392,8 @@ impl SyncEngine {
         mailbox: &Mailbox,
     ) -> Result<FolderSyncStats> {
         let condstore = backend.supports_condstore();
-        let selected = with_network_timeout(backend.select_folder(&mailbox.name, condstore)).await?;
+        let selected =
+            with_network_timeout(backend.select_folder(&mailbox.name, condstore)).await?;
         let stored = self.store.sync_state(folder_db_id)?;
         let action = plan_sync(stored, selected.uid_validity, selected.exists, condstore);
 
@@ -418,11 +419,14 @@ impl SyncEngine {
                 changed_since,
             } => {
                 // 1. New arrivals.
-                let new_uids = with_network_timeout(backend.search_uids_after(&mailbox.name, after_uid)).await?;
+                let new_uids =
+                    with_network_timeout(backend.search_uids_after(&mailbox.name, after_uid))
+                        .await?;
                 if !new_uids.is_empty() {
-                    let envelopes =
-                        with_network_timeout(backend.fetch_envelopes_by_uids(&mailbox.name, &new_uids))
-                            .await?;
+                    let envelopes = with_network_timeout(
+                        backend.fetch_envelopes_by_uids(&mailbox.name, &new_uids),
+                    )
+                    .await?;
                     for envelope in envelopes {
                         let (_, inserted) = self.store.upsert_envelope(folder_db_id, &envelope)?;
                         if inserted {
@@ -437,7 +441,8 @@ impl SyncEngine {
                 }
 
                 // 2. Flag changes (CONDSTORE CHANGEDSINCE, else full sweep).
-                let changes = with_network_timeout(backend.fetch_flags(&mailbox.name, changed_since)).await?;
+                let changes =
+                    with_network_timeout(backend.fetch_flags(&mailbox.name, changed_since)).await?;
                 for (uid, flags, keywords) in changes {
                     let flags_changed = self.store.update_flags(folder_db_id, uid, &flags)?;
                     let keywords_changed =
@@ -502,7 +507,8 @@ impl SyncEngine {
         let mut added = 0u32;
         let mut page = 1u32;
         loop {
-            let envelopes = with_network_timeout(backend.list_envelopes(mailbox, page, PAGE_SIZE)).await?;
+            let envelopes =
+                with_network_timeout(backend.list_envelopes(mailbox, page, PAGE_SIZE)).await?;
             if envelopes.is_empty() {
                 break;
             }
@@ -776,9 +782,7 @@ impl SyncEngine {
                 OutboxOp::DeleteMessages {
                     mailbox,
                     server_uids,
-                } => {
-                    with_network_timeout(backend.delete_messages(mailbox, server_uids)).await
-                }
+                } => with_network_timeout(backend.delete_messages(mailbox, server_uids)).await,
                 OutboxOp::SendMessage { raw_base64 } => {
                     async {
                         let raw = base64::engine::general_purpose::STANDARD
@@ -787,18 +791,20 @@ impl SyncEngine {
                         let smtp = config.smtp.as_ref().ok_or_else(|| {
                             Error::Config("account has no SMTP configuration".into())
                         })?;
-                        let sender =
-                            with_network_timeout(OrigamiSmtp::connect(smtp)).await?;
+                        let sender = with_network_timeout(OrigamiSmtp::connect(smtp)).await?;
                         with_network_timeout(sender.send_message(&raw)).await?;
                         let mut appended = false;
-                        if let Ok(mailboxes) = with_network_timeout(backend.list_mailboxes()).await {
+                        if let Ok(mailboxes) = with_network_timeout(backend.list_mailboxes()).await
+                        {
                             if let Some(sent) = mailboxes
                                 .iter()
                                 .find(|mailbox| mailbox.role == crate::model::MailboxRole::Sent)
                             {
-                                appended = with_network_timeout(
-                                    backend.append_message(&sent.name, &raw, &[Flag::Seen]),
-                                )
+                                appended = with_network_timeout(backend.append_message(
+                                    &sent.name,
+                                    &raw,
+                                    &[Flag::Seen],
+                                ))
                                 .await
                                 .is_ok();
                             }
@@ -822,8 +828,12 @@ impl SyncEngine {
                             .iter()
                             .find(|mailbox| mailbox.role == crate::model::MailboxRole::Sent)
                             .ok_or_else(|| Error::Backend("Sent mailbox not found".into()))?;
-                        with_network_timeout(backend.append_message(&sent.name, &raw, &[Flag::Seen]))
-                            .await?;
+                        with_network_timeout(backend.append_message(
+                            &sent.name,
+                            &raw,
+                            &[Flag::Seen],
+                        ))
+                        .await?;
                         Ok(())
                     }
                     .await
@@ -936,9 +946,7 @@ pub(crate) async fn acquire_bounded(
 ) -> Result<tokio::sync::OwnedMutexGuard<()>> {
     match tokio::time::timeout(bound, lock.lock_owned()).await {
         Ok(guard) => Ok(guard),
-        Err(_) => Err(Error::Backend(
-            "timed out waiting for message lock".into(),
-        )),
+        Err(_) => Err(Error::Backend("timed out waiting for message lock".into())),
     }
 }
 
@@ -967,9 +975,16 @@ pub fn is_transient(error: &Error) -> bool {
         Error::Io(_) => true,
         Error::Backend(message) => {
             let lower = message.to_lowercase();
-            ["timeout", "timed out", "connection", "reset", "bye", "watch error"]
-                .iter()
-                .any(|token| lower.contains(token))
+            [
+                "timeout",
+                "timed out",
+                "connection",
+                "reset",
+                "bye",
+                "watch error",
+            ]
+            .iter()
+            .any(|token| lower.contains(token))
                 && !lower.contains("auth")
                 && !lower.contains("invalid credentials")
         }
@@ -1182,7 +1197,10 @@ mod tests {
         let held = lock.clone().lock_owned().await;
 
         let result = acquire_bounded(lock.clone(), Duration::from_millis(50)).await;
-        assert!(result.is_err(), "second acquisition must time out, not hang");
+        assert!(
+            result.is_err(),
+            "second acquisition must time out, not hang"
+        );
         assert!(is_transient(&result.unwrap_err()));
 
         drop(held);
@@ -1206,7 +1224,9 @@ mod tests {
             "timed out"
         ))));
         assert!(is_transient(&Error::Backend("connection reset".into())));
-        assert!(is_transient(&Error::Backend("IMAP timeout waiting for response".into())));
+        assert!(is_transient(&Error::Backend(
+            "IMAP timeout waiting for response".into()
+        )));
         assert!(is_transient(&Error::Backend("watch error".into())));
         assert!(is_transient(&Error::Backend("server sent BYE".into())));
 
@@ -1214,7 +1234,9 @@ mod tests {
         assert!(!is_transient(&Error::Backend("auth failed".into())));
         assert!(!is_transient(&Error::Config("no IMAP".into())));
         assert!(!is_transient(&Error::AccountNotFound("x".into())));
-        assert!(!is_transient(&Error::Store(rusqlite::Error::ExecuteReturnedResults)));
+        assert!(!is_transient(&Error::Store(
+            rusqlite::Error::ExecuteReturnedResults
+        )));
     }
 
     #[test]
@@ -1276,7 +1298,10 @@ mod tests {
         let mut limiter = ReconnectLimiter::new();
         for _ in 0..9 {
             let wait = limiter.record_failure();
-            assert!(wait <= Duration::from_secs(300), "under streak cap: {wait:?}");
+            assert!(
+                wait <= Duration::from_secs(300),
+                "under streak cap: {wait:?}"
+            );
         }
         // 10th consecutive failure drops into the 60s slow mode.
         let slow = limiter.record_failure();

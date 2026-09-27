@@ -77,11 +77,7 @@ async fn prefetch_display_caches_without_flags() {
         server_uid: 7,
     });
     engine.store().upsert_envelope(&folder, &envelope).unwrap();
-    assert!(engine
-        .store()
-        .parsed_message(&folder, 7)
-        .unwrap()
-        .is_none());
+    assert!(engine.store().parsed_message(&folder, 7).unwrap().is_none());
 
     let display = DisplayMessage {
         headers: b"Subject: warm me\r\nFrom: Alice <alice@example.org>\r\n".to_vec(),
