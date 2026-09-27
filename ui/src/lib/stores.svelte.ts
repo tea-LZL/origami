@@ -25,7 +25,7 @@ import type { Envelope, EnvelopeSource, Flag, Mailbox, MailboxRole } from "./typ
 /// Shared display-prefetch scheduler (hover/keyboard predicted, viewport later).
 export const prefetcher = createPrefetcher();
 
-export type ThemePref = "system" | "light" | "dark";
+export type ThemePref = "system" | "light" | "dark" | "ember";
 export type ThemeName = Exclude<ThemePref, "system">;
 
 /** Resolve a preference to a concrete theme attribute value. */
@@ -35,7 +35,9 @@ export function resolveTheme(pref: ThemePref, prefersDark: boolean): ThemeName {
 
 /** Saved preference values outside the known set fall back to "system". */
 export function normalizeThemePref(raw: unknown): ThemePref {
-  return raw === "system" || raw === "light" || raw === "dark" ? raw : "system";
+  return raw === "system" || raw === "light" || raw === "dark" || raw === "ember"
+    ? raw
+    : "system";
 }
 
 let appliedPref: ThemePref = "system";
@@ -112,7 +114,7 @@ export interface State {
   accountStatuses: Record<string, AccountStatusDto>;
   preferencesOpen: boolean;
   outboxAccountId: string | null;
-  theme: "system" | "light" | "dark";
+  theme: ThemePref;
   density: "comfortable" | "compact";
   motion: "system" | "full" | "reduced";
   layout: WorkspaceLayout;
