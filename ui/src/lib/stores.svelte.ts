@@ -25,6 +25,41 @@ import type { Envelope, EnvelopeSource, Flag, Mailbox, MailboxRole } from "./typ
 /// Shared display-prefetch scheduler (hover/keyboard predicted, viewport later).
 export const prefetcher = createPrefetcher();
 
+export type ThemePref = "system" | "light" | "dark";
+export type ThemeName = Exclude<ThemePref, "system">;
+
+/** Resolve a preference to a concrete theme attribute value. */
+export function resolveTheme(pref: ThemePref, prefersDark: boolean): ThemeName {
+  return pref === "system" ? (prefersDark ? "dark" : "light") : pref;
+}
+
+/** Saved preference values outside the known set fall back to "system". */
+export function normalizeThemePref(raw: unknown): ThemePref {
+  return raw === "system" || raw === "light" || raw === "dark" ? raw : "system";
+}
+
+let appliedPref: ThemePref = "system";
+let systemListenerBound = false;
+
+/**
+ * Apply the theme preference as a concrete `data-theme` attribute (never
+ * absent — the CSS has no media-query fallback) and follow OS scheme flips
+ * while the preference stays "system".
+ */
+export function applyThemePreference(pref: ThemePref): void {
+  appliedPref = pref;
+  const media = typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia("(prefers-color-scheme: dark)")
+    : null;
+  document.documentElement.dataset.theme = resolveTheme(pref, media?.matches ?? false);
+  if (media && !systemListenerBound) {
+    systemListenerBound = true;
+    media.addEventListener("change", (event) => {
+      document.documentElement.dataset.theme = resolveTheme(appliedPref, event.matches);
+    });
+  }
+}
+
 export type WorkspaceLayout = "three-pane" | "two-pane" | "reading";
 
 export interface State {
@@ -209,8 +244,7 @@ function loadPreferences() {
   try {
     const saved = JSON.parse(localStorage.getItem("origami-preferences") ?? "{}") as Partial<State>;
     patch({
-      theme: ["system", "light", "dark"].includes(saved.theme ?? "")
-        ? saved.theme as State["theme"] : "system",
+      theme: normalizeThemePref(saved.theme),
       density: ["comfortable", "compact"].includes(saved.density ?? "")
         ? saved.density as State["density"] : "comfortable",
       motion: ["system", "full", "reduced"].includes(saved.motion ?? "")
