@@ -51,8 +51,9 @@ As of the 2026-08-15 verification (and 2026-08-24 package check):
 ## What this does **not** cover
 
 Docker/live-provider tests, package installation on a user machine, accessibility/performance
-gates, and a native daily-driver smoke. Remote CI ran green for verify + package on
-2026-09-26 (GitHub run 36269969749); the tag publish path remains unproven. For native
+gates, and a native daily-driver smoke. Remote CI verified 2026-09-26/27: runs 36269969749
+(master green), 36276664146 (Windows package green), 36278995728 (tag `v0.1.0` published —
+4 release assets). For native
 release confidence, also build/run the
 Tauri app on WebKitGTK and smoke: account onboarding, cached opening, sync/reconnect, search,
 compose/send/outbox, tray restore/quit, external links, remote-content controls, keyboard

@@ -116,3 +116,13 @@ filenames breaks checkout on NTFS), and `package_windows`/`publish` jobs in
 publish job emits 4 release assets). Distilled into [[github-cicd-md]], [[overview]],
 [[build-and-verification]]. Windows installer stays unsigned/experimental per the
 `ci/windows-nsis` docs stance.
+
+## [2026-09-27] update | v0.1.0 released with 4 assets
+Tag `v0.1.0` force-moved to `47b92a2` (was pre-workflow `f892ff9`, never delivered
+anything — user approved option A). Tag pipeline 36278995728 green end-to-end:
+rust, ui, package_arch, package_windows, publish. GitHub Release v0.1.0 carries
+`origami-0.1.0-8-x86_64.pkg.tar.zst` (9.2 MB) + sha256 and
+`Origami_0.1.0_x64-setup.exe` (7.4 MB) + sha256. One mid-flight fix: Windows job
+pinned rustc 1.85.0 but current lockfile needs >=1.89 (notify-rust) — switched to
+stable, matching Arch jobs. [[known-drift]] Remote CI row and [[release-readiness]]
+now record the proven tag path.
