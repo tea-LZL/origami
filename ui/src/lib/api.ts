@@ -151,6 +151,9 @@ export const api = {
     invoke<Envelope[]>("list_unified_inbox", { page, pageSize, unreadOnly }),
   prefetchSelectedFolder: (folderId: string) =>
     invoke<void>("prefetch_selected_folder", { folderId }),
+  prefetchDisplay: (
+    requests: { folderId: string; serverUid: number; priority: "open" | "predictive" | "viewport" }[],
+  ) => invoke<void>("prefetch_display", { requests }),
   getCachedMessage: (folderId: string, serverUid: number) =>
     invoke<MessageDto | null>("get_cached_message", { folderId, serverUid }),
   getMessage: (folderId: string, serverUid: number) =>

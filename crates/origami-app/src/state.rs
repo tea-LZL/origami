@@ -23,6 +23,7 @@ pub struct AppState {
     cancel_tokens: Arc<Mutex<HashMap<String, CancellationToken>>>,
     pub(crate) account_errors: Arc<Mutex<HashMap<String, String>>>,
     pub(crate) syncing_accounts: Arc<Mutex<HashSet<String>>>,
+    prefetch_started: std::sync::Once,
 }
 
 impl AppState {
@@ -43,6 +44,7 @@ impl AppState {
             cancel_tokens: Arc::new(Mutex::new(HashMap::new())),
             account_errors: Arc::new(Mutex::new(HashMap::new())),
             syncing_accounts: Arc::new(Mutex::new(HashSet::new())),
+            prefetch_started: std::sync::Once::new(),
         })
     }
 
@@ -226,6 +228,88 @@ impl AppState {
             .ok_or_else(|| Error::Backend(format!("unknown account {account_db_id}")))?;
         Ok((account_config_id, account_db_id, name))
     }
+
+    /// Start the display-prefetch workers once. Must be called from inside
+    /// the Tokio runtime (async command context); `Once` keeps it idempotent.
+    pub fn ensure_prefetch_workers(&self) {
+        let engine = self.engine.clone();
+        let store = self.store.clone();
+        let config = self.config.clone();
+        self.prefetch_started.call_once(|| {
+            let fetch_engine = engine.clone();
+            engine.prefetch_queue().run(move |key: String| {
+                prefetch_display_key(
+                    fetch_engine.clone(),
+                    store.clone(),
+                    config.clone(),
+                    key,
+                )
+            });
+        });
+    }
+}
+
+/// Fetch display MIME for one physical source and cache it. Never touches
+/// flags. Writes after a `cancel_all` are dropped (generation protocol).
+async fn prefetch_display_key(
+    engine: Arc<SyncEngine>,
+    store: Store,
+    config: Arc<RwLock<Config>>,
+    key: String,
+) -> std::result::Result<(), String> {
+    let Some((folder_id, uid)) = key.rsplit_once(':') else {
+        return Err(format!("bad prefetch key: {key}"));
+    };
+    let server_uid: u32 = uid
+        .parse()
+        .map_err(|_| format!("bad prefetch uid: {uid}"))?;
+    let folder_id = folder_id.to_string();
+    if store
+        .parsed_message_for_logical_message(&folder_id, server_uid)
+        .map_err(|error| error.to_string())?
+        .is_some()
+    {
+        return Ok(());
+    }
+    let (account_db_id, mailbox) = store
+        .folder_account_and_name(&folder_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("unknown folder {folder_id}"))?;
+    let account_config_id = store
+        .account_config_id(&account_db_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("unknown account {account_db_id}"))?;
+    let account = {
+        let config = config.read().unwrap();
+        config
+            .accounts
+            .get(&account_config_id)
+            .cloned()
+            .ok_or_else(|| format!("unknown account {account_config_id}"))?
+    };
+    let imap = account
+        .imap
+        .ok_or_else(|| format!("account {account_config_id} has no IMAP"))?;
+    let generation = engine.prefetch_queue().generation();
+    let backend = ImapBackend::connect(&account_config_id, &imap)
+        .await
+        .map_err(|error| error.to_string())?;
+    let display = backend
+        .fetch_display_message(&mailbox, server_uid)
+        .await
+        .map_err(|error| error.to_string())?;
+    if engine.prefetch_queue().generation() != generation {
+        return Ok(());
+    }
+    let envelope = store
+        .get_envelope(&folder_id, server_uid)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("envelope gone for {folder_id}:{server_uid}"))?;
+    let fallback = format!("display:{folder_id}:{server_uid}");
+    engine
+        .cache_display_message_sources(&envelope.sources, &display, &fallback)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 async fn refresh_oauth_token(

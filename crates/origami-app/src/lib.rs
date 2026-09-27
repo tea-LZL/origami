@@ -219,6 +219,7 @@ pub fn run() {
             commands::move_messages,
             commands::delete_messages,
             commands::sync_now,
+            commands::prefetch_display,
             commands::prefetch_selected_folder,
             commands::search,
             commands::search_page,

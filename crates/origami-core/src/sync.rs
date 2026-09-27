@@ -139,6 +139,7 @@ pub struct SyncEngine {
     account_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     body_locks: BodyLockMap,
     prefetch_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    prefetch: crate::prefetch_queue::PrefetchQueue,
 }
 
 impl SyncEngine {
@@ -151,7 +152,13 @@ impl SyncEngine {
             account_locks: Mutex::new(HashMap::new()),
             body_locks: Mutex::new(HashMap::new()),
             prefetch_locks: Mutex::new(HashMap::new()),
+            prefetch: crate::prefetch_queue::PrefetchQueue::new(3),
         }
+    }
+
+    /// Priority queue driving UI-triggered display prefetch.
+    pub fn prefetch_queue(&self) -> &crate::prefetch_queue::PrefetchQueue {
+        &self.prefetch
     }
 
     pub fn store(&self) -> &Store {

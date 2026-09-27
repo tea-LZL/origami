@@ -1443,6 +1443,47 @@ pub async fn sync_now(state: State<'_, AppState>, account_id: Option<String>) ->
     Ok(())
 }
 
+/// One queued display prefetch request from the UI.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrefetchRequestDto {
+    pub folder_id: String,
+    pub server_uid: u32,
+    pub priority: String,
+}
+
+/// Enqueue display-MIME prefetch for predicted/viewport rows. Never touches
+/// flags; cached sources are skipped. Fire-and-forget for the UI.
+#[tauri::command]
+pub async fn prefetch_display(
+    state: State<'_, AppState>,
+    requests: Vec<PrefetchRequestDto>,
+) -> CmdResult<()> {
+    state.ensure_prefetch_workers();
+    for request in requests {
+        let priority = match request.priority.as_str() {
+            "open" => origami_core::prefetch_queue::PrefetchPriority::Open,
+            "predictive" => origami_core::prefetch_queue::PrefetchPriority::Predictive,
+            "viewport" => origami_core::prefetch_queue::PrefetchPriority::Viewport,
+            other => return Err(format!("unknown prefetch priority: {other}")),
+        };
+        if state
+            .store
+            .parsed_message_for_logical_message(&request.folder_id, request.server_uid)
+            .map_err(err)?
+            .is_some()
+        {
+            continue;
+        }
+        let key = display_key(&request.folder_id, request.server_uid);
+        state
+            .engine
+            .prefetch_queue()
+            .enqueue(origami_core::prefetch_queue::PrefetchRequest::new(key, priority));
+    }
+    Ok(())
+}
+
 /// Warm display cache for the folder the user is looking at, then Inbox.
 ///
 /// Must stay `async`: `spawn_recent_prefetch` calls `tokio::spawn`, and Tauri runs
