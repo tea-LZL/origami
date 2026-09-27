@@ -126,3 +126,10 @@ rust, ui, package_arch, package_windows, publish. GitHub Release v0.1.0 carries
 pinned rustc 1.85.0 but current lockfile needs >=1.89 (notify-rust) — switched to
 stable, matching Arch jobs. [[known-drift]] Remote CI row and [[release-readiness]]
 now record the proven tag path.
+
+## [2026-09-27] update | license texts added
+Distribution blocker closed: `LICENSE-MIT` (copy of the prior root LICENSE) and the
+standard Apache-2.0 text borrowed in as `LICENSE-APACHE`, matching the dual
+`license = "MIT OR Apache-2.0"` declaration in `Cargo.toml` and
+`license=('MIT' 'Apache-2.0')` in the PKGBUILD. Root `LICENSE` stays the MIT copy.
+[[release-readiness]] blocker updated.
