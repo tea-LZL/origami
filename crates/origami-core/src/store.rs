@@ -2113,10 +2113,64 @@ fn like_pattern(value: &str) -> String {
     )
 }
 
+/// Test/debug invariant check: no orphan message rows and no FTS rows
+/// pointing at deleted messages. Physical-source retention is guaranteed by
+/// the row model itself (a source IS a row) and pinned by the dedupe tests.
+pub fn assert_store_invariants(conn: &Connection) -> Result<()> {
+    let orphan_messages: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM messages m
+          LEFT JOIN folders f ON f.id = m.folder_id
+         WHERE f.id IS NULL",
+        [],
+        |row| row.get(0),
+    )?;
+    if orphan_messages > 0 {
+        return Err(Error::Backend(format!(
+            "{orphan_messages} messages reference missing folders"
+        )));
+    }
+    let orphan_fts: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM messages_fts f
+          LEFT JOIN messages m ON m.rowid = f.rowid
+         WHERE m.rowid IS NULL",
+        [],
+        |row| row.get(0),
+    )?;
+    if orphan_fts > 0 {
+        return Err(Error::Backend(format!(
+            "{orphan_fts} fts rows reference missing messages"
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::{Address, Envelope, Flag, MailboxRole};
+
+    fn make_envelope(uid: u32, subject: &str) -> Envelope {
+        Envelope {
+            id: format!("msg-{uid}"),
+            mailbox_id: String::new(),
+            subject: subject.to_string(),
+            from: vec![Address {
+                name: None,
+                addr: "a@example.org".into(),
+            }],
+            to: vec![],
+            date: None,
+            received_at: None,
+            flags: vec![],
+            keywords: vec![],
+            has_attachment: false,
+            size: 10,
+            server_uid: Some(uid),
+            message_id: Some(format!("<m{uid}@example.org>")),
+            thread_id: Some(format!("<m{uid}@example.org>")),
+            sources: Vec::new(),
+        }
+    }
 
     fn fixture() -> (Store, String, String) {
         let store = Store::open_in_memory().unwrap();
@@ -2127,26 +2181,8 @@ mod tests {
             .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
             .unwrap();
         for uid in [1u32, 2, 3] {
-            let envelope = Envelope {
-                id: format!("msg-{uid}"),
-                mailbox_id: folder.clone(),
-                subject: format!("m{uid}"),
-                from: vec![Address {
-                    name: None,
-                    addr: "a@example.org".into(),
-                }],
-                to: vec![],
-                date: None,
-                received_at: None,
-                flags: vec![],
-                keywords: vec![],
-                has_attachment: false,
-                size: 10,
-                server_uid: Some(uid),
-                message_id: Some(format!("<m{uid}@example.org>")),
-                thread_id: Some(format!("<m{uid}@example.org>")),
-                sources: Vec::new(),
-            };
+            let mut envelope = make_envelope(uid, &format!("m{uid}"));
+            envelope.mailbox_id = folder.clone();
             store.upsert_envelope(&folder, &envelope).unwrap();
         }
         (store, account, folder)
@@ -2229,5 +2265,57 @@ mod tests {
             3,
             "first delete must roll back with the failed batch"
         );
+    }
+
+    #[test]
+    fn foreign_keys_enforced() {
+        let (store, _account, _folder) = fixture();
+        let err = store
+            .conn()
+            .unwrap()
+            .execute(
+                "INSERT INTO messages (id, folder_id, server_uid) VALUES ('x', 'missing-folder', 1)",
+                [],
+            );
+        assert!(err.is_err(), "orphan folder reference must be rejected");
+    }
+
+    #[test]
+    fn physical_sources_never_orphaned() {
+        let (store, account, folder) = fixture();
+        // A second physical copy of logical message "<m1@example.org>".
+        let folder2 = store
+            .upsert_folder(&account, "Archive", MailboxRole::Archive)
+            .unwrap();
+        let mut copy = make_envelope(1, "m1");
+        copy.mailbox_id = folder2.clone();
+        copy.id = "msg-1b".into();
+        store.upsert_envelope(&folder2, &copy).unwrap();
+
+        // Both physical copies show when the query spans both folders.
+        let merged = store
+            .list_envelopes_in_folders(&[folder.clone(), folder2.clone()], 1, 10, false)
+            .unwrap()
+            .into_iter()
+            .find(|envelope| envelope.message_id.as_deref() == Some("<m1@example.org>"))
+            .expect("logical message present");
+        assert_eq!(merged.sources.len(), 2, "both physical copies retained");
+
+        store.delete_message_by_uid(&folder2, 1).unwrap();
+        let merged = store
+            .list_envelopes_in_folders(&[folder.clone(), folder2.clone()], 1, 10, false)
+            .unwrap()
+            .into_iter()
+            .find(|envelope| envelope.message_id.as_deref() == Some("<m1@example.org>"))
+            .unwrap();
+        assert_eq!(merged.sources.len(), 1, "surviving source retained");
+        assert_eq!(merged.sources[0].mailbox_id, folder);
+    }
+
+    #[test]
+    fn assert_store_invariants_clean_on_fixture() {
+        let (store, _account, folder) = fixture();
+        assert_store_invariants(&store.conn().unwrap()).unwrap();
+        let _ = folder;
     }
 }
