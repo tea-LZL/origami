@@ -309,13 +309,17 @@ async fn prefetch_display_key(
         return Ok(());
     };
     let generation = engine.prefetch_queue().generation();
-    let backend = ImapBackend::connect(&account_config_id, &imap)
-        .await
-        .map_err(|error| error.to_string())?;
-    let display = backend
-        .fetch_display_message(&mailbox, server_uid)
-        .await
-        .map_err(|error| error.to_string())?;
+    let backend = origami_core::sync::with_network_timeout(ImapBackend::connect(
+        &account_config_id,
+        &imap,
+    ))
+    .await
+    .map_err(|error| error.to_string())?;
+    let display = origami_core::sync::with_network_timeout(
+        backend.fetch_display_message(&mailbox, server_uid),
+    )
+    .await
+    .map_err(|error| error.to_string())?;
     if engine.prefetch_queue().generation() != generation {
         return Ok(());
     }

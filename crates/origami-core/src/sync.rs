@@ -266,7 +266,7 @@ impl SyncEngine {
             .imap
             .as_ref()
             .ok_or_else(|| Error::Config(format!("account `{account_config_id}` has no IMAP")))?;
-        let backend = ImapBackend::connect(account_config_id, imap).await?;
+        let backend = with_network_timeout(ImapBackend::connect(account_config_id, imap)).await?;
         let account_db_id =
             self.store
                 .upsert_account(account_config_id, &config.name, &config.email)?;
@@ -295,9 +295,10 @@ impl SyncEngine {
             let Some(server_uid) = candidate.envelope.server_uid else {
                 continue;
             };
-            let display = match backend
-                .fetch_display_message(&candidate.mailbox, server_uid)
-                .await
+            let display = match with_network_timeout(
+                backend.fetch_display_message(&candidate.mailbox, server_uid),
+            )
+            .await
             {
                 Ok(display) => display,
                 Err(error) => {
@@ -333,12 +334,12 @@ impl SyncEngine {
             .imap
             .as_ref()
             .ok_or_else(|| Error::Config(format!("account `{account_config_id}` has no IMAP")))?;
-        let backend = ImapBackend::connect(account_config_id, imap).await?;
+        let backend = with_network_timeout(ImapBackend::connect(account_config_id, imap)).await?;
         let account_db_id =
             self.store
                 .upsert_account(account_config_id, &config.name, &config.email)?;
 
-        let mailboxes = backend.list_mailboxes().await?;
+        let mailboxes = with_network_timeout(backend.list_mailboxes()).await?;
         let remote_names: Vec<String> = mailboxes
             .iter()
             .map(|mailbox| mailbox.name.clone())
@@ -388,7 +389,7 @@ impl SyncEngine {
         mailbox: &Mailbox,
     ) -> Result<FolderSyncStats> {
         let condstore = backend.supports_condstore();
-        let selected = backend.select_folder(&mailbox.name, condstore).await?;
+        let selected = with_network_timeout(backend.select_folder(&mailbox.name, condstore)).await?;
         let stored = self.store.sync_state(folder_db_id)?;
         let action = plan_sync(stored, selected.uid_validity, selected.exists, condstore);
 
@@ -414,7 +415,7 @@ impl SyncEngine {
                 changed_since,
             } => {
                 // 1. New arrivals.
-                let new_uids = backend.search_uids_after(&mailbox.name, after_uid).await?;
+                let new_uids = with_network_timeout(backend.search_uids_after(&mailbox.name, after_uid)).await?;
                 if !new_uids.is_empty() {
                     let envelopes = backend
                         .fetch_envelopes_by_uids(&mailbox.name, &new_uids)
@@ -433,7 +434,7 @@ impl SyncEngine {
                 }
 
                 // 2. Flag changes (CONDSTORE CHANGEDSINCE, else full sweep).
-                let changes = backend.fetch_flags(&mailbox.name, changed_since).await?;
+                let changes = with_network_timeout(backend.fetch_flags(&mailbox.name, changed_since)).await?;
                 for (uid, flags, keywords) in changes {
                     let flags_changed = self.store.update_flags(folder_db_id, uid, &flags)?;
                     let keywords_changed =
@@ -498,7 +499,7 @@ impl SyncEngine {
         let mut added = 0u32;
         let mut page = 1u32;
         loop {
-            let envelopes = backend.list_envelopes(mailbox, page, PAGE_SIZE).await?;
+            let envelopes = with_network_timeout(backend.list_envelopes(mailbox, page, PAGE_SIZE)).await?;
             if envelopes.is_empty() {
                 break;
             }
@@ -542,7 +543,7 @@ impl SyncEngine {
             }
             return Ok(hash);
         }
-        let raw = backend.fetch_message(mailbox, server_uid).await?;
+        let raw = with_network_timeout(backend.fetch_message(mailbox, server_uid)).await?;
         let hash = self.blobs.put(&raw)?;
         self.cache_parsed_message(folder_db_id, server_uid, &hash, &raw)?;
         Ok(hash)
@@ -749,23 +750,32 @@ impl SyncEngine {
                     flags,
                     keywords,
                 } => {
-                    backend
-                        .store_flags_and_keywords(mailbox, *server_uid, flags, keywords.as_deref())
-                        .await
+                    with_network_timeout(backend.store_flags_and_keywords(
+                        mailbox,
+                        *server_uid,
+                        flags,
+                        keywords.as_deref(),
+                    ))
+                    .await
                 }
                 OutboxOp::MoveMessages {
                     source_mailbox,
                     destination_mailbox,
                     server_uids,
                 } => {
-                    backend
-                        .move_messages(source_mailbox, destination_mailbox, server_uids)
-                        .await
+                    with_network_timeout(backend.move_messages(
+                        source_mailbox,
+                        destination_mailbox,
+                        server_uids,
+                    ))
+                    .await
                 }
                 OutboxOp::DeleteMessages {
                     mailbox,
                     server_uids,
-                } => backend.delete_messages(mailbox, server_uids).await,
+                } => {
+                    with_network_timeout(backend.delete_messages(mailbox, server_uids)).await
+                }
                 OutboxOp::SendMessage { raw_base64 } => {
                     async {
                         let raw = base64::engine::general_purpose::STANDARD
@@ -774,18 +784,20 @@ impl SyncEngine {
                         let smtp = config.smtp.as_ref().ok_or_else(|| {
                             Error::Config("account has no SMTP configuration".into())
                         })?;
-                        let sender = OrigamiSmtp::connect(smtp).await?;
-                        sender.send_message(&raw).await?;
+                        let sender =
+                            with_network_timeout(OrigamiSmtp::connect(smtp)).await?;
+                        with_network_timeout(sender.send_message(&raw)).await?;
                         let mut appended = false;
                         if let Ok(mailboxes) = backend.list_mailboxes().await {
                             if let Some(sent) = mailboxes
                                 .iter()
                                 .find(|mailbox| mailbox.role == crate::model::MailboxRole::Sent)
                             {
-                                appended = backend
-                                    .append_message(&sent.name, &raw, &[Flag::Seen])
-                                    .await
-                                    .is_ok();
+                                appended = with_network_timeout(
+                                    backend.append_message(&sent.name, &raw, &[Flag::Seen]),
+                                )
+                                .await
+                                .is_ok();
                             }
                         }
                         if !appended {
@@ -802,13 +814,12 @@ impl SyncEngine {
                             .map_err(|error| {
                                 Error::Backend(format!("queued Sent copy: {error}"))
                             })?;
-                        let mailboxes = backend.list_mailboxes().await?;
+                        let mailboxes = with_network_timeout(backend.list_mailboxes()).await?;
                         let sent = mailboxes
                             .iter()
                             .find(|mailbox| mailbox.role == crate::model::MailboxRole::Sent)
                             .ok_or_else(|| Error::Backend("Sent mailbox not found".into()))?;
-                        backend
-                            .append_message(&sent.name, &raw, &[Flag::Seen])
+                        with_network_timeout(backend.append_message(&sent.name, &raw, &[Flag::Seen]))
                             .await?;
                         Ok(())
                     }
@@ -906,6 +917,27 @@ impl SyncEngine {
                 }
             }
         }
+    }
+}
+
+/// Bound for individual IMAP/SMTP operations.
+pub const NETWORK_OP_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Bound a network operation: on timeout return a transient error so the
+/// retry policy takes over instead of hanging the sync loop.
+pub async fn with_network_timeout<T>(
+    op: impl std::future::Future<Output = Result<T>>,
+) -> Result<T> {
+    with_network_timeout_in(NETWORK_OP_TIMEOUT, op).await
+}
+
+pub(crate) async fn with_network_timeout_in<T>(
+    bound: Duration,
+    op: impl std::future::Future<Output = Result<T>>,
+) -> Result<T> {
+    match tokio::time::timeout(bound, op).await {
+        Ok(result) => result,
+        Err(_) => Err(Error::Backend("network operation timed out".into())),
     }
 }
 
@@ -1118,6 +1150,20 @@ pub fn parse_references(raw: &[u8]) -> (Option<String>, Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timeout_is_transient() {
+        let timed_out = Error::Backend("network operation timed out".into());
+        assert!(is_transient(&timed_out));
+    }
+
+    #[tokio::test]
+    async fn with_network_timeout_bounds_ops() {
+        let pending = std::future::pending::<Result<()>>();
+        let result = with_network_timeout_in(Duration::from_millis(10), pending).await;
+        assert!(result.is_err());
+        assert!(is_transient(&result.unwrap_err()));
+    }
 
     #[test]
     fn is_transient_classifies_errors() {

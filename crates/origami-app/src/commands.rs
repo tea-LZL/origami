@@ -428,7 +428,11 @@ pub async fn get_message(
                     .map_err(err)?
             } else {
                 let backend = state.backend(&account_config_id).await.map_err(err)?;
-                match backend.fetch_display_message(&mailbox, server_uid).await {
+                match origami_core::sync::with_network_timeout(
+                    backend.fetch_display_message(&mailbox, server_uid),
+                )
+                .await
+                {
                     Ok(display) => match state
                         .engine
                         .cache_display_message(&folder_id, server_uid, &display)
