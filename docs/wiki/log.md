@@ -150,3 +150,10 @@ resolved), [[build-and-verification]] (gates + PR run 36308544416 + cached-open 
 [[index]]. CI green on all four jobs; Docker-harness end-to-end and the manual
 GUI/forced-colors pass remain owed.
 (docs(wiki): ingest PR #1 caching, hardening, and palette work)
+
+## [2026-09-27] update | search context label + result count
+QoL item delivered: global search now labels the list header ("Search" / "Tag" + the
+quoted query) and shows the total match count. Store gained `search_count` (shared
+`search_where` clause builder with `search_page`); `searchTotal` state carries it with the
+same unread token; fallback to loaded length when the count call fails.
+[[release-readiness]] QoL order item 3 delivered.
