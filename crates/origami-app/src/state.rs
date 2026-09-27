@@ -121,8 +121,11 @@ impl AppState {
                 account_errors.lock().unwrap().remove(&initial_account_id);
             }
             engine
-                .run_account_loop(aid, sync_account, token_clone)
+                .run_account_loop(aid.clone(), sync_account, token_clone)
                 .await;
+            // Loop exited (cancel or shutdown): clear the syncing marker so
+            // the UI never shows a dead account as syncing.
+            syncing_accounts.lock().unwrap().remove(&aid);
         });
 
         if let Some(oauth) = oauth {

@@ -855,12 +855,9 @@ impl SyncEngine {
 
             match self.sync_account(&account_config_id, &config).await {
                 Err(error) => {
-                    if !is_transient(&error) {
-                        // Permanent failure (auth/config): fail fast. The
-                        // account error is surfaced and Retry re-launches.
-                        return;
-                    }
-                    let wait = limiter.record_failure();
+                    // Permanent errors (auth/config) go to the 60s slow mode;
+                    // the loop stays alive so a fixed config self-heals.
+                    let wait = retry_wait_for(&error, &mut limiter);
                     tokio::select! {
                         _ = cancel.cancelled() => return,
                         _ = tokio::time::sleep(wait) => {},
@@ -928,8 +925,8 @@ pub fn is_transient(error: &Error) -> bool {
     }
 }
 
-/// Exponential backoff with ±20% deterministic jitter derived from
-/// `jitter_seed`. `attempt` 0 is the first failure.
+/// Exponential backoff with ±20% jitter derived from `jitter_seed` (a cheap
+/// time-based value — not cryptographic); the result is clamped at `cap`.
 pub fn backoff_delay(attempt: u32, base: Duration, cap: Duration, jitter_seed: u64) -> Duration {
     let expected = base
         .saturating_mul(2u32.saturating_pow(attempt.min(16)))
@@ -992,6 +989,18 @@ fn jitter_seed(salt: u32) -> u64 {
         .unwrap_or(0)
         .wrapping_mul(6364136223846793005)
         .wrapping_add(u64::from(salt))
+}
+
+/// Wait before retrying a failed sync. Transient errors use the limiter's
+/// growing backoff; permanent errors (auth/config) drop straight to the 60s
+/// slow mode — the account loop never dies and never hot-retries.
+fn retry_wait_for(error: &Error, limiter: &mut ReconnectLimiter) -> Duration {
+    let wait = limiter.record_failure();
+    if is_transient(error) {
+        wait
+    } else {
+        RECONNECT_SLOW_MODE_WAIT
+    }
 }
 
 /// Resolved plaintext secrets for this account (best-effort; unresolvable
@@ -1142,6 +1151,23 @@ mod tests {
         // Growth reaches the cap.
         assert!(backoff_delay(10, base, cap, 0) <= cap);
         assert!(backoff_delay(30, base, cap, 0) <= cap);
+    }
+
+    #[test]
+    fn retry_wait_policy() {
+        let mut limiter = ReconnectLimiter::new();
+        // Permanent errors drop to the 60s slow mode immediately — the loop
+        // must never die and never hot-retry.
+        let permanent = Error::Config("bad auth".into());
+        assert_eq!(
+            retry_wait_for(&permanent, &mut limiter),
+            RECONNECT_SLOW_MODE_WAIT
+        );
+        // Transient errors use the limiter's growing backoff.
+        let transient = Error::Backend("connection reset".into());
+        let wait = retry_wait_for(&transient, &mut limiter);
+        assert!(wait <= Duration::from_secs(300));
+        assert_ne!(wait, Duration::ZERO);
     }
 
     #[test]
