@@ -640,15 +640,13 @@ impl SyncEngine {
         server_uid: u32,
         flags: &[Flag],
     ) -> Result<()> {
-        self.store.update_flags(folder_db_id, server_uid, flags)?;
-        self.store.outbox_add(
+        self.store.update_flags_with_outbox(
             account_db_id,
-            &OutboxOp::StoreFlags {
-                mailbox: mailbox.to_string(),
-                server_uid,
-                flags: flags.to_vec(),
-                keywords: None,
-            },
+            folder_db_id,
+            mailbox,
+            server_uid,
+            flags,
+            None,
         )?;
         self.emit_outbox_changed(account_db_id);
         Ok(())
@@ -663,17 +661,13 @@ impl SyncEngine {
         flags: &[Flag],
         keywords: &[String],
     ) -> Result<()> {
-        self.store.update_flags(folder_db_id, server_uid, flags)?;
-        self.store
-            .update_keywords(folder_db_id, server_uid, keywords)?;
-        self.store.outbox_add(
+        self.store.update_flags_with_outbox(
             account_db_id,
-            &OutboxOp::StoreFlags {
-                mailbox: mailbox.to_string(),
-                server_uid,
-                flags: flags.to_vec(),
-                keywords: Some(keywords.to_vec()),
-            },
+            folder_db_id,
+            mailbox,
+            server_uid,
+            flags,
+            Some(keywords),
         )?;
         self.emit_outbox_changed(account_db_id);
         Ok(())

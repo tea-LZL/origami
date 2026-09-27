@@ -109,7 +109,11 @@ pub fn run() {
                         if event.id == open_id {
                             show_main_window(app);
                         } else if event.id == quit_id {
-                            app.state::<state::AppState>().stop_all_sync();
+                            let state = app.state::<state::AppState>();
+                            state.stop_all_sync();
+                            if let Err(error) = state.store.shutdown_flush() {
+                                tracing::warn!("wal checkpoint on quit failed: {error}");
+                            }
                             app.exit(0);
                         }
                     })

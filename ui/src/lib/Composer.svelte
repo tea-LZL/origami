@@ -24,12 +24,18 @@
       draft: app.value.composerDraft,
       attachments: app.value.composerAttachments,
     };
-    const timer = setTimeout(() => {
-      api.saveComposerDraft(snapshot).then(() => {
+    const flush = () => {
+      void api.saveComposerDraft(snapshot).then(() => {
         localStorage.removeItem("origami-composer-draft");
       }).catch(() => {});
-    }, 400);
-    return () => clearTimeout(timer);
+    };
+    const timer = setTimeout(flush, 400);
+    // Quit/teardown flush: persist the draft immediately, no debounce wait.
+    window.addEventListener("beforeunload", flush);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("beforeunload", flush);
+    };
   });
 
   function mountEditor(node: HTMLDivElement) {

@@ -1143,3 +1143,46 @@ fn outbox_failed_count_counts_terminal() {
     );
     assert_eq!(store.outbox_count(&account).unwrap(), 0);
 }
+
+fn seeded_flags(store: &Store, folder: &str) {
+    for uid in [1u32, 2, 3] {
+        let mut envelope = envelope(uid, &format!("m{uid}"));
+        envelope.flags.clear();
+        store.upsert_envelope(folder, &envelope).unwrap();
+    }
+}
+
+#[test]
+fn shutdown_flush_checkpoints() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("db.sqlite3");
+    {
+        let store = Store::open(&db_path).unwrap();
+        let account = store
+            .upsert_account("test", "Test", "t@example.org")
+            .unwrap();
+        let folder = store
+            .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
+            .unwrap();
+        seeded_flags(&store, &folder);
+        store.shutdown_flush().unwrap();
+    }
+    let wal = dir.path().join("db.sqlite3-wal");
+    if wal.exists() {
+        assert_eq!(
+            std::fs::metadata(&wal).unwrap().len(),
+            0,
+            "wal must be truncated by shutdown_flush"
+        );
+    }
+    // Data survives the checkpoint.
+    let store = Store::open(&db_path).unwrap();
+    let account = store
+        .upsert_account("test", "Test", "t@example.org")
+        .unwrap();
+    let folder = store
+        .folder_id(&account, "INBOX")
+        .unwrap()
+        .expect("folder survives");
+    assert_eq!(store.message_uids(&folder).unwrap(), vec![1, 2, 3]);
+}

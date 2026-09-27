@@ -554,6 +554,7 @@ pub async fn store_flags_batch(
     let (account_config_id, account_db_id, mailbox) =
         state.resolve_folder(&folder_id).map_err(err)?;
     let backend = state.backend(&account_config_id).await.ok();
+    let mut local_updates: Vec<(u32, Vec<Flag>)> = Vec::new();
 
     for update in updates {
         let stored = if let Some(backend) = &backend {
@@ -566,10 +567,7 @@ pub async fn store_flags_batch(
         };
 
         if stored {
-            state
-                .store
-                .update_flags(&folder_id, update.server_uid, &update.flags)
-                .map_err(err)?;
+            local_updates.push((update.server_uid, update.flags));
         } else {
             state
                 .engine
@@ -582,6 +580,12 @@ pub async fn store_flags_batch(
                 )
                 .map_err(err)?;
         }
+    }
+    if !local_updates.is_empty() {
+        state
+            .store
+            .update_flags_batch(&folder_id, &local_updates)
+            .map_err(err)?;
     }
     Ok(())
 }
@@ -604,6 +608,8 @@ pub async fn store_keywords_batch(
     let (account_config_id, account_db_id, mailbox) =
         state.resolve_folder(&folder_id).map_err(err)?;
     let backend = state.backend(&account_config_id).await.ok();
+    let mut local_flags: Vec<(u32, Vec<Flag>)> = Vec::new();
+    let mut local_keywords: Vec<(u32, Vec<String>)> = Vec::new();
 
     for update in updates {
         let stored = if let Some(backend) = &backend {
@@ -620,14 +626,8 @@ pub async fn store_keywords_batch(
             false
         };
         if stored {
-            state
-                .store
-                .update_flags(&folder_id, update.server_uid, &update.flags)
-                .map_err(err)?;
-            state
-                .store
-                .update_keywords(&folder_id, update.server_uid, &update.keywords)
-                .map_err(err)?;
+            local_flags.push((update.server_uid, update.flags));
+            local_keywords.push((update.server_uid, update.keywords));
         } else {
             state
                 .engine
@@ -641,6 +641,16 @@ pub async fn store_keywords_batch(
                 )
                 .map_err(err)?;
         }
+    }
+    if !local_flags.is_empty() {
+        state
+            .store
+            .update_flags_batch(&folder_id, &local_flags)
+            .map_err(err)?;
+        state
+            .store
+            .update_keywords_batch(&folder_id, &local_keywords)
+            .map_err(err)?;
     }
     Ok(())
 }
@@ -681,11 +691,11 @@ pub async fn move_messages(
             )
             .map_err(err)?;
     }
+    state
+        .store
+        .delete_messages_by_uids(&folder_id, &server_uids)
+        .map_err(err)?;
     for uid in server_uids {
-        state
-            .store
-            .delete_message_by_uid(&folder_id, uid)
-            .map_err(err)?;
         invalidate_display_lru(&state, &folder_id, uid);
     }
     Ok(())
@@ -715,11 +725,11 @@ pub async fn delete_messages(
             .queue_delete_messages(&account_db_id, &mailbox, &server_uids)
             .map_err(err)?;
     }
+    state
+        .store
+        .delete_messages_by_uids(&folder_id, &server_uids)
+        .map_err(err)?;
     for uid in server_uids {
-        state
-            .store
-            .delete_message_by_uid(&folder_id, uid)
-            .map_err(err)?;
         invalidate_display_lru(&state, &folder_id, uid);
     }
     Ok(())
