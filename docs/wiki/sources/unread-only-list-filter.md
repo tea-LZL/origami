@@ -2,7 +2,7 @@
 title: "Source: unread-only list filter"
 type: source
 status: current
-updated: 2026-09-19
+updated: 2026-09-27
 sources:
   - crates/origami-core/src/store.rs
   - crates/origami-core/tests/store.rs
@@ -63,10 +63,12 @@ Opening an unread row still flips Seen. `retainForUnreadFilter` /
 `selectedEnvelope` / `selectedMessageIds` in the unread-only list until the
 selection moves or the filter is toggled.
 
-> **Open defect.** After a folder sync while a just-opened message is selected,
-> `mergeSelectedIntoUnreadPage` can overwrite a patched Seen extra with a stale
-> unseen `selectedEnvelope`, so the row can keep looking unread and stay in the
-> unread-only list after leaving it. Recorded in [[known-drift]].
+> **Resolved 2026-09-27.** The stale-selection overwrite above is fixed: the
+> optimistic first-open Seen flip now refreshes `selectedEnvelope`, and
+> `mergeSelectedIntoUnreadPage` keeps the `previous`-page extra when a (possibly stale)
+> selection points at the same id. Regression:
+> `keeps_the_patched_seen_row_when_selection_state_is_stale` in
+> `ui/src/lib/unreadList.test.ts`.
 
 ## Fed into
 

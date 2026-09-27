@@ -163,3 +163,11 @@ stored + legacy copies, blanks the editor, close skips re-save) and Keep editing
 `composerRecovered`/`composerDiscarded` state in `stores.svelte.ts`; tests in
 `ui/src/lib/stores.draft.test.ts` and `ui/src/lib/Composer.test.ts`.
 [[release-readiness]] QoL order item 2 delivered.
+
+## [2026-09-27] update | unread-only stale-selection defect fixed
+Root cause and product fix (product code): first-open Seen now refreshes `selectedEnvelope`
+from the freshly patched page, and `mergeSelectedIntoUnreadPage` no longer lets a stale
+selection overwrite an extra already taken from `previous`. Regression:
+`keeps_the_patched_seen_row_when_selection_state_is_stale`
+(`ui/src/lib/unreadList.test.ts`). [[known-drift]] follow-up resolved;
+[[unread-only-list-filter]] defect note flipped to resolved.
