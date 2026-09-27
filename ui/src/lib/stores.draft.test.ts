@@ -46,6 +46,18 @@ describe("composer draft discard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     seedAccount();
+    // jsdom may not provide localStorage in every environment (see
+    // MessageView.test.ts for the same pattern).
+    const values = new Map<string, string>();
+    Object.defineProperty(globalThis, "localStorage", {
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key),
+        clear: () => values.clear(),
+      },
+      configurable: true,
+    });
     loadDraft.mockReset().mockResolvedValue(null);
     deleteDraft.mockReset().mockResolvedValue(undefined);
     saveDraft.mockReset().mockResolvedValue(undefined);
