@@ -995,6 +995,9 @@ pub async fn remove_account(
 
     // Everything this account cached in memory is now unreachable.
     state.display_lru.lock().unwrap().clear();
+    // Global cancel is fine here: queued prefetch for other accounts is
+    // cheap to re-request, and in-flight fetches discard stale writes.
+    state.engine.prefetch_queue().cancel_all();
 
     // Wipe keyring secrets for this account.
     let _ = origami_core::config::delete_keyring_secret(&account_id);
@@ -1460,6 +1463,7 @@ pub async fn prefetch_display(
     requests: Vec<PrefetchRequestDto>,
 ) -> CmdResult<()> {
     state.ensure_prefetch_workers();
+    let account_errors = state.account_errors_snapshot();
     for request in requests {
         let priority = match request.priority.as_str() {
             "open" => origami_core::prefetch_queue::PrefetchPriority::Open,
@@ -1474,6 +1478,12 @@ pub async fn prefetch_display(
             .is_some()
         {
             continue;
+        }
+        // Accounts in an error state skip prefetch until they recover.
+        if let Ok((account_config_id, _, _)) = state.resolve_folder(&request.folder_id) {
+            if account_errors.contains_key(&account_config_id) {
+                continue;
+            }
         }
         let key = display_key(&request.folder_id, request.server_uid);
         state

@@ -235,6 +235,7 @@ impl AppState {
         let engine = self.engine.clone();
         let store = self.store.clone();
         let config = self.config.clone();
+        let account_errors = self.account_errors.clone();
         self.prefetch_started.call_once(|| {
             let fetch_engine = engine.clone();
             engine.prefetch_queue().run(move |key: String| {
@@ -242,6 +243,7 @@ impl AppState {
                     fetch_engine.clone(),
                     store.clone(),
                     config.clone(),
+                    account_errors.clone(),
                     key,
                 )
             });
@@ -251,10 +253,13 @@ impl AppState {
 
 /// Fetch display MIME for one physical source and cache it. Never touches
 /// flags. Writes after a `cancel_all` are dropped (generation protocol).
+/// Accounts in an error state and benign misses are skipped without
+/// counting toward the queue's failure streak.
 async fn prefetch_display_key(
     engine: Arc<SyncEngine>,
     store: Store,
     config: Arc<RwLock<Config>>,
+    account_errors: Arc<Mutex<HashMap<String, String>>>,
     key: String,
 ) -> std::result::Result<(), String> {
     let Some((folder_id, uid)) = key.rsplit_once(':') else {
@@ -285,6 +290,10 @@ async fn prefetch_display_key(
     else {
         return Ok(());
     };
+    if account_errors.lock().unwrap().contains_key(&account_config_id) {
+        // Account in error state: prefetch waits for recovery.
+        return Ok(());
+    }
     let account = {
         let config = config.read().unwrap();
         config.accounts.get(&account_config_id).cloned()
@@ -416,9 +425,14 @@ mod tests {
             "missing-folder:7".to_string(),
             format!("{folder}:99"),
         ] {
-            let result =
-                prefetch_display_key(engine.clone(), store.clone(), config.clone(), key.clone())
-                    .await;
+            let result = prefetch_display_key(
+                engine.clone(),
+                store.clone(),
+                config.clone(),
+                Arc::new(Mutex::new(HashMap::new())),
+                key.clone(),
+            )
+            .await;
             assert!(result.is_ok(), "benign miss must not be an error: {key}");
             // Mirror the worker's streak accounting for an Ok outcome.
             engine.prefetch_queue().note_success();
@@ -432,6 +446,95 @@ mod tests {
                     origami_core::prefetch_queue::PrefetchPriority::Viewport,
                 )),
             "benign misses must not trip the failure kill switch"
+        );
+    }
+
+    #[tokio::test]
+    async fn prefetch_noop_when_account_error() {
+        use origami_core::config::{ImapConfig, Secret};
+        use origami_core::model::{Address, Envelope, Flag};
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_memory().unwrap();
+        let blobs = origami_core::blob::BlobStore::open(&dir.path().join("blobs")).unwrap();
+        let engine = Arc::new(SyncEngine::new(store.clone(), blobs));
+
+        // Account points at a dead port so a real fetch attempt errors.
+        let mut config = Config::default();
+        config.accounts.insert(
+            "test".to_string(),
+            AccountConfig {
+                name: "Test".into(),
+                email: "t@example.org".into(),
+                default: true,
+                imap: Some(ImapConfig {
+                    host: "127.0.0.1".into(),
+                    port: Some(1),
+                    tls: false,
+                    starttls: false,
+                    auth: AuthMechanism::Login,
+                    username: "u".into(),
+                    secret: Some(Secret::Raw { raw: "p".into() }),
+                }),
+                smtp: None,
+            },
+        );
+        let config = Arc::new(RwLock::new(config));
+
+        let account = store
+            .upsert_account("test", "Test", "t@example.org")
+            .unwrap();
+        let folder = store
+            .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
+            .unwrap();
+        let envelope = Envelope {
+            id: "msg-7".to_string(),
+            mailbox_id: folder.clone(),
+            subject: "warm".into(),
+            from: vec![Address {
+                name: None,
+                addr: "a@example.org".into(),
+            }],
+            to: vec![],
+            date: None,
+            received_at: None,
+            flags: vec![Flag::Seen],
+            keywords: vec![],
+            has_attachment: false,
+            size: 10,
+            server_uid: Some(7),
+            message_id: Some("<warm@example.org>".into()),
+            thread_id: Some("<warm@example.org>".into()),
+            sources: Vec::new(),
+        };
+        store.upsert_envelope(&folder, &envelope).unwrap();
+
+        let account_errors: Arc<Mutex<HashMap<String, String>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        account_errors
+            .lock()
+            .unwrap()
+            .insert("test".to_string(), "IMAP down".to_string());
+
+        for _ in 0..6 {
+            let result = prefetch_display_key(
+                engine.clone(),
+                store.clone(),
+                config.clone(),
+                account_errors.clone(),
+                format!("{folder}:7"),
+            )
+            .await;
+            assert!(result.is_ok(), "error-state account must be a benign skip");
+        }
+        assert!(
+            engine
+                .prefetch_queue()
+                .enqueue(origami_core::prefetch_queue::PrefetchRequest::new(
+                    "k",
+                    origami_core::prefetch_queue::PrefetchPriority::Viewport,
+                )),
+            "account-error skips must not trip the failure kill switch"
         );
     }
 }

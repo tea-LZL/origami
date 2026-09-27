@@ -566,6 +566,7 @@ export async function selectEnvelope(envelope: Envelope) {
   ) ?? sources[0];
   if (!primary) return;
   const request = ++messageRequest;
+  prefetcher.cancel();
   patch({ selectedEnvelope: envelope, messageLoading: true });
   try {
     let message: MessageDto | null = null;
