@@ -258,11 +258,12 @@ async fn prefetch_display_key(
     key: String,
 ) -> std::result::Result<(), String> {
     let Some((folder_id, uid)) = key.rsplit_once(':') else {
-        return Err(format!("bad prefetch key: {key}"));
+        // Malformed keys are a local mistake, not a fetch failure.
+        return Ok(());
     };
-    let server_uid: u32 = uid
-        .parse()
-        .map_err(|_| format!("bad prefetch uid: {uid}"))?;
+    let Ok(server_uid) = uid.parse::<u32>() else {
+        return Ok(());
+    };
     let folder_id = folder_id.to_string();
     if store
         .parsed_message_for_logical_message(&folder_id, server_uid)
@@ -271,25 +272,30 @@ async fn prefetch_display_key(
     {
         return Ok(());
     }
-    let (account_db_id, mailbox) = store
+    let Some((account_db_id, mailbox)) = store
         .folder_account_and_name(&folder_id)
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| format!("unknown folder {folder_id}"))?;
-    let account_config_id = store
+    else {
+        // Folder vanished since the UI enqueued the request.
+        return Ok(());
+    };
+    let Some(account_config_id) = store
         .account_config_id(&account_db_id)
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| format!("unknown account {account_db_id}"))?;
+    else {
+        return Ok(());
+    };
     let account = {
         let config = config.read().unwrap();
-        config
-            .accounts
-            .get(&account_config_id)
-            .cloned()
-            .ok_or_else(|| format!("unknown account {account_config_id}"))?
+        config.accounts.get(&account_config_id).cloned()
     };
-    let imap = account
-        .imap
-        .ok_or_else(|| format!("account {account_config_id} has no IMAP"))?;
+    let Some(account) = account else {
+        // Account removed since the UI enqueued the request.
+        return Ok(());
+    };
+    let Some(imap) = account.imap else {
+        return Ok(());
+    };
     let generation = engine.prefetch_queue().generation();
     let backend = ImapBackend::connect(&account_config_id, &imap)
         .await
@@ -303,8 +309,11 @@ async fn prefetch_display_key(
     }
     let envelope = store
         .get_envelope(&folder_id, server_uid)
-        .map_err(|error| error.to_string())?
-        .ok_or_else(|| format!("envelope gone for {folder_id}:{server_uid}"))?;
+        .map_err(|error| error.to_string())?;
+    let Some(envelope) = envelope else {
+        // Message deleted since the UI enqueued the request.
+        return Ok(());
+    };
     let fallback = format!("display:{folder_id}:{server_uid}");
     engine
         .cache_display_message_sources(&envelope.sources, &display, &fallback)
@@ -379,4 +388,50 @@ pub fn account_from_config<'c>(
 /// XDG data dir for Origami (~/.local/share/origami).
 pub fn data_dir() -> PathBuf {
     origami_core::config::data_dir()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use origami_core::model::MailboxRole;
+
+    #[tokio::test]
+    async fn benign_prefetch_misses_do_not_disable_queue() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_memory().unwrap();
+        let blobs = origami_core::blob::BlobStore::open(&dir.path().join("blobs")).unwrap();
+        let engine = Arc::new(SyncEngine::new(store.clone(), blobs));
+        let config = Arc::new(RwLock::new(Config::default()));
+
+        let account = store
+            .upsert_account("test", "Test", "t@example.org")
+            .unwrap();
+        let folder = store
+            .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
+            .unwrap();
+
+        // Malformed key, unknown folder, and envelope-gone are benign skips.
+        for key in [
+            "nope".to_string(),
+            "missing-folder:7".to_string(),
+            format!("{folder}:99"),
+        ] {
+            let result =
+                prefetch_display_key(engine.clone(), store.clone(), config.clone(), key.clone())
+                    .await;
+            assert!(result.is_ok(), "benign miss must not be an error: {key}");
+            // Mirror the worker's streak accounting for an Ok outcome.
+            engine.prefetch_queue().note_success();
+        }
+
+        assert!(
+            engine
+                .prefetch_queue()
+                .enqueue(origami_core::prefetch_queue::PrefetchRequest::new(
+                    "k",
+                    origami_core::prefetch_queue::PrefetchPriority::Viewport,
+                )),
+            "benign misses must not trip the failure kill switch"
+        );
+    }
 }
