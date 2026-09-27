@@ -126,7 +126,7 @@
 </script>
 
 {#if app.value.composerOpen}
-  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="composer-title" use:trapFocus>
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="composer-title" use:trapFocus={{ onEscape: onClose }}>
     <div class="composer">
       <header>
         <h2 id="composer-title">New message</h2>

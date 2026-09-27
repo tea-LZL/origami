@@ -187,3 +187,10 @@ correspondents datalist — Enter/comma commits, Backspace removes the last chip
 remove, dedupe, and address-shape validation. Draft model unchanged (comma-separated
 strings), so existing drafts stay compatible. Tests: `RecipientInput.test.ts` (5) +
 Composer focus tests preserved. [[release-readiness]] QoL order item 5 delivered.
+
+## [2026-09-27] update | dialog Escape handling + focus test coverage
+QoL item 6 (keyboard half): `trapFocus` accepts `{ onEscape }` and all five dialogs
+(Outbox, Preferences, AccountSettings, AddAccount, Composer) close on Escape; focus
+restoration on close was already implemented and is pinned by the harness test plus a new
+Outbox integration test (`escape_closes_the_outbox`). Entry/trap/restore covered in
+`trapFocus.test.ts` (3 tests).

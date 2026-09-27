@@ -88,7 +88,7 @@
 </script>
 
 {#if app.value.preferencesOpen}
-  <div class="overlay" role="presentation" use:trapFocus>
+  <div class="overlay" role="presentation" use:trapFocus={{ onEscape: () => (app.value.preferencesOpen = false) }}>
     <dialog
       open
       class="preferences"

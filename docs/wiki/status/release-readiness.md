@@ -87,7 +87,9 @@ split into required-1.0 items and documented post-1.0 scope.
    `markread-zoom`, 2026-09-27).
 5. ~~Add recipient chips over the existing learned correspondent data.~~ Delivered (branch
    `recipient-chips`, 2026-09-27).
-6. Complete dialog focus entry/trapping/restoration and keyboard interaction tests.
+6. ~~Complete dialog focus entry/trapping/restoration and keyboard interaction tests.~~
+   Delivered (branch `qol-batch`, 2026-09-27: Escape handling in `trapFocus`, all dialogs
+   wired, Outbox integration test).
 7. Add folder hierarchy/subscription support.
 8. Add signatures/plain-text compose mode before inline-image editing.
 9. Consolidate repeated dialog/button/status patterns only as each flow is touched.

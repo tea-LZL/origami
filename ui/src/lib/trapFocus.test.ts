@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import TrapFocusHarness from "../test/TrapFocusHarness.svelte";
 
 describe("trapFocus", () => {
@@ -23,6 +23,24 @@ describe("trapFocus", () => {
     await fireEvent.keyDown(screen.getByRole("dialog"), { key: "Tab", shiftKey: true });
     expect(two).toHaveFocus();
 
+    view.unmount();
+    expect(outside).toHaveFocus();
+    outside.remove();
+  });
+
+  it("invokes_onEscape_and_restores_focus_on_Escape", async () => {
+    const outside = document.createElement("button");
+    outside.textContent = "Outside";
+    document.body.append(outside);
+    outside.focus();
+
+    const onEscape = vi.fn();
+    const view = render(TrapFocusHarness, { props: { onEscape } });
+    const one = screen.getByRole("button", { name: "One" });
+    await waitFor(() => expect(one).toHaveFocus());
+
+    await fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(onEscape).toHaveBeenCalledTimes(1);
     view.unmount();
     expect(outside).toHaveFocus();
     outside.remove();

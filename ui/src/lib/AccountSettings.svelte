@@ -114,7 +114,7 @@
 </script>
 
 {#if open}
-  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="account-settings-title" use:trapFocus>
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="account-settings-title" use:trapFocus={{ onEscape: close }}>
     <div class="dialog">
       <h2 id="account-settings-title">Account settings</h2>
       <form onsubmit={(e) => { e.preventDefault(); save(); }}>

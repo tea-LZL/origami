@@ -81,7 +81,7 @@
 </script>
 
 {#if app.value.outboxAccountId}
-  <div class="overlay" role="presentation" use:trapFocus>
+  <div class="overlay" role="presentation" use:trapFocus={{ onEscape: close }}>
     <dialog open aria-labelledby="outbox-title">
       <header>
         <div>
