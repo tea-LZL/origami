@@ -10,6 +10,7 @@
     itemHeight: number;
     render: Snippet<[T, number]>;
     onSelect?: (item: T, event: MouseEvent | KeyboardEvent) => void;
+    onHover?: (item: T) => void;
     selectedId?: (item: T) => string | null;
     activeId?: string | null;
     isSelected?: (item: T) => boolean;
@@ -25,6 +26,7 @@
     itemHeight,
     render,
     onSelect,
+    onHover,
     selectedId,
     activeId = null,
     isSelected,
@@ -140,6 +142,7 @@
           aria-selected={isSelected?.(item) ?? false}
           tabindex={activeId != null && selectedId?.(item) === activeId ? 0 : -1}
           onclick={(event) => onSelect?.(item, event)}
+          onmouseenter={() => onHover?.(item)}
           onkeydown={(event) => onRowKeydown(event, item)}
         >
           {@render render(item, startIndex + i)}

@@ -19,6 +19,7 @@
     toggleEnvelopeSelection,
     recordFolderScroll,
     restoredFolderScroll,
+    prefetcher,
   } from "./stores.svelte";
   import VirtualList from "./VirtualList.svelte";
   import type { Envelope } from "./types";
@@ -335,6 +336,7 @@
         isSelected={(e) => selectedIds.has(e.id)}
         isUnread={isUnread}
         onSelect={onRowSelect}
+        onHover={(e) => prefetcher.hover(e)}
         onEndReached={loadMoreEnvelopes}
         restoreScroll={restoredFolderScroll()}
         restoreKey={app.value.selectedFolderId ?? ""}

@@ -13,6 +13,7 @@ import {
   type AccountStatusDto,
 } from "./api";
 import { withUnreadToken } from "./searchHighlight";
+import { createPrefetcher } from "./prefetch";
 import {
   applyUnreadListReload,
   folderViewKey as unreadFolderViewKey,
@@ -20,6 +21,9 @@ import {
   unreadKeepIds,
 } from "./unreadList";
 import type { Envelope, EnvelopeSource, Flag, Mailbox, MailboxRole } from "./types";
+
+/// Shared display-prefetch scheduler (hover/keyboard predicted, viewport later).
+export const prefetcher = createPrefetcher();
 
 export type WorkspaceLayout = "three-pane" | "two-pane" | "reading";
 
@@ -382,6 +386,7 @@ export async function selectFolder(folderId: string) {
   }
   snapshotFolderView();
   messageRequest += 1;
+  prefetcher.cancel();
   const cached = folderViews.get(folderViewKey(folderId));
   folderScrollTop = cached?.scrollTop ?? 0;
   patch({
@@ -411,6 +416,7 @@ export async function selectFolder(folderId: string) {
 
 export async function selectUnifiedInbox() {
   messageRequest += 1;
+  prefetcher.cancel();
   patch({
     selectedFolderId: null,
     unifiedInbox: true,
@@ -614,6 +620,7 @@ export async function selectEnvelope(envelope: Envelope) {
         item.id === envelope.id ? { ...item, hasAttachment: attachmentState } : item
       ),
     });
+    prefetcher.focusMove(envelope);
     // First-open marks as read: optimistic local flip + command.
     if (!messageWithAttachmentState.envelope.flags.includes("Seen")) {
       const next: Flag[] = Array.from(new Set([...messageWithAttachmentState.envelope.flags, "Seen"]));
@@ -644,6 +651,7 @@ export async function selectEnvelope(envelope: Envelope) {
 
 export async function searchMessages(query: string) {
   const normalized = query.trim();
+  prefetcher.cancel();
   patch({
     searchQuery: query,
     selectedMessageIds: [],
