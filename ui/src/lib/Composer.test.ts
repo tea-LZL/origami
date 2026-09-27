@@ -32,7 +32,7 @@ vi.mock("./stores.svelte", () => import("./composer-test-store.svelte"));
 vi.mock("./api", () => ({ api: { saveComposerDraft: vi.fn().mockResolvedValue(undefined) } }));
 
 import Composer from "./Composer.svelte";
-import { app, resetComposerTestStore } from "./composer-test-store.svelte";
+import { app, discardComposerDraft, resetComposerTestStore } from "./composer-test-store.svelte";
 
 describe("Composer focus behavior", () => {
   beforeEach(() => {
@@ -65,6 +65,23 @@ describe("Composer focus behavior", () => {
 
     await tick();
     expect(subject).toHaveFocus();
+  });
+
+  it("shows_discard_actions_for_recovered_draft_only", async () => {
+    app.value.composerRecovered = true;
+    render(Composer);
+
+    expect(screen.getByText("Recovered draft")).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(discardComposerDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides_discard_actions_for_fresh_compose", () => {
+    app.value.composerRecovered = false;
+    render(Composer);
+
+    expect(screen.queryByText("Recovered draft")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Discard" })).not.toBeInTheDocument();
   });
 
   it("focuses editor when clicking unused body space", async () => {

@@ -107,6 +107,8 @@ export interface State {
     inReplyTo: string | null;
     references: string[];
   };
+  composerRecovered: boolean;
+  composerDiscarded: boolean;
   syncing: boolean;
   lastError: string | null;
   lastNotice: string | null;
@@ -152,6 +154,8 @@ const initial: State = {
   composerAttachments: [],
   composerDraft: { to: "", cc: "", bcc: "", subject: "", html: "" },
   composerThreading: { inReplyTo: null, references: [] },
+  composerRecovered: false,
+  composerDiscarded: false,
   syncing: false,
   lastError: null,
   lastNotice: null,
@@ -1220,6 +1224,26 @@ export async function openComposer(
       ...blankDraft(),
       ...(draft ?? legacy ?? recovered?.draft ?? {}),
     },
+    composerRecovered: !draft && (legacy !== null || recovered !== null),
+    composerDiscarded: false,
+  });
+}
+
+/** Throw away a recovered draft: local copies and the stored draft are
+ * deleted, the composer blanks, and closing it will not re-save. */
+export async function discardComposerDraft() {
+  try {
+    await api.deleteComposerDraft();
+  } catch {
+    // Nothing to delete is fine; the local state still resets.
+  }
+  localStorage.removeItem("origami-composer-draft");
+  patch({
+    composerDraft: blankDraft(),
+    composerAttachments: [],
+    composerThreading: blankThreading(),
+    composerRecovered: false,
+    composerDiscarded: true,
   });
 }
 
@@ -1261,6 +1285,12 @@ export function openReplyComposer(mode: "reply" | "replyAll" | "forward") {
 }
 
 export async function closeComposer() {
+  if (app.value.composerDiscarded) {
+    // The recovered draft was explicitly discarded; do not resurrect it as
+    // an empty saved draft.
+    patch({ composerOpen: false, composerDiscarded: false });
+    return;
+  }
   try {
     await api.saveComposerDraft({
       accountId: app.value.composerAccountId,
@@ -1313,7 +1343,7 @@ export async function sendComposer() {
     });
     localStorage.removeItem("origami-composer-draft");
     await api.deleteComposerDraft();
-    patch({ composerOpen: false });
+    patch({ composerOpen: false, composerRecovered: false, composerDiscarded: false });
     patch({
       lastError: null,
       lastNotice: result.queued ? "Message queued and will send when the account reconnects" : "Message sent",

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Editor } from "@tiptap/core";
   import StarterKit from "@tiptap/starter-kit";
-  import { app, closeComposer, sendComposer } from "./stores.svelte";
+  import { app, closeComposer, discardComposerDraft, sendComposer } from "./stores.svelte";
   import { api } from "./api";
   import Select from "./Select.svelte";
   import { trapFocus } from "./trapFocus";
@@ -131,6 +131,20 @@
         <h2 id="composer-title">New message</h2>
         <button type="button" class="close" onclick={onClose} aria-label="Close composer">×</button>
       </header>
+
+      {#if app.value.composerRecovered}
+        <div class="recovered" role="status">
+          <span>Recovered draft</span>
+          <div class="recovered-actions">
+            <button type="button" class="recovered-discard" onclick={() => void discardComposerDraft()}>
+              Discard
+            </button>
+            <button type="button" class="recovered-keep" onclick={() => (app.value.composerRecovered = false)}>
+              Keep editing
+            </button>
+          </div>
+        </div>
+      {/if}
 
       <div class="fields">
         <label>From
@@ -318,6 +332,19 @@
     background: color-mix(in oklab, var(--bg-sunken) 56%, var(--bg-raised));
   }
   .draft-state { margin-right: auto; align-self: center; color: var(--fg-subtle); font-size: 10px; }
+  .recovered {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 8px 12px; border: 1px solid color-mix(in oklab, var(--warning) 40%, var(--border));
+    border-radius: var(--radius-md); background: color-mix(in oklab, var(--warning) 12%, var(--bg-raised));
+    font-size: 11px; color: var(--fg);
+  }
+  .recovered-actions { display: flex; gap: 8px; }
+  .recovered-actions button {
+    padding: 3px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    font-size: 11px; cursor: pointer; color: var(--fg); background: var(--bg-raised);
+  }
+  .recovered-actions button:hover { background: var(--bg-sunken); }
+  .recovered-discard { color: var(--danger-fg); background: var(--danger); border-color: var(--danger); }
   .cancel { padding: 6px 12px; border-radius: var(--radius-sm); }
   .send {
     background: var(--accent);
