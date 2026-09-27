@@ -122,14 +122,18 @@
 
   $effect(() => () => frameResizeObserver?.disconnect());
 
+  function headerEnvelope() {
+    return app.value.message?.envelope ?? app.value.selectedEnvelope;
+  }
+
   function fromText(): string {
-    return app.value.message?.envelope.from
+    return headerEnvelope()?.from
       .map((a) => a.name ?? a.addr)
       .join(", ") ?? "";
   }
 
   function fromAddressText(): string {
-    return app.value.message?.envelope.from
+    return headerEnvelope()?.from
       .map((a) => a.addr)
       .join(", ") ?? "";
   }
@@ -192,26 +196,15 @@
 </script>
 
 <section class="message">
-  {#if app.value.messageLoading && !app.value.message}
-    <div class="message-loading" role="status" aria-live="polite">
-      <span class="sr-only">Loading message</span>
-      <div class="message-skeleton" aria-hidden="true">
-        <span class="skeleton skeleton-title"></span>
-        <span class="skeleton skeleton-meta"></span>
-        <span class="skeleton skeleton-rule"></span>
-        <span class="skeleton skeleton-copy wide"></span>
-        <span class="skeleton skeleton-copy"></span>
-        <span class="skeleton skeleton-copy short"></span>
-      </div>
-    </div>
-  {:else if !app.value.message}
+  {#if !app.value.message && !app.value.selectedEnvelope}
     <div class="empty">
       <OrigamiArtwork variant="empty" theme={app.value.theme} className="message-empty-art" />
       <span>Select a message</span>
     </div>
   {:else}
-    {@const env = app.value.message.envelope}
-    {@const headers = app.value.message.headers}
+    {@const env = headerEnvelope()!}
+    {@const message = app.value.message}
+    {@const headers = message?.headers ?? null}
     <header>
       {#if app.value.layout !== "three-pane" || app.value.selectedEnvelope}
         <button type="button" class="back-to-messages" onclick={backToMessages}>Back to messages</button>
@@ -219,7 +212,7 @@
       <div class="subject-row">
         <h1>{env.subject || "(no subject)"}</h1>
         <div class="message-actions" role="toolbar" aria-label="Message actions">
-          {#if app.value.message.html && app.value.message.text}
+          {#if message && message.html && message.text}
             <div class="content-mode" role="group" aria-label="Message format">
               <button
                 type="button"
@@ -286,7 +279,7 @@
           <span>Stored locally</span>
         {/if}
       </div>
-      {#if detailsOpen}
+      {#if headers && detailsOpen}
         <dl class="details">
           <div><dt>From</dt><dd>{fromText()}</dd></div>
           {#if headers.sender.length > 0}<div><dt>Sender</dt><dd>{addressText(headers.sender)}</dd></div>{/if}
@@ -315,58 +308,72 @@
       {/if}
     </header>
 
-    {#if safeHtml.blockedResources > 0}
-      <div class="remote-bar" role="status">
-        <strong>Remote content blocked</strong>
-        <span>{safeHtml.blockedResources} image{safeHtml.blockedResources === 1 ? "" : "s"} from {safeHtml.blockedHosts.join(", ") || "unknown sources"}</span>
-        <div class="remote-actions">
-          <button type="button" onclick={loadRemoteContentOnce}>Load images once</button>
-          {#if safeHtml.blockedOrigins.length > 0}
-            <button type="button" class="risk" onclick={alwaysAllowBlockedSources}>Always allow these sources</button>
-          {/if}
-          {#if senderAddress()}
-            <button type="button" onclick={alwaysAllowSender}>Always allow this sender</button>
-          {/if}
+    {#if message}
+      {#if safeHtml.blockedResources > 0}
+        <div class="remote-bar" role="status">
+          <strong>Remote content blocked</strong>
+          <span>{safeHtml.blockedResources} image{safeHtml.blockedResources === 1 ? "" : "s"} from {safeHtml.blockedHosts.join(", ") || "unknown sources"}</span>
+          <div class="remote-actions">
+            <button type="button" onclick={loadRemoteContentOnce}>Load images once</button>
+            {#if safeHtml.blockedOrigins.length > 0}
+              <button type="button" class="risk" onclick={alwaysAllowBlockedSources}>Always allow these sources</button>
+            {/if}
+            {#if senderAddress()}
+              <button type="button" onclick={alwaysAllowSender}>Always allow this sender</button>
+            {/if}
+          </div>
+        </div>
+      {/if}
+      {#if message.parseWarnings.length > 0}
+        <div class="parse-warning" role="status">Some MIME parts could not be decoded completely.</div>
+      {/if}
+
+      {#key env.id}
+      <div class="body" data-navigation="message-body" tabindex="-1" aria-label="Message body" use:messageBodyKeyboard>
+        {#if safeHtml.html && (contentMode === "html" || !safeText)}
+          <iframe
+            class="email-frame"
+            title="Email HTML body"
+            sandbox="allow-same-origin"
+            referrerpolicy="no-referrer"
+            srcdoc={safeHtml.srcdoc}
+            onload={bindEmailFrame}
+          ></iframe>
+        {:else if safeText}
+          <pre class="text">{safeText}</pre>
+        {:else}
+          <p class="empty">This message has no displayable body.</p>
+        {/if}
+      </div>
+      {/key}
+
+      {#if message.attachments.length > 0}
+        <footer>
+          <h2>Attachments</h2>
+          <ul>
+            {#each message.attachments as att (att.index)}
+              <li>
+                <button type="button" onclick={() => downloadAttachment(att.index, att.name)}>
+                  {att.name ?? `attachment-${att.index}`}
+                  <small>{att.mime} · {formatBytes(att.size)}{att.inline ? " · inline" : ""}</small>
+                </button>
+              </li>
+            {/each}
+          </ul>
+        </footer>
+      {/if}
+    {:else}
+      <div class="message-loading" role="status" aria-live="polite">
+        <span class="sr-only">Loading message</span>
+        <div class="message-skeleton" aria-hidden="true">
+          <span class="skeleton skeleton-title"></span>
+          <span class="skeleton skeleton-meta"></span>
+          <span class="skeleton skeleton-rule"></span>
+          <span class="skeleton skeleton-copy wide"></span>
+          <span class="skeleton skeleton-copy"></span>
+          <span class="skeleton skeleton-copy short"></span>
         </div>
       </div>
-    {/if}
-    {#if app.value.message.parseWarnings.length > 0}
-      <div class="parse-warning" role="status">Some MIME parts could not be decoded completely.</div>
-    {/if}
-
-    {#key env.id}
-    <div class="body" data-navigation="message-body" tabindex="-1" aria-label="Message body" use:messageBodyKeyboard>
-      {#if safeHtml.html && (contentMode === "html" || !safeText)}
-        <iframe
-          class="email-frame"
-          title="Email HTML body"
-          sandbox="allow-same-origin"
-          referrerpolicy="no-referrer"
-          srcdoc={safeHtml.srcdoc}
-          onload={bindEmailFrame}
-        ></iframe>
-      {:else if safeText}
-        <pre class="text">{safeText}</pre>
-      {:else}
-        <p class="empty">This message has no displayable body.</p>
-      {/if}
-    </div>
-    {/key}
-
-    {#if app.value.message.attachments.length > 0}
-      <footer>
-        <h2>Attachments</h2>
-        <ul>
-          {#each app.value.message.attachments as att (att.index)}
-            <li>
-              <button type="button" onclick={() => downloadAttachment(att.index, att.name)}>
-                {att.name ?? `attachment-${att.index}`}
-                <small>{att.mime} · {formatBytes(att.size)}{att.inline ? " · inline" : ""}</small>
-              </button>
-            </li>
-          {/each}
-        </ul>
-      </footer>
     {/if}
   {/if}
 </section>
