@@ -2,7 +2,7 @@
 title: Build and verification
 type: status
 status: current
-updated: 2026-09-22
+updated: 2026-09-27
 sources:
   - MEMORY.md
   - .github/workflows/ci.yml
@@ -19,11 +19,13 @@ cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo check --workspace
 cargo test --workspace
+cargo audit && cargo deny check
 cargo build -p origami-app --no-default-features
 
 npm --prefix ui run check
 npm --prefix ui test -- --run
 npm --prefix ui run build
+npm --prefix ui run check:contrast
 
 git diff --check
 git status --short --branch
@@ -80,6 +82,19 @@ navigation, and both themes.
   each theme (light/dark/ember) and check sidebar role dots, 12 tag chips, outbox
   chips, unread pip, skeletons, composer, dialogs; flip OS scheme with preference
   "system"; run once under `forced-colors: active`.
+
+## PR #1 verification (harden-cache-palette, 2026-09-27)
+
+Merged as `7389968` (39 commits). Local runs on the branch: `cargo test --workspace
+--locked` (15 test binaries), `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo deny check`, `cargo audit`, `npm test --prefix ui` (91), `npm run check --prefix ui`,
+contrast gate (3 themes). CI run 36308544416 green on all four jobs (rust incl. the new
+audit/deny steps, ui, package_arch, package_windows); `publish` skipped (tag-only). A
+pre-fix fmt failure (run 36308199291) is why the branch carries a dedicated `cargo fmt`
+commit.
+
+Cached-open budget check: `cargo test -p origami-app --test open_latency -- --ignored`
+(mean LRU hit well under the 50 ms budget).
 
 ## Related
 

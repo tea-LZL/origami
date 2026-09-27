@@ -2,7 +2,7 @@
 title: origami-app
 type: entity
 status: current
-updated: 2026-09-12
+updated: 2026-09-27
 sources:
   - crates/origami-app/src/lib.rs
   - crates/origami-app/src/state.rs
@@ -19,9 +19,10 @@ command/event boundary the Svelte UI talks to.
 
 | File | Responsibility |
 |---|---|
-| `src/lib.rs` | Tauri lifecycle, tray, sync events, notifications |
-| `src/state.rs` | `AppState`: store, config, workers, OAuth refresh, cancellation ownership |
-| `src/commands.rs` | Tauri command / DTO boundary |
+| `src/lib.rs` | Tauri lifecycle, tray, sync events, notifications, quit-time WAL checkpoint |
+| `src/state.rs` | `AppState`: store, config, workers, OAuth refresh, cancellation ownership, display LRU, prefetch worker startup |
+| `src/commands.rs` | Tauri command / DTO boundary (`prefetch_display`, `reopen_outbox_entry`, …) |
+| `src/display_lru.rs` | In-memory parsed-display LRU (32 MiB / 300) for the open path |
 | `src/oauth_flow.rs` | Local-host redirect listener for the OAuth code |
 | `src/notifications.rs` | Desktop notification plumbing |
 | `src/main.rs` | Entry point |

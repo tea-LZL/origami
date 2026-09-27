@@ -4,6 +4,7 @@ type: status
 status: current
 updated: 2026-09-27
 sources:
+  - docs/superpowers/specs/2026-09-26-hardening-caching-palette-design.md
   - MEMORY.md
   - docs/IMPROVEMENT_PLAN.md
   - docs/PLAN.md
@@ -25,7 +26,8 @@ several proof and distribution gates are absent.
   unsigned Windows NSIS installer on `windows-latest`, and publishes both with checksums as
   GitHub Release assets. `v0.1.0` released 2026-09-27 with all four assets (runs 36269969749,
   36276664146, 36278995728). Windows installer is unsigned/experimental — SmartScreen warns
-  ([[github-cicd-md]]).
+  ([[github-cicd-md]]). PR #1 (`harden-cache-palette`) ran the full matrix green
+  (run 36308544416) including the new `cargo-audit` / `cargo-deny` steps.
 - `packaging/arch/PKGBUILD` is tracked and installs the native binary, desktop entry, and
   hicolor icons.
 - The Tauri `deb` target remains, while Arch distribution uses the tracked PKGBUILD.
@@ -43,18 +45,23 @@ several proof and distribution gates are absent.
 - The GreenMail SMTP round-trip tolerates a known `io-smtp` greeting-parser incompatibility
   ([[test-suite-md]]).
 - No Playwright daily-driver suite and no native WebKit automated workflow.
-- No explicit 10,000-row, cached-open, search, or sync performance budgets.
+- **Cached-open budget landed** (mean LRU hit < 50 ms,
+  `crates/origami-app/tests/open_latency.rs`, `--ignored`); explicit 10,000-row, search, and
+  sync budgets are still missing.
+- The Docker-harness end-to-end runs added/affected by the hardening track (folder failure
+  isolation, poison outbox replay) have not been executed.
 
 ### 4. Security and accessibility gates
-- An audit found existing data/config directories at `0755` and mail/config/database files
-  at `0644`; this worktree enforces `0700` roots plus `0600` config/database/new-blob files
-  on the next open/write, but **an existing-data native smoke is still required**
-  ([[store-and-search]]).
-- The npm dependency tree is audit-clean in this worktree; no `cargo-audit`/`cargo-deny`
-  policy is installed or automated yet.
-- Sanitizer/component tests exist, but no broad hostile-message corpus or navigation fuzz
-  gate; keyboard/focus behavior is only partially tested.
-- No automated accessibility or visual-regression checks.
+- **Resolved in PR #1**: existing-data permission smoke
+  (`existing_data_perms_tightened`, including WAL sidecars, blob shards, and config, with
+  symlink-safe tree tightening); `cargo-audit` + `cargo-deny` policy automated in CI;
+  hostile-MIME corpus with depth/header/decode caps; blob-hash traversal gate and
+  attachment scoping; link-scheme allowlist tests; secret redaction on errors and outbox
+  rows ([[store-and-search]], [[content-addressed-store]],
+  [[hardening-caching-palette-spec]]).
+- Still open: no navigation fuzz gate; keyboard/focus behavior only partially tested; no
+  automated accessibility or visual-regression checks (the palette contrast gate covers
+  token contrast only — [[build-and-verification]]).
 
 ### 5. Daily-driver gaps
 Recipient chips/contact management, signatures, inline images, plain-text compose; folder
