@@ -21,6 +21,21 @@ import type { Envelope } from "./types";
 const cached = vi.mocked(api.getCachedMessage);
 const storeFlags = vi.mocked(api.storeFlags);
 
+// jsdom may not provide localStorage in every environment (see
+// MessageView.test.ts for the same pattern).
+function stubLocalStorage() {
+  const values = new Map<string, string>();
+  Object.defineProperty(globalThis, "localStorage", {
+    value: {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+      clear: () => values.clear(),
+    },
+    configurable: true,
+  });
+}
+
 function envelope(id: string, flags: string[] = []): Envelope {
   return {
     id,
@@ -64,6 +79,7 @@ function message(id: string, flags: string[] = []): MessageDto {
 
 describe("delayed mark as read", () => {
   beforeEach(() => {
+    stubLocalStorage();
     vi.useFakeTimers();
     vi.clearAllMocks();
     app.value.accounts = [
@@ -129,6 +145,7 @@ describe("delayed mark as read", () => {
 
 describe("message zoom", () => {
   beforeEach(() => {
+    stubLocalStorage();
     vi.clearAllMocks();
     app.value.messageZoom = 100;
   });
