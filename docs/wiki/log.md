@@ -150,3 +150,10 @@ resolved), [[build-and-verification]] (gates + PR run 36308544416 + cached-open 
 [[index]]. CI green on all four jobs; Docker-harness end-to-end and the manual
 GUI/forced-colors pass remain owed.
 (docs(wiki): ingest PR #1 caching, hardening, and palette work)
+
+## [2026-09-27] update | composer draft discard/keep
+QoL item delivered: recovered composer drafts now surface a notice with Discard (deletes
+stored + legacy copies, blanks the editor, close skips re-save) and Keep editing actions.
+`composerRecovered`/`composerDiscarded` state in `stores.svelte.ts`; tests in
+`ui/src/lib/stores.draft.test.ts` and `ui/src/lib/Composer.test.ts`.
+[[release-readiness]] QoL order item 2 delivered.
