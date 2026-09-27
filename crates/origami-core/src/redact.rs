@@ -29,14 +29,12 @@ pub fn redact_with(input: &str, secrets: &[&str]) -> String {
     out
 }
 
-/// Mask the run after `key` (case-insensitive) up to whitespace, or up to
-/// end-of-line when `to_eol`.
+/// Mask the run after `key` (ASCII-case-insensitive) up to whitespace, or up
+/// to end-of-line when `to_eol`.
 fn mask_after_key(input: &str, key: &str, to_eol: bool) -> String {
-    let lower = input.to_lowercase();
     let mut out = String::with_capacity(input.len());
     let mut rest = input;
-    let mut rest_lower = lower.as_str();
-    while let Some(found) = rest_lower.find(key) {
+    while let Some(found) = find_ascii_ignore_case(rest, key) {
         let value_start = found + key.len();
         let value_end = if to_eol {
             rest[value_start..]
@@ -54,10 +52,22 @@ fn mask_after_key(input: &str, key: &str, to_eol: bool) -> String {
             out.push_str(MASK);
         }
         rest = &rest[value_end..];
-        rest_lower = &rest_lower[value_end..];
     }
     out.push_str(rest);
     out
+}
+
+/// Byte offset of the first `needle` match under ASCII case-insensitivity.
+/// Windowed on char boundaries — safe with multi-byte haystacks.
+fn find_ascii_ignore_case(haystack: &str, needle: &str) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    (0..=haystack.len() - needle.len()).find(|&i| {
+        haystack
+            .get(i..i + needle.len())
+            .is_some_and(|window| window.eq_ignore_ascii_case(needle))
+    })
 }
 
 /// Mask the string value of `"key": "…"` JSON (and `key: "…"` loose form).
@@ -123,5 +133,16 @@ mod tests {
         let input = "no secrets here";
         assert_eq!(redact_secrets(input), input);
         assert_eq!(redact_with(input, &[]), input);
+    }
+
+    #[test]
+    fn redacts_non_ascii_errors_without_panicking() {
+        // `İ`.to_lowercase() changes byte length — offsets must not desync.
+        let input = "hata: İKİ gün sonra password=hunter2 denendi";
+        let redacted = redact_secrets(input);
+        assert_eq!(
+            redacted, "hata: İKİ gün sonra password=[redacted] denendi",
+            "mis-masked: {redacted}"
+        );
     }
 }
