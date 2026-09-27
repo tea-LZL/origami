@@ -78,6 +78,7 @@ export interface State {
   envelopePage: number;
   hasMoreEnvelopes: boolean;
   searchQuery: string;
+  searchTotal: number | null;
   searching: boolean;
   savedSearches: SavedSearch[];
   correspondents: Correspondent[];
@@ -139,6 +140,7 @@ const initial: State = {
   envelopePage: 1,
   hasMoreEnvelopes: true,
   searchQuery: "",
+  searchTotal: null,
   searching: false,
   savedSearches: [],
   correspondents: [],
@@ -489,6 +491,7 @@ async function loadUnifiedInbox() {
     });
     patch({
       envelopes,
+      searchTotal: null,
       envelopesLoading: false,
       envelopePage: 1,
       hasMoreEnvelopes: loaded.length === 200,
@@ -518,6 +521,7 @@ export async function loadEnvelopes(folderId: string) {
     });
     patch({
       envelopes,
+      searchTotal: null,
       envelopesLoading: false,
       envelopePage: 1,
       hasMoreEnvelopes: loaded.length === 200,
@@ -700,6 +704,7 @@ export async function searchMessages(query: string) {
     selectingAll: false,
   });
   if (!normalized) {
+    patch({ searchTotal: null });
     if (app.value.unifiedInbox) await loadUnifiedInbox();
     else if (app.value.selectedFolderId) await loadEnvelopes(app.value.selectedFolderId);
     return;
@@ -714,10 +719,15 @@ export async function searchMessages(query: string) {
     message: null,
   });
   try {
-    const envelopes = await api.searchPage(withUnreadToken(query, unreadOnly()), 1, 200);
+    const token = withUnreadToken(query, unreadOnly());
+    const [envelopes, total] = await Promise.all([
+      api.searchPage(token, 1, 200),
+      api.searchCount(token).catch(() => null),
+    ]);
     if (request !== envelopeRequest || app.value.searchQuery.trim() !== normalized) return;
     patch({
       envelopes,
+      searchTotal: total,
       searching: false,
       envelopesLoading: false,
       envelopePage: 1,

@@ -1608,19 +1608,10 @@ impl Store {
         self.search_page(query, 1, limit)
     }
 
-    /// Search one page of envelope metadata plus indexed bodies.
-    pub fn search_page(&self, query: &str, page: u32, page_size: u32) -> Result<Vec<Envelope>> {
-        let conn = self.conn()?;
-        let page_size = page_size.max(1);
-        let mut sql = String::from(
-            "SELECT m.id, m.folder_id, m.server_uid, m.message_id, m.thread_id, m.subject,
-                    m.from_json, m.to_json, m.date, m.received_at, m.size, m.flags_json,
-                    m.keywords_json, m.has_attachment, a.id
-               FROM messages m
-               JOIN folders f ON f.id = m.folder_id
-               JOIN accounts a ON a.id = f.account_id
-              WHERE 1 = 1",
-        );
+    /// Build the shared search WHERE clauses (without pagination) for a query
+    /// string; used by both `search_page` and `search_count`.
+    fn search_where(query: &str) -> (String, Vec<Value>) {
+        let mut sql = String::new();
         let mut values = Vec::<Value>::new();
         for token in query.split_whitespace() {
             let (field, value) = token.split_once(':').unwrap_or(("", token));
@@ -1666,11 +1657,11 @@ impl Store {
                 _ => {
                     sql.push_str(
                         " AND (m.subject LIKE ? ESCAPE '\\'
-                              OR m.from_json LIKE ? ESCAPE '\\'
-                              OR m.to_json LIKE ? ESCAPE '\\'
-                              OR m.rowid IN (
-                                  SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?
-                              ))",
+                          OR m.from_json LIKE ? ESCAPE '\\'
+                          OR m.to_json LIKE ? ESCAPE '\\'
+                          OR m.rowid IN (
+                              SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?
+                          ))",
                     );
                     values.push(like());
                     values.push(like());
@@ -1679,6 +1670,39 @@ impl Store {
                 }
             }
         }
+        (sql, values)
+    }
+
+    /// Count every message the search query matches (same clauses as
+    /// `search_page`, no pagination).
+    pub fn search_count(&self, query: &str) -> Result<u32> {
+        let conn = self.conn()?;
+        let (clauses, values) = Self::search_where(query);
+        let sql = format!(
+            "SELECT COUNT(*)
+               FROM messages m
+               JOIN folders f ON f.id = m.folder_id
+               JOIN accounts a ON a.id = f.account_id
+              WHERE 1 = 1{clauses}"
+        );
+        let count: i64 = conn.query_row(&sql, params_from_iter(values), |row| row.get(0))?;
+        u32::try_from(count).map_err(|_| Error::Backend("search count exceeds u32".into()))
+    }
+
+    /// Search one page of envelope metadata plus indexed bodies.
+    pub fn search_page(&self, query: &str, page: u32, page_size: u32) -> Result<Vec<Envelope>> {
+        let conn = self.conn()?;
+        let page_size = page_size.max(1);
+        let (clauses, values) = Self::search_where(query);
+        let mut sql = format!(
+            "SELECT m.id, m.folder_id, m.server_uid, m.message_id, m.thread_id, m.subject,
+                    m.from_json, m.to_json, m.date, m.received_at, m.size, m.flags_json,
+                    m.keywords_json, m.has_attachment, a.id
+               FROM messages m
+               JOIN folders f ON f.id = m.folder_id
+               JOIN accounts a ON a.id = f.account_id
+              WHERE 1 = 1{clauses}"
+        );
         sql.push_str(" ORDER BY m.received_at DESC, m.rowid DESC");
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params_from_iter(values), |r| {

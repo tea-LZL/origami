@@ -151,6 +151,12 @@ resolved), [[build-and-verification]] (gates + PR run 36308544416 + cached-open 
 GUI/forced-colors pass remain owed.
 (docs(wiki): ingest PR #1 caching, hardening, and palette work)
 
+## [2026-09-27] update | search context label + result count
+QoL item delivered: global search now labels the list header ("Search" / "Tag" + the
+quoted query) and shows the total match count. Store gained `search_count` (shared
+`search_where` clause builder with `search_page`); `searchTotal` state carries it with the
+same unread token; fallback to loaded length when the count call fails.
+[[release-readiness]] QoL order item 3 delivered.
 ## [2026-09-27] update | composer draft discard/keep
 QoL item delivered: recovered composer drafts now surface a notice with Discard (deletes
 stored + legacy copies, blanks the editor, close skips re-save) and Keep editing actions.
