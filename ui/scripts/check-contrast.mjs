@@ -78,10 +78,14 @@ for (const theme of Object.keys(blocks)) {
   check(theme, "muted on bg", "--fg-muted", "--bg", 4.5);
   check(theme, "accent label", "--accent-fg", "--accent", 3);
   check(theme, "danger label", "--danger-fg", "--danger", 3);
-  for (const hue of [
-    "blue", "violet", "indigo", "teal", "cyan", "green",
-    "lime", "amber", "orange", "rose", "plum", "slate",
-  ]) {
+  check(theme, "success label", "--success-fg", "--success", 3);
+  check(theme, "warning label", "--warning-fg", "--warning", 3);
+  check(theme, "info label", "--info-fg", "--info", 3);
+  // Tag hues discovered from the theme blocks so new hues cannot escape.
+  const tagHues = Object.keys(blocks[theme] ?? {})
+    .filter((name) => name.startsWith("--tag-") && name !== "--tag-fg")
+    .map((name) => name.slice("--tag-".length));
+  for (const hue of tagHues) {
     check(theme, `tag ${hue}`, "--tag-fg", `--tag-${hue}`, 3);
   }
 }

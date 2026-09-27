@@ -4,6 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Origami</title>
+    <script>
+      // Pre-paint theme bootstrap: the CSS has no media-query fallback, so
+      // resolve "system" before first paint to avoid a light flash on dark OS.
+      (function () {
+        try {
+          var pref = "system";
+          var saved = JSON.parse(localStorage.getItem("origami-preferences") || "{}");
+          if (saved.theme === "light" || saved.theme === "dark" || saved.theme === "ember") {
+            pref = saved.theme;
+          }
+          if (pref === "system") {
+            pref = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          }
+          document.documentElement.dataset.theme = pref;
+        } catch (error) {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>
