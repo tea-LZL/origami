@@ -279,6 +279,28 @@ impl ImapBackend {
             .await
     }
 
+    /// Subscribe to a mailbox (server-side folder visibility).
+    pub async fn subscribe_mailbox(&self, mailbox: &str) -> Result<()> {
+        let mailbox = mailbox.to_string();
+        self.run(move |client| {
+            client
+                .subscribe(parse_mailbox(&mailbox)?)
+                .map_err(backend_err)
+        })
+        .await
+    }
+
+    /// Unsubscribe from a mailbox.
+    pub async fn unsubscribe_mailbox(&self, mailbox: &str) -> Result<()> {
+        let mailbox = mailbox.to_string();
+        self.run(move |client| {
+            client
+                .unsubscribe(parse_mailbox(&mailbox)?)
+                .map_err(backend_err)
+        })
+        .await
+    }
+
     /// Delete a mailbox.
     pub async fn delete_mailbox(&self, mailbox: &str) -> Result<()> {
         let mailbox = mailbox.to_string();
@@ -655,6 +677,9 @@ impl MailBackend for ImapBackend {
                     account_id: account_id.to_string(),
                     role: role_from_name(&name),
                     name,
+                    // LIST does not carry subscription state; the store's
+                    // local choice wins on merge.
+                    subscribed: true,
                     total,
                     unread,
                 });

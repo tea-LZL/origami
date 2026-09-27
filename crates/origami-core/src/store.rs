@@ -275,6 +275,19 @@ impl Store {
             }
             conn.pragma_update(None, "user_version", 9)?;
         }
+        if version < 10 {
+            // Folder subscriptions (user choice; default subscribed).
+            let has_col: bool = conn
+                .prepare("SELECT 1 FROM pragma_table_info('folders') WHERE name = 'subscribed'")?
+                .exists([])?;
+            if !has_col {
+                conn.execute(
+                    "ALTER TABLE folders ADD COLUMN subscribed INTEGER NOT NULL DEFAULT 1",
+                    [],
+                )?;
+            }
+            conn.pragma_update(None, "user_version", 10)?;
+        }
         Ok(())
     }
 
@@ -334,10 +347,21 @@ impl Store {
     }
 
     /// List folders of an account with live message counts.
+    /// Toggle a folder's subscription (local preference; the IMAP call is
+    /// made by the command layer).
+    pub fn set_folder_subscribed(&self, folder_id: &str, subscribed: bool) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute(
+            "UPDATE folders SET subscribed = ?2 WHERE id = ?1",
+            params![folder_id, subscribed as i64],
+        )?;
+        Ok(())
+    }
+
     pub fn list_folders(&self, account_id: &str) -> Result<Vec<Mailbox>> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
-            "SELECT f.id, f.name, f.role,
+            "SELECT f.id, f.name, f.role, f.subscribed,
                     (SELECT COUNT(*) FROM messages m WHERE m.folder_id = f.id),
                     (SELECT COUNT(*) FROM messages m WHERE m.folder_id = f.id
                        AND m.flags_json NOT LIKE '%\"Seen\"%')
@@ -349,8 +373,9 @@ impl Store {
                 account_id: account_id.to_string(),
                 name: r.get(1)?,
                 role: r.get::<_, String>(2)?.parse().unwrap_or(MailboxRole::Other),
-                total: r.get::<_, i64>(3)? as u32,
-                unread: r.get::<_, i64>(4)? as u32,
+                subscribed: r.get::<_, i64>(3)? != 0,
+                total: r.get::<_, i64>(4)? as u32,
+                unread: r.get::<_, i64>(5)? as u32,
             })
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)

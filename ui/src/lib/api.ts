@@ -144,6 +144,8 @@ export const api = {
   listFolders: (accountDbId?: string) => invoke<Mailbox[]>("list_folders", { accountDbId: accountDbId ?? null }),
   createFolder: (accountId: string, name: string) =>
     invoke<void>("create_folder", { accountId, name }),
+  setFolderSubscribed: (folderId: string, subscribed: boolean) =>
+    invoke<void>("set_folder_subscribed", { folderId, subscribed }),
   renameFolder: (folderId: string, name: string) =>
     invoke<void>("rename_folder", { folderId, name }),
   deleteFolder: (folderId: string) => invoke<void>("delete_folder", { folderId }),

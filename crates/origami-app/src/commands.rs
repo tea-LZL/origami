@@ -274,6 +274,32 @@ pub async fn create_folder(
     Ok(())
 }
 
+/// Toggle a folder subscription: local choice persists immediately; the
+/// IMAP SUBSCRIBE/UNSUBSCRIBE is best-effort (offline keeps the local state
+/// and reports the error).
+#[tauri::command]
+pub async fn set_folder_subscribed(
+    state: State<'_, AppState>,
+    folder_id: String,
+    subscribed: bool,
+) -> CmdResult<()> {
+    let (account_config_id, _account_db_id, mailbox) =
+        state.resolve_folder(&folder_id).map_err(err)?;
+    state
+        .store
+        .set_folder_subscribed(&folder_id, subscribed)
+        .map_err(err)?;
+    if let Ok(backend) = state.backend(&account_config_id).await {
+        let result = if subscribed {
+            backend.subscribe_mailbox(&mailbox).await
+        } else {
+            backend.unsubscribe_mailbox(&mailbox).await
+        };
+        result.map_err(err)?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn rename_folder(
     state: State<'_, AppState>,
@@ -1865,6 +1891,7 @@ mod tests {
                 account_id: "account-a".into(),
                 name: "Sent".into(),
                 role: MailboxRole::Sent,
+                subscribed: true,
                 total: 4,
                 unread: 1,
             },
@@ -1873,6 +1900,7 @@ mod tests {
                 account_id: "account-a".into(),
                 name: "[Gmail]/Sent Mail".into(),
                 role: MailboxRole::Sent,
+                subscribed: true,
                 total: 68,
                 unread: 2,
             },
@@ -1881,6 +1909,7 @@ mod tests {
                 account_id: "account-a".into(),
                 name: "INBOX".into(),
                 role: MailboxRole::Inbox,
+                subscribed: true,
                 total: 10,
                 unread: 3,
             },
@@ -1889,6 +1918,7 @@ mod tests {
                 account_id: "account-b".into(),
                 name: "Sent".into(),
                 role: MailboxRole::Sent,
+                subscribed: true,
                 total: 7,
                 unread: 4,
             },

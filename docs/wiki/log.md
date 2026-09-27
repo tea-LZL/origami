@@ -194,3 +194,11 @@ QoL item 6 (keyboard half): `trapFocus` accepts `{ onEscape }` and all five dial
 restoration on close was already implemented and is pinned by the harness test plus a new
 Outbox integration test (`escape_closes_the_outbox`). Entry/trap/restore covered in
 `trapFocus.test.ts` (3 tests).
+
+## [2026-09-27] update | folder subscriptions
+QoL item delivered: folders carry a `subscribed` flag (migration v10, default subscribed),
+toggled per Other-role folder from the sidebar context menu (Subscribe/Unsubscribe) with a
+best-effort IMAP SUBSCRIBE/UNSUBSCRIBE (`subscribe_mailbox`/`unsubscribe_mailbox` in the
+backend; offline keeps the local choice and surfaces the error). Unsubscribed folders
+render dimmed. Sync upserts preserve the user's choice. Store test:
+`folder_subscriptions_toggle_and_persist`. [[release-readiness]] QoL order item 7 delivered.

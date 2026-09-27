@@ -210,6 +210,7 @@ pub fn run() {
             commands::list_accounts,
             commands::list_folders,
             commands::create_folder,
+            commands::set_folder_subscribed,
             commands::rename_folder,
             commands::delete_folder,
             commands::list_envelopes,

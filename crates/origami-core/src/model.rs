@@ -67,6 +67,8 @@ pub struct Mailbox {
     pub account_id: String,
     pub name: String,
     pub role: MailboxRole,
+    /// User subscription choice; new folders default to subscribed.
+    pub subscribed: bool,
     pub total: u32,
     pub unread: u32,
 }
@@ -289,6 +291,7 @@ mod tests {
             account_id: "account".into(),
             name: "INBOX".into(),
             role: MailboxRole::Inbox,
+            subscribed: true,
             total: 1,
             unread: 1,
         };

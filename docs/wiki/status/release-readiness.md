@@ -90,7 +90,8 @@ split into required-1.0 items and documented post-1.0 scope.
 6. ~~Complete dialog focus entry/trapping/restoration and keyboard interaction tests.~~
    Delivered (branch `qol-batch`, 2026-09-27: Escape handling in `trapFocus`, all dialogs
    wired, Outbox integration test).
-7. Add folder hierarchy/subscription support.
+7. ~~Add folder hierarchy/subscription support.~~ Delivered (branch `qol-batch`,
+   2026-09-27: hierarchy landed earlier; subscriptions now).
 8. Add signatures/plain-text compose mode before inline-image editing.
 9. Consolidate repeated dialog/button/status patterns only as each flow is touched.
 
