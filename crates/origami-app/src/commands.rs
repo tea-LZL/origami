@@ -1035,6 +1035,7 @@ pub struct AccountStatusDto {
     state: &'static str,
     error: Option<String>,
     pending_operations: u32,
+    failed_operations: u32,
 }
 
 #[tauri::command]
@@ -1064,6 +1065,7 @@ pub fn account_statuses(
                 state: phase,
                 error,
                 pending_operations: state.store.outbox_count(&db_id).map_err(err)?,
+                failed_operations: state.store.outbox_failed_count(&db_id).map_err(err)?,
             },
         );
     }

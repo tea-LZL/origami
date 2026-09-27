@@ -1853,6 +1853,17 @@ impl Store {
         u32::try_from(count).map_err(|_| Error::Backend("outbox count exceeds u32".into()))
     }
 
+    /// Terminal-failed rows; the Outbox entry points surface these so a fully
+    /// poisoned outbox stays reachable (with per-row Retry).
+    pub fn outbox_failed_count(&self, account_id: &str) -> Result<u32> {
+        let count: i64 = self.conn()?.query_row(
+            "SELECT COUNT(*) FROM outbox WHERE account_id = ?1 AND failed_at IS NOT NULL",
+            params![account_id],
+            |row| row.get(0),
+        )?;
+        u32::try_from(count).map_err(|_| Error::Backend("outbox count exceeds u32".into()))
+    }
+
     pub fn outbox_remove(&self, id: i64) -> Result<()> {
         let conn = self.conn()?;
         conn.execute("DELETE FROM outbox WHERE id = ?1", params![id])?;

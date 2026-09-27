@@ -15,6 +15,7 @@ export interface AccountStatusDto {
   state: "online" | "syncing" | "error";
   error: string | null;
   pendingOperations: number;
+  failedOperations: number;
 }
 
 export interface OutboxSummary {

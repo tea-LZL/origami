@@ -245,11 +245,11 @@
             </details>
           </section>
         {/if}
-        {#if accountStatus?.pendingOperations}
+        {#if accountStatus && accountStatus.pendingOperations + (accountStatus.failedOperations ?? 0) > 0}
           <button type="button" class="outbox-status" onclick={() => app.value.outboxAccountId = account.id}>
             <span>Outbox</span>
-            <strong>{accountStatus.pendingOperations}</strong>
-            <small>pending {accountStatus.pendingOperations === 1 ? "operation" : "operations"}</small>
+            <strong>{accountStatus.pendingOperations + (accountStatus.failedOperations ?? 0)}</strong>
+            <small>pending {accountStatus.pendingOperations + (accountStatus.failedOperations ?? 0) === 1 ? "operation" : "operations"}</small>
           </button>
         {/if}
         <div role="tree" aria-label={`${account.name} folders`}>

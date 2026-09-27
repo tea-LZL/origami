@@ -1118,3 +1118,28 @@ fn outbox_reopen_resets() {
     assert_eq!(entry.attempts, 0);
     assert_eq!(store.outbox_count(&account).unwrap(), 1);
 }
+
+#[test]
+fn outbox_failed_count_counts_terminal() {
+    let (store, account, _folder) = setup();
+    let id = store
+        .outbox_add(
+            &account,
+            &OutboxOp::StoreFlags {
+                mailbox: "INBOX".into(),
+                server_uid: 1,
+                flags: vec![Flag::Seen],
+                keywords: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(store.outbox_failed_count(&account).unwrap(), 0);
+
+    store.outbox_fail_permanent(id, "auth failed").unwrap();
+    assert_eq!(
+        store.outbox_failed_count(&account).unwrap(),
+        1,
+        "terminal rows must be reachable for the Outbox entry points"
+    );
+    assert_eq!(store.outbox_count(&account).unwrap(), 0);
+}
