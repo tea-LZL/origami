@@ -2,12 +2,13 @@
 title: Overview
 type: overview
 status: current
-updated: 2026-09-22
+updated: 2026-09-27
 sources:
   - README.md
   - docs/PLAN.md
   - docs/IMPROVEMENT_PLAN.md
   - crates/origami-core/src/lib.rs
+  - docs/superpowers/specs/2026-09-26-hardening-caching-palette-design.md
 ---
 
 # Origami — overview
@@ -56,17 +57,24 @@ The main daily-driver flows are implemented: multi-account onboarding with passw
 app-password providers (Gmail, iCloud, Yahoo, Fastmail) plus Microsoft OAuth, and
 keyring-backed secrets; nested sidebar folders with unread rollup and a tag catalog;
 indexed envelope sync; SQLite/FTS search, saved searches, unified Inbox, tags,
-conversations, and a sticky unread-only thread-list view; body-on-demand plus bounded
-recent display-cache warming; offline flag/move/delete/send with replay and an Outbox
-inspector; reply/reply-all/forward, attachments, drafts, duplicate-send protection;
-logical cross-label deduplication with all physical sources retained; chronological
-ordering by normalized server-received time; isolated HTML rendering with DOMPurify,
-restrictive CSP, link interception, and remote images blocked by default; themes, density,
-motion preferences, resizable layouts, tray lifecycle, notifications, and keyboard list
-navigation.
+conversations, and a sticky unread-only thread-list view; body-on-demand plus an in-memory
+display LRU and priority hover/viewport prefetch that make cached opens near-instant
+(header paints before the body — [[display-cache-and-prefetch]]); offline
+flag/move/delete/send with replay, a poison-safe Outbox inspector, and per-row retry;
+reply/reply-all/forward, attachments, drafts, duplicate-send protection; logical
+cross-label deduplication with all physical sources retained; chronological ordering by
+normalized server-received time; isolated HTML rendering with DOMPurify, restrictive CSP,
+link interception, and remote images blocked by default; themes (paper light, midnight
+blue, **ember** warm dark) with a WCAG contrast gate, density, motion preferences,
+resizable layouts, tray lifecycle, notifications, and keyboard list navigation.
 
-Details: [[sync-engine]], [[store-and-search]], [[ui-state-and-rendering]],
-[[backend-seam]], [[accounts-and-secrets]].
+Hardening landed in PR #1 (2026-09-27): `0700`/`0600` existing-data smoke, `cargo-audit` +
+`cargo-deny` CI gates, secret redaction, hostile-MIME caps and corpus, blob-hash traversal
+gate, sync retry policy with bounded network ops, transactional batch writes, and a
+shutdown WAL checkpoint — see [[hardening-caching-palette-spec]].
+
+Details: [[sync-engine]], [[store-and-search]], [[display-cache-and-prefetch]],
+[[ui-state-and-rendering]], [[backend-seam]], [[accounts-and-secrets]].
 
 ## Where it stands
 

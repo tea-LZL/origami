@@ -2,7 +2,7 @@
 title: UI state and rendering
 type: architecture
 status: current
-updated: 2026-09-19
+updated: 2026-09-27
 sources:
   - ui/src/lib/stores.svelte.ts
   - ui/src/lib/ThreadList.svelte
@@ -12,6 +12,10 @@ sources:
   - ui/src/lib/folderNav.ts
   - ui/src/lib/Sidebar.svelte
   - ui/src/lib/tags.ts
+  - ui/src/lib/prefetch.ts
+  - ui/src/lib/stores.test.ts
+  - ui/scripts/check-contrast.mjs
+  - ui/index.html
   - ui/src/lib/trapFocus.ts
   - ui/src/lib/AddAccount.svelte
   - ui/src/lib/OrigamiArtwork.svelte
@@ -128,10 +132,50 @@ with **DOMPurify** (a production dependency) and rendered under a restrictive CS
 serialized by `origami-core::compose` into a multipart message. Drafts autosave locally,
 are persisted in SQLite, and are replaced in the account Drafts mailbox via APPENDUID.
 
+## Themes and the palette system
+
+Theme preference (`State.theme`) is one of `system | light | dark | ember`; unknown saved
+values normalize to `system`. Resolution moved into JS (`resolveTheme`,
+`applyThemePreference` in `stores.svelte.ts`): the app always sets a **concrete**
+`data-theme` attribute and re-resolves live on OS `prefers-color-scheme` flips, which let
+the duplicated `@media (prefers-color-scheme: dark)` CSS block be deleted. A pre-paint
+bootstrap in `ui/index.html` resolves the saved preference before first paint so dark-OS
+users get no light flash. **Ember** is a warm charcoal/amber dark theme alongside the
+paper-light and midnight-blue defaults.
+
+Tokens live in `ui/src/app.css`: surfaces, text, borders, accent scales, status hues
+(`--success` / `--warning` / `--info` / `--danger` with `-fg` pairs), and twelve
+`--tag-*` hues used by `tags.ts` `TAG_PALETTE` (hash-distributed, stable). Folder roles get
+a decorative hue dot (`folderRoleHue` in `folderNav.ts` — Inbox blue, Drafts amber, Sent
+teal, Junk rose, Archive violet, Trash muted) beside the always-present text label. Outbox
+rows carry text chips: **Pending** (info) and **Failed** (danger), never color alone.
+
+`ui/scripts/check-contrast.mjs` (`npm run check:contrast`) is a WCAG AA gate over every
+theme block: body/raised/muted text at 4.5:1, accent/danger/success/warning/info label
+pairs and all tag hues at 3:1, with tag hues discovered dynamically so new ones cannot
+escape. It caught a real `--fg-muted` failure during the palette work. `forced-colors`
+blocks are untouched by theming.
+
+## Predictive and viewport prefetch
+
+`ui/src/lib/prefetch.ts` schedules display prefetch (see
+[[display-cache-and-prefetch]] for the Rust side): row **hover** and selection movement
+enqueue predictive fetches (150 ms debounce, batched), and `VirtualList` reports its visible
+index range via `onVisibleRange` so the viewport plus one neighbor viewport per side is
+enqueued (200 ms debounce). Folder switches, unified-inbox switches, searches, and selection
+changes cancel pending batches. The prefetcher is a singleton exported from
+`stores.svelte.ts`; it only ever calls `api.prefetchDisplay` — the UI contains no
+provider logic.
+
+`MessageView.svelte` paints the header (subject, sender, date, snippet) from
+`selectedEnvelope` immediately while the body loads — the skeleton is confined to the body
+region — and switches to the message DTO when it arrives. Message-dependent controls stay
+gated on the loaded message; reply clicks during load are safe no-ops.
+
 ## Motion and accessibility
 
-From the project's UI rules ([[memory-md]]): theme tokens define light, dark, and
-system-dark together; interaction motion ~120 ms, surface entry ~220 ms; animate opacity,
+From the project's UI rules ([[memory-md]]): theme tokens define light, dark, ember, and
+system resolution together; interaction motion ~120 ms, surface entry ~220 ms; animate opacity,
 color, and small transforms — not list geometry or email layout; every animation respects
 both OS reduced motion and Origami's motion preference; keep focus-visible and
 forced-colors behavior intact; plain text labels over decorative emoji.

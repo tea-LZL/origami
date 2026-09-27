@@ -2,7 +2,7 @@
 title: Index
 type: index
 status: current
-updated: 2026-09-19
+updated: 2026-09-27
 ---
 
 # Wiki index
@@ -25,10 +25,11 @@ Status · Sources.
 
 - [[runtime-and-layers]] — process model, crate layers, threading, data flow.
 - [[backend-seam]] — `MailBackend` / `SmtpSender` traits and protocol isolation.
-- [[sync-engine]] — per-account actors, CONDSTORE/QRESYNC delta sync, IDLE, outbox replay.
-- [[store-and-search]] — SQLite/WAL schema, FTS5, unread-only paging, blob store, migrations.
+- [[sync-engine]] — per-account actors, CONDSTORE/QRESYNC delta sync, IDLE, outbox replay, retry policy.
+- [[store-and-search]] — SQLite/WAL schema, FTS5, unread-only paging, blob store, migrations, write integrity.
+- [[display-cache-and-prefetch]] — LRU → SQLite → network open path, priority prefetch queue, budgets.
 - [[message-model-and-threading]] — dual message identity, MIME, jwz threading.
-- [[ui-state-and-rendering]] — Svelte state, unread-only list, sidebar tree, HTML sanitization.
+- [[ui-state-and-rendering]] — Svelte state, unread-only list, sidebar tree, themes/palette, prefetch UI, HTML sanitization.
 - [[accounts-and-secrets]] — config, keyring, onboarding wizard, OAuth2 PKCE and token refresh.
 
 ## Decisions
@@ -70,3 +71,4 @@ Status · Sources.
 - [[hermes-arch-local-release]] — plan: PKGBUILD and local pacman install.
 - [[unread-only-list-filter]] — sticky unread-only thread list (store filter, keep-selected, chrome).
 - [[sidebar-folders-tags-onboarding]] — nested folders, tag catalog, context menus, app-password wizard.
+- [[hardening-caching-palette-spec]] — PR #1 spec: open-speed caching, hardening, palette (outcomes + gaps).

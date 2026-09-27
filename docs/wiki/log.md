@@ -133,3 +133,20 @@ standard Apache-2.0 text borrowed in as `LICENSE-APACHE`, matching the dual
 `license = "MIT OR Apache-2.0"` declaration in `Cargo.toml` and
 `license=('MIT' 'Apache-2.0')` in the PKGBUILD. Root `LICENSE` stays the MIT copy.
 [[release-readiness]] blocker updated.
+## [2026-09-27] ingest | PR #1 — open-speed caching, hardening, palette
+Merged `harden-cache-palette` (39 commits, merge `7389968`) covering the three-track spec
+(`docs/superpowers/specs/2026-09-26-hardening-caching-palette-design.md`). New pages:
+[[display-cache-and-prefetch]] (LRU → SQLite → network open path, priority prefetch queue,
+budgets/eviction) and [[hardening-caching-palette-spec]] (source summary with Track B
+outcome table and carried gaps). Updated [[sync-engine]] (transient/permanent classification,
+jittered backoff, reconnect limiter, network timeouts, bounded locks, terminal outbox replay),
+[[store-and-search]] (`message_cache` eviction, transactional batch writes, WAL checkpoint,
+FK invariants, permissions smoke landed, blob hash gate), [[ui-state-and-rendering]] (JS
+theme resolution + ember + pre-paint bootstrap, contrast gate, role hues/chips, prefetch UI,
+instant header paint), [[offline-outbox]] (terminal `failed_at` + per-row Retry),
+[[content-addressed-store]] (hash gate + decode caps), entities for the new modules,
+[[overview]], [[release-readiness]] (blockers 3/4 updated), [[known-drift]] (permissions row
+resolved), [[build-and-verification]] (gates + PR run 36308544416 + cached-open budget),
+[[index]]. CI green on all four jobs; Docker-harness end-to-end and the manual
+GUI/forced-colors pass remain owed.
+(docs(wiki): ingest PR #1 caching, hardening, and palette work)
