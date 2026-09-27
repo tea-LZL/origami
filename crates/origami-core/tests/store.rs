@@ -1029,3 +1029,32 @@ fn outbox_last_error_redacted() {
     assert!(!error.contains("tok-99"), "token leaked: {error}");
     assert!(error.contains("[redacted]"), "mask missing: {error}");
 }
+
+#[test]
+fn blob_path_rejects_traversal() {
+    use origami_core::blob::BlobStore;
+
+    let temp = tempfile::tempdir().unwrap();
+    let blobs = BlobStore::open(&temp.path().join("blobs")).unwrap();
+
+    for hostile in [
+        "../../etc/passwd",
+        "aa/../../x",
+        "..",
+        "deadbeef",
+        &"z".repeat(64),
+        &"a".repeat(63),
+        &"a".repeat(65),
+    ] {
+        assert!(
+            blobs.get(hostile).is_err(),
+            "hostile hash must be rejected: {hostile}"
+        );
+        assert!(!blobs.contains(hostile), "contains must be false: {hostile}");
+    }
+
+    // Legitimate content-addressed access still works.
+    let hash = blobs.put(b"legit bytes").unwrap();
+    assert_eq!(blobs.get(&hash).unwrap(), b"legit bytes");
+    assert!(blobs.contains(&hash));
+}

@@ -64,6 +64,20 @@ describe("sanitizeMessageHtml", () => {
     expect(result.blockedResources).toBe(0);
   });
 
+  it("cid_images_stay_inert", () => {
+    const result = sanitizeMessageHtml(
+      '<img src="cid:part1@example.org" />'
+        + '<img src="file:///etc/passwd" />'
+        + '<img src="data:image/png;base64,AAAA" />',
+    );
+
+    // cid: stays exactly as-is — never rewritten to a fetchable scheme.
+    expect(result.html).toContain('src="cid:part1@example.org"');
+    // file: sources are stripped, never served.
+    expect(result.html).not.toContain("file://");
+    expect(result.html).not.toContain("/etc/passwd");
+  });
+
   it("allows only explicitly permitted origins", () => {
     const result = sanitizeMessageHtml(
       '<img src="https://images.example/photo.png" />'

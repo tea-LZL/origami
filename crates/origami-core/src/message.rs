@@ -502,6 +502,21 @@ mod tests {
     }
 
     #[test]
+    fn attachment_bytes_rejects_bad_index() {
+        assert!(attachment_bytes(RAW.as_bytes(), 5).is_none());
+        assert!(attachment_bytes(RAW.as_bytes(), usize::MAX).is_none());
+    }
+
+    #[test]
+    fn attachment_extraction_scoped_to_own_raw() {
+        let other = RAW.replace("aGVsbG8=", "Z29vZGJ5ZQ=="); // "goodbye"
+        let from_first = attachment_bytes(RAW.as_bytes(), 0).unwrap();
+        let from_second = attachment_bytes(other.as_bytes(), 0).unwrap();
+        assert_eq!(from_first, b"hello");
+        assert_eq!(from_second, b"goodbye");
+    }
+
+    #[test]
     fn extracts_display_headers_and_mime_paths() {
         let raw = concat!(
             "From: Alice <alice@example.org>\r\n",
