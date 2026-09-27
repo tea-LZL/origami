@@ -9,6 +9,8 @@ const initialValue = {
   correspondents: [] as { addr: string; name: string | null }[],
   accounts: [{ id: "account-1", name: "Work", email: "me@example.org" }],
   sending: false,
+  composerRecovered: false,
+  composerDiscarded: false,
 };
 
 export const app = $state({
@@ -17,6 +19,7 @@ export const app = $state({
 
 export const closeComposer = vi.fn();
 export const sendComposer = vi.fn();
+export const discardComposerDraft = vi.fn();
 
 export function resetComposerTestStore() {
   app.value = structuredClone(initialValue);

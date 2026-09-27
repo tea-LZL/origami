@@ -157,3 +157,9 @@ quoted query) and shows the total match count. Store gained `search_count` (shar
 `search_where` clause builder with `search_page`); `searchTotal` state carries it with the
 same unread token; fallback to loaded length when the count call fails.
 [[release-readiness]] QoL order item 3 delivered.
+## [2026-09-27] update | composer draft discard/keep
+QoL item delivered: recovered composer drafts now surface a notice with Discard (deletes
+stored + legacy copies, blanks the editor, close skips re-save) and Keep editing actions.
+`composerRecovered`/`composerDiscarded` state in `stores.svelte.ts`; tests in
+`ui/src/lib/stores.draft.test.ts` and `ui/src/lib/Composer.test.ts`.
+[[release-readiness]] QoL order item 2 delivered.
