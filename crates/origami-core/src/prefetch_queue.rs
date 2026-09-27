@@ -161,21 +161,41 @@ impl PrefetchQueue {
                     inner.notify.notified().await;
                     continue;
                 };
+                let gen_at_pop = inner.generation.load(Ordering::SeqCst);
                 let Ok(permit) = inner.semaphore.clone().acquire_owned().await else {
                     return;
                 };
+                // The request may have been cancelled while waiting for a
+                // permit; never start a fetch that predates a cancel_all.
+                if inner.generation.load(Ordering::SeqCst) != gen_at_pop {
+                    inner.active.lock().unwrap().remove(&req.key);
+                    continue;
+                }
+                if !inner.enabled.load(Ordering::SeqCst) {
+                    inner.active.lock().unwrap().remove(&req.key);
+                    continue;
+                }
+                if inner.paused.load(Ordering::SeqCst) {
+                    inner.buckets[req.priority as usize]
+                        .lock()
+                        .unwrap()
+                        .push_front(req);
+                    continue;
+                }
                 let inner = inner.clone();
                 let fetch = fetch.clone();
                 tokio::spawn(async move {
                     let _permit = permit;
-                    let key = req.key;
-                    match fetch(key.clone()).await {
+                    let _active = ActiveKeyGuard {
+                        inner: inner.clone(),
+                        key: req.key.clone(),
+                    };
+                    match fetch(req.key).await {
                         Ok(()) => record_success(&inner),
                         Err(_) => {
                             record_failure(&inner);
                         }
                     }
-                    inner.active.lock().unwrap().remove(&key);
                 });
             }
         });
@@ -193,6 +213,18 @@ fn record_failure(inner: &Inner) -> bool {
 
 fn record_success(inner: &Inner) {
     inner.failures.store(0, Ordering::SeqCst);
+}
+
+/// Releases a key from the dedupe set even if the fetch future panics.
+struct ActiveKeyGuard {
+    inner: Arc<Inner>,
+    key: String,
+}
+
+impl Drop for ActiveKeyGuard {
+    fn drop(&mut self) {
+        self.inner.active.lock().unwrap().remove(&self.key);
+    }
 }
 
 fn pop_next(inner: &Inner) -> Option<PrefetchRequest> {
@@ -330,5 +362,56 @@ mod tests {
         assert!(!queue.enqueue(PrefetchRequest::new("k", PrefetchPriority::Viewport)));
         queue.set_enabled(true);
         assert!(queue.enqueue(PrefetchRequest::new("k", PrefetchPriority::Viewport)));
+    }
+
+    #[tokio::test]
+    async fn cancel_releases_dedupe_keys() {
+        let queue = PrefetchQueue::new(1);
+        assert!(queue.enqueue(PrefetchRequest::new("k", PrefetchPriority::Viewport)));
+        queue.cancel_all();
+        assert!(
+            queue.enqueue(PrefetchRequest::new("k", PrefetchPriority::Viewport)),
+            "cancelled keys must be re-enqueueable"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_before_start_never_fetches() {
+        static STARTED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+        let queue = PrefetchQueue::new(1);
+        assert!(queue.enqueue(PrefetchRequest::new("slow", PrefetchPriority::Viewport)));
+        assert!(queue.enqueue(PrefetchRequest::new("queued", PrefetchPriority::Viewport)));
+
+        queue.run(|k: String| {
+            Box::pin(async move {
+                STARTED.lock().unwrap().push(k.clone());
+                if k == "slow" {
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                }
+                Ok(())
+            })
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        queue.cancel_all();
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        let started = STARTED.lock().unwrap().clone();
+        assert_eq!(started, vec!["slow".to_string()], "popped-but-waiting request must not start after cancel: {started:?}");
+    }
+
+    #[tokio::test]
+    async fn panicking_fetch_releases_dedupe_key() {
+        let queue = PrefetchQueue::new(1);
+        assert!(queue.enqueue(PrefetchRequest::new("boom", PrefetchPriority::Viewport)));
+        queue.run(|_k: String| {
+            Box::pin(async move {
+                panic!("fetch exploded");
+            })
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(
+            queue.enqueue(PrefetchRequest::new("boom", PrefetchPriority::Viewport)),
+            "key must be released even when the fetch panics"
+        );
     }
 }
