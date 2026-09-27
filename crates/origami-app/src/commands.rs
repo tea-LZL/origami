@@ -1550,6 +1550,11 @@ pub fn search(
 }
 
 #[tauri::command]
+pub fn search_count(state: State<'_, AppState>, query: String) -> CmdResult<u32> {
+    state.store.search_count(&query).map_err(err)
+}
+
+#[tauri::command]
 pub fn search_page(
     state: State<'_, AppState>,
     query: String,

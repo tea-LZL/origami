@@ -44,7 +44,7 @@
     app.value.folders.find((folder) => folder.id === app.value.selectedFolderId) ?? null,
   );
   const headerCount = $derived.by(() => {
-    if (app.value.searchQuery.trim()) return app.value.envelopes.length;
+    if (app.value.searchQuery.trim()) return app.value.searchTotal ?? app.value.envelopes.length;
     if (app.value.unreadOnly) {
       if (app.value.unifiedInbox) {
         return app.value.folders
@@ -193,9 +193,11 @@
 <section class="threadlist" data-navigation="thread-pane" use:messageListKeyboard role="group" aria-label="Messages">
   <header class="list-header">
     <div>
-      <span class="eyebrow">{app.value.searchQuery.startsWith("tag:") ? "Tag" : "Mailbox"}</span>
-      <h2>{app.value.searchQuery.startsWith("tag:")
+      <span class="eyebrow">{app.value.searchQuery.startsWith("tag:") ? "Tag" : app.value.searchQuery.trim() ? "Search" : "Mailbox"}</span>
+      <h2 class="header-title">{app.value.searchQuery.startsWith("tag:")
         ? app.value.searchQuery.slice(4)
+        : app.value.searchQuery.trim()
+        ? `“${app.value.searchQuery.trim()}”`
         : app.value.unifiedInbox ? "Unified Inbox" : selectedFolder?.name ?? "Messages"}</h2>
     </div>
     <div class="header-actions">
@@ -403,6 +405,12 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+  }
+  .header-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 46vw;
   }
   .list-header {
     min-height: 64px;

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
       density: "comfortable",
       layout: "three-pane",
       searchQuery: "",
+      searchTotal: null as number | null,
       unifiedInbox: false,
       folders: [] as Array<{
         id: string;
@@ -77,6 +78,7 @@ describe("ThreadList", () => {
       density: "comfortable",
       layout: "three-pane",
       searchQuery: "",
+      searchTotal: null as number | null,
       unifiedInbox: false,
       folders: [],
       selectedFolderId: null,
@@ -162,5 +164,36 @@ describe("ThreadList", () => {
     expect(unreadLabel).toHaveTextContent("Unread");
     expect(document.querySelector(".unread-pip")).toBeTruthy();
     expect(document.querySelectorAll(".unread-pip")).toHaveLength(1);
+  });
+
+  it("labels_search_context_and_total", () => {
+    mocks.app.value = {
+      ...mocks.app.value,
+      searchQuery: "invoice",
+      searchTotal: 42,
+      envelopes: [
+        { id: "e1", mailboxId: "folder-1", subject: "invoice from acme", from: [], to: [], date: null, flags: [], keywords: [], hasAttachment: false, size: 1, serverUid: 1, messageId: "<1@x>", threadId: "<1@x>", sources: [] },
+        { id: "e2", mailboxId: "folder-1", subject: "invoice from glob", from: [], to: [], date: null, flags: [], keywords: [], hasAttachment: false, size: 1, serverUid: 2, messageId: "<2@x>", threadId: "<2@x>", sources: [] },
+      ],
+    };
+    render(ThreadList);
+
+    expect(screen.getByText("Search")).toBeInTheDocument();
+    expect(screen.getByText("\u201cinvoice\u201d")).toBeInTheDocument();
+    expect(screen.getByText("42")).toBeInTheDocument();
+  });
+
+  it("falls_back_to_loaded_count_without_total", () => {
+    mocks.app.value = {
+      ...mocks.app.value,
+      searchQuery: "invoice",
+      searchTotal: null,
+      envelopes: [
+        { id: "e1", mailboxId: "folder-1", subject: "invoice", from: [], to: [], date: null, flags: [], keywords: [], hasAttachment: false, size: 1, serverUid: 1, messageId: "<1@x>", threadId: "<1@x>", sources: [] },
+      ],
+    };
+    render(ThreadList);
+
+    expect(screen.getByText("1")).toBeInTheDocument();
   });
 });

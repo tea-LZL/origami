@@ -1193,3 +1193,44 @@ fn shutdown_flush_checkpoints() {
         .expect("folder survives");
     assert_eq!(store.message_uids(&folder).unwrap(), vec![1, 2, 3]);
 }
+
+#[test]
+fn search_count_matches_page_total() {
+    let (store, account, folder) = setup();
+    for (uid, subject) in [
+        (1u32, "invoice from acme"),
+        (2, "invoice from glob"),
+        (3, "lunch plans"),
+    ] {
+        let mut envelope = envelope(uid, subject);
+        envelope.flags.clear();
+        store.upsert_envelope(&folder, &envelope).unwrap();
+    }
+    let _ = account;
+
+    let bodies = ["invoice from acme", "invoice from glob", "lunch plans"];
+    for (uid, body) in [(1u32, bodies[0]), (2, bodies[1]), (3, bodies[2])] {
+        store
+            .set_parsed_message_and_index(
+                &folder,
+                uid,
+                &ParsedMessage {
+                    text: Some(body.to_string()),
+                    ..Default::default()
+                },
+                "thread",
+            )
+            .unwrap();
+    }
+
+    assert_eq!(store.search_count("invoice").unwrap(), 2);
+    assert_eq!(
+        store.search_page("invoice", 1, 10).unwrap().len(),
+        store.search_count("invoice").unwrap() as usize
+    );
+    // Field filters and tokens share the count.
+    assert_eq!(store.search_count("subject:acme").unwrap(), 1);
+    assert_eq!(store.search_count("is:unread").unwrap(), 3);
+    assert_eq!(store.search_count("is:read").unwrap(), 0);
+    assert_eq!(store.search_count("nonsense-zzz").unwrap(), 0);
+}
