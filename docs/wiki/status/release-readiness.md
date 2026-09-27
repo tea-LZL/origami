@@ -2,7 +2,7 @@
 title: Release readiness
 type: status
 status: current
-updated: 2026-09-22
+updated: 2026-09-27
 sources:
   - MEMORY.md
   - docs/IMPROVEMENT_PLAN.md
@@ -30,7 +30,8 @@ several proof and distribution gates are absent.
   hicolor icons.
 - The Tauri `deb` target remains, while Arch distribution uses the tracked PKGBUILD.
 - Signed pacman repository support is deferred until the app matures.
-- The manifest declares MIT/Apache-2.0, but **license text files are absent**.
+- The manifest declares MIT/Apache-2.0; the license texts are present as `LICENSE-MIT` and
+  `LICENSE-APACHE` (root `LICENSE` remains the MIT copy).
 - **No v1 tag yet.**
 
 ### 2. Provider evidence
