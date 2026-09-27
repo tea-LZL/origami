@@ -823,7 +823,12 @@ impl SyncEngine {
                     let _ = self.store.outbox_remove(entry.id);
                 }
                 Err(error) => {
-                    let _ = self.store.outbox_mark_failed(entry.id, &error.to_string());
+                    let secrets = config_secret_values(config);
+                    let message = crate::redact::redact_with(
+                        &error.to_string(),
+                        &secrets.iter().map(String::as_str).collect::<Vec<_>>(),
+                    );
+                    let _ = self.store.outbox_mark_failed(entry.id, &message);
                 }
             }
         }
@@ -901,6 +906,26 @@ impl SyncEngine {
             }
         }
     }
+}
+
+/// Resolved plaintext secrets for this account (best-effort; unresolvable
+/// secrets are skipped). Used to scrub error strings before persistence.
+fn config_secret_values(config: &AccountConfig) -> Vec<String> {
+    let mut values = Vec::new();
+    for secret in [
+        config.imap.as_ref().and_then(|imap| imap.secret.as_ref()),
+        config.smtp.as_ref().and_then(|smtp| smtp.secret.as_ref()),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if let Ok(value) = secret.resolve() {
+            if !value.is_empty() {
+                values.push(value);
+            }
+        }
+    }
+    values
 }
 
 fn group_prefetch_candidates(

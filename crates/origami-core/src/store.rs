@@ -1849,9 +1849,11 @@ impl Store {
 
     pub fn outbox_mark_failed(&self, id: i64, error: &str) -> Result<()> {
         let conn = self.conn()?;
+        // Errors can embed credentials from protocol chatter; never persist them.
+        let redacted = crate::redact::redact_secrets(error);
         conn.execute(
             "UPDATE outbox SET attempts = attempts + 1, last_error = ?2 WHERE id = ?1",
-            params![id, error],
+            params![id, redacted],
         )?;
         Ok(())
     }

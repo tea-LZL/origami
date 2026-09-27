@@ -25,7 +25,7 @@ use crate::state::{self, AppState};
 type CmdResult<T> = Result<T, String>;
 
 fn err<E: std::fmt::Display>(e: E) -> String {
-    e.to_string()
+    origami_core::redact::redact_secrets(&e.to_string())
 }
 
 fn classify_login_error(message: &str, app_password: bool) -> String {

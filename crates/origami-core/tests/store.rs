@@ -995,3 +995,37 @@ fn evict_display_cache_count() {
     assert!(store.parsed_message(&folder, 2).unwrap().is_some());
     assert!(store.parsed_message(&folder, 3).unwrap().is_some());
 }
+
+#[test]
+fn outbox_last_error_redacted() {
+    let (store, account, _folder) = setup();
+    let id = store
+        .outbox_add(
+            &account,
+            &OutboxOp::StoreFlags {
+                mailbox: "INBOX".into(),
+                server_uid: 1,
+                flags: vec![Flag::Seen],
+                keywords: None,
+            },
+        )
+        .unwrap();
+
+    store
+        .outbox_mark_failed(
+            id,
+            "login failed: password=hunter2 Authorization: Bearer tok-99",
+        )
+        .unwrap();
+
+    let entry = store
+        .outbox_list(&account)
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.id == id)
+        .unwrap();
+    let error = entry.last_error.unwrap();
+    assert!(!error.contains("hunter2"), "password leaked: {error}");
+    assert!(!error.contains("tok-99"), "token leaked: {error}");
+    assert!(error.contains("[redacted]"), "mask missing: {error}");
+}
