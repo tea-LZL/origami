@@ -180,3 +180,10 @@ persisted) scales the reading pane: text mode via body font-size, HTML mode via 
 document root font-size, with Ctrl+= / Ctrl+- / Ctrl+0 shortcuts in the message view and a
 Preferences select for both. Tests: `stores.markread.test.ts` (6) +
 `applies_message_zoom_to_text_body`. [[release-readiness]] QoL order item 4 delivered.
+
+## [2026-09-27] update | recipient chips in composer
+QoL item delivered: To/Cc/Bcc are chip inputs (`RecipientInput.svelte`) fed by the learned
+correspondents datalist — Enter/comma commits, Backspace removes the last chip, per-chip
+remove, dedupe, and address-shape validation. Draft model unchanged (comma-separated
+strings), so existing drafts stay compatible. Tests: `RecipientInput.test.ts` (5) +
+Composer focus tests preserved. [[release-readiness]] QoL order item 5 delivered.

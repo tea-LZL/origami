@@ -4,6 +4,7 @@
   import { app, closeComposer, discardComposerDraft, sendComposer } from "./stores.svelte";
   import { api } from "./api";
   import Select from "./Select.svelte";
+  import RecipientInput from "./RecipientInput.svelte";
   import { trapFocus } from "./trapFocus";
 
   let editor: Editor | null = null;
@@ -157,9 +158,25 @@
             }))}
           />
         </label>
-        <label>To <input use:focusOnMount type="text" list="origami-correspondents" bind:value={app.value.composerDraft.to} /></label>
-        <label>Cc <input type="text" list="origami-correspondents" bind:value={app.value.composerDraft.cc} /></label>
-        <label>Bcc <input type="text" list="origami-correspondents" bind:value={app.value.composerDraft.bcc} /></label>
+        <RecipientInput
+          label="To"
+          value={app.value.composerDraft.to}
+          correspondents={app.value.correspondents}
+          onChange={(value) => (app.value.composerDraft.to = value)}
+          focusOnMount
+        />
+        <RecipientInput
+          label="Cc"
+          value={app.value.composerDraft.cc}
+          correspondents={app.value.correspondents}
+          onChange={(value) => (app.value.composerDraft.cc = value)}
+        />
+        <RecipientInput
+          label="Bcc"
+          value={app.value.composerDraft.bcc}
+          correspondents={app.value.correspondents}
+          onChange={(value) => (app.value.composerDraft.bcc = value)}
+        />
         <label>Subject <input type="text" bind:value={app.value.composerDraft.subject} /></label>
         <datalist id="origami-correspondents">
           {#each app.value.correspondents as contact (contact.addr)}
