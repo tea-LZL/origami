@@ -237,7 +237,10 @@ impl SyncEngine {
             .clone();
         let engine = Arc::clone(self);
         runtime.spawn(async move {
-            let _guard = lock.lock().await;
+            let Ok(_guard) = acquire_bounded(lock, LOCK_WAIT_BOUND).await else {
+                tracing::debug!(account = %account_config_id, "recent prefetch skipped: lock busy");
+                return;
+            };
             match engine
                 .prefetch_recent(&account_config_id, &config, prefer_folder_id.as_deref())
                 .await
@@ -530,7 +533,7 @@ impl SyncEngine {
             .entry((folder_db_id.to_string(), server_uid))
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
             .clone();
-        let _guard = body_lock.lock().await;
+        let _guard = acquire_bounded(body_lock, LOCK_WAIT_BOUND).await?;
 
         if let Some(hash) = self.store.blob_hash(folder_db_id, server_uid)? {
             if self
@@ -922,6 +925,22 @@ impl SyncEngine {
 
 /// Bound for individual IMAP/SMTP operations.
 pub const NETWORK_OP_TIMEOUT: Duration = Duration::from_secs(60);
+/// Bound for waiting on a per-message lock; a stuck fetch must not wedge
+/// later work forever.
+pub const LOCK_WAIT_BOUND: Duration = Duration::from_secs(30);
+
+/// Acquire an async lock with a bound; on timeout return a transient error.
+pub(crate) async fn acquire_bounded(
+    lock: Arc<tokio::sync::Mutex<()>>,
+    bound: Duration,
+) -> Result<tokio::sync::OwnedMutexGuard<()>> {
+    match tokio::time::timeout(bound, lock.lock_owned()).await {
+        Ok(guard) => Ok(guard),
+        Err(_) => Err(Error::Backend(
+            "timed out waiting for message lock".into(),
+        )),
+    }
+}
 
 /// Bound a network operation: on timeout return a transient error so the
 /// retry policy takes over instead of hanging the sync loop.
@@ -1155,6 +1174,20 @@ mod tests {
     fn timeout_is_transient() {
         let timed_out = Error::Backend("network operation timed out".into());
         assert!(is_transient(&timed_out));
+    }
+
+    #[tokio::test]
+    async fn body_lock_wait_bounded() {
+        let lock = Arc::new(tokio::sync::Mutex::new(()));
+        let held = lock.clone().lock_owned().await;
+
+        let result = acquire_bounded(lock.clone(), Duration::from_millis(50)).await;
+        assert!(result.is_err(), "second acquisition must time out, not hang");
+        assert!(is_transient(&result.unwrap_err()));
+
+        drop(held);
+        let acquired = acquire_bounded(lock, Duration::from_millis(50)).await;
+        assert!(acquired.is_ok(), "free lock must be acquirable");
     }
 
     #[tokio::test]
