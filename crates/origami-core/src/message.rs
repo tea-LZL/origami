@@ -110,7 +110,9 @@ pub fn parse(raw: &[u8]) -> Option<ParsedMessage> {
 }
 
 fn mime_limit_warning(raw: &[u8]) -> Option<String> {
-    if multipart_count(raw) > MAX_MIME_PART_DEPTH {
+    let scan = unfold_for_scan(raw);
+    let depth = count_token(&scan, b"multipart/") + count_token(&scan, b"message/rfc822");
+    if depth > MAX_MIME_PART_DEPTH {
         return Some(format!(
             "MIME nesting exceeds the depth limit of {MAX_MIME_PART_DEPTH}"
         ));
@@ -123,14 +125,36 @@ fn mime_limit_warning(raw: &[u8]) -> Option<String> {
     None
 }
 
-fn multipart_count(raw: &[u8]) -> u32 {
-    let needle = b"multipart/";
+/// Undo RFC 5322 folding whitespace (and CR) so split tokens like
+/// `multi\r\n part/` rejoin into `multipart/` for scanning. Bounded by input.
+fn unfold_for_scan(raw: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(raw.len());
+    let mut i = 0;
+    while i < raw.len() {
+        match raw[i] {
+            b'\r' => i += 1,
+            b'\n' => {
+                i += 1;
+                while i < raw.len() && (raw[i] == b' ' || raw[i] == b'\t') {
+                    i += 1;
+                }
+            }
+            byte => {
+                out.push(byte);
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+fn count_token(haystack: &[u8], needle: &[u8]) -> u32 {
     let mut count = 0u32;
     let mut offset = 0usize;
-    while let Some(found) = find_ascii_ignore_case(&raw[offset..], needle) {
+    while let Some(found) = find_ascii_ignore_case(&haystack[offset..], needle) {
         count += 1;
         offset += found + needle.len();
-        if count > MAX_MIME_PART_DEPTH || offset >= raw.len() {
+        if count > MAX_MIME_PART_DEPTH || offset >= haystack.len() {
             break;
         }
     }

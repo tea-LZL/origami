@@ -84,6 +84,25 @@ fn deep_multiparts() {
 }
 
 #[test]
+fn folded_multpart_nesting_still_trips_depth() {
+    // RFC 5322 folding: "multi\r\n part/" must not slip past the count.
+    let mut raw = headers("folded");
+    for level in 0..1000 {
+        raw.extend_from_slice(
+            format!("Content-Type: multi\r\n part/mixed; boundary=b{level}\r\n\r\n--b{level}\r\n")
+                .as_bytes(),
+        );
+    }
+    raw.extend_from_slice(b"Content-Type: text/plain\r\n\r\nbody");
+    let parsed = parse(&raw).expect("truncated-safe result");
+    let warnings = parsed.parse_warnings.join(" ");
+    assert!(
+        warnings.to_lowercase().contains("depth") || warnings.to_lowercase().contains("nest"),
+        "folded nesting must trip the depth cap: {warnings:?}"
+    );
+}
+
+#[test]
 fn huge_headers() {
     let raw = build_huge_headers(1024 * 1024);
     let parsed = parse(&raw).expect("truncated-safe result");
@@ -128,14 +147,27 @@ fn attachment_size_lie() {
 
 #[test]
 fn attachment_decode_respects_byte_cap() {
-    // Oversized decode is refused: body claims more than the cap allows.
+    // Input cap: oversized encoded body is refused before allocation.
     let huge_body = vec![b'a'; origami_core::message::MAX_ATTACH_DECODE_BYTES + 1];
     let decoded = decode_mime_part(
         b"Content-Type: application/octet-stream\r\nContent-Transfer-Encoding: base64\r\n\r\n",
         &huge_body,
     );
     assert!(decoded.is_none(), "decode over cap must be refused");
-    assert!(attachment_bytes(&huge_body, 0).is_none());
+
+    // Output cap: a real message whose 7bit attachment decodes over the cap
+    // must be refused by extraction too.
+    let mut raw = headers("huge attach");
+    raw.extend_from_slice(b"Content-Type: multipart/mixed; boundary=zz\r\n\r\n--zz\r\n");
+    raw.extend_from_slice(
+        b"Content-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=\"big.bin\"\r\n\r\n",
+    );
+    raw.extend(std::iter::repeat_n(b'b', origami_core::message::MAX_ATTACH_DECODE_BYTES + 1));
+    raw.extend_from_slice(b"\r\n--zz--\r\n");
+    assert!(
+        attachment_bytes(&raw, 0).is_none(),
+        "oversized attachment extraction must be refused"
+    );
 }
 
 #[test]
