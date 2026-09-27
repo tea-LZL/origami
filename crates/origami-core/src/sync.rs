@@ -845,28 +845,30 @@ impl SyncEngine {
         config: AccountConfig,
         cancel: CancellationToken,
     ) {
-        const POLL_INTERVAL: Duration = Duration::from_secs(60);
         const WATCH_TIMEOUT: Duration = Duration::from_secs(25 * 60);
-        let mut backoff = Duration::from_secs(1);
+        let mut limiter = ReconnectLimiter::new();
 
         loop {
             if cancel.is_cancelled() {
                 return;
             }
 
-            if self
-                .sync_account(&account_config_id, &config)
-                .await
-                .is_err()
-            {
-                tokio::select! {
-                    _ = cancel.cancelled() => return,
-                    _ = tokio::time::sleep(backoff) => {},
+            match self.sync_account(&account_config_id, &config).await {
+                Err(error) => {
+                    if !is_transient(&error) {
+                        // Permanent failure (auth/config): fail fast. The
+                        // account error is surfaced and Retry re-launches.
+                        return;
+                    }
+                    let wait = limiter.record_failure();
+                    tokio::select! {
+                        _ = cancel.cancelled() => return,
+                        _ = tokio::time::sleep(wait) => {},
+                    }
+                    continue;
                 }
-                backoff = (backoff * 2).min(Duration::from_secs(300));
-                continue;
+                Ok(_) => limiter.record_success(),
             }
-            backoff = Duration::from_secs(1);
             self.spawn_recent_prefetch(account_config_id.clone(), config.clone(), None);
 
             let Some(imap) = config.imap.clone() else {
@@ -898,14 +900,98 @@ impl SyncEngine {
             match woke {
                 Ok(Ok(())) => {}
                 Ok(Err(..)) | Err(..) => {
+                    let wait = limiter.record_failure();
                     tokio::select! {
                         _ = cancel.cancelled() => return,
-                        _ = tokio::time::sleep(POLL_INTERVAL) => {},
+                        _ = tokio::time::sleep(wait) => {},
                     }
                 }
             }
         }
     }
+}
+
+/// Should this failure be retried? IO and network-flavored backend errors
+/// are transient; auth/config/data errors are permanent (fail fast).
+pub fn is_transient(error: &Error) -> bool {
+    match error {
+        Error::Io(_) => true,
+        Error::Backend(message) => {
+            let lower = message.to_lowercase();
+            ["timeout", "timed out", "connection", "reset", "bye", "watch error"]
+                .iter()
+                .any(|token| lower.contains(token))
+                && !lower.contains("auth")
+                && !lower.contains("invalid credentials")
+        }
+        _ => false,
+    }
+}
+
+/// Exponential backoff with ±20% deterministic jitter derived from
+/// `jitter_seed`. `attempt` 0 is the first failure.
+pub fn backoff_delay(attempt: u32, base: Duration, cap: Duration, jitter_seed: u64) -> Duration {
+    let expected = base
+        .saturating_mul(2u32.saturating_pow(attempt.min(16)))
+        .min(cap);
+    let span = (expected.as_millis() / 5) as u64;
+    if span == 0 {
+        return expected;
+    }
+    let offset = (jitter_seed % (2 * span + 1)) as i64 - span as i64;
+    Duration::from_millis((expected.as_millis() as i64 + offset).max(0) as u64).min(cap)
+}
+
+/// Caps reconnect churn: backoff while the streak is short, fixed 60s slow
+/// mode from the 10th consecutive failure, reset on success.
+pub struct ReconnectLimiter {
+    consecutive: u32,
+}
+
+const RECONNECT_SLOW_MODE_AFTER: u32 = 10;
+const RECONNECT_SLOW_MODE_WAIT: Duration = Duration::from_secs(60);
+
+impl Default for ReconnectLimiter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ReconnectLimiter {
+    pub fn new() -> Self {
+        Self { consecutive: 0 }
+    }
+
+    pub fn record_failure(&mut self) -> Duration {
+        self.consecutive = self.consecutive.saturating_add(1);
+        if self.consecutive >= RECONNECT_SLOW_MODE_AFTER {
+            RECONNECT_SLOW_MODE_WAIT
+        } else {
+            backoff_delay(
+                self.consecutive - 1,
+                Duration::from_secs(2),
+                Duration::from_secs(300),
+                jitter_seed(self.consecutive),
+            )
+        }
+    }
+
+    pub fn record_success(&mut self) {
+        self.consecutive = 0;
+    }
+
+    pub fn consecutive(&self) -> u32 {
+        self.consecutive
+    }
+}
+
+fn jitter_seed(salt: u32) -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0)
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(u64::from(salt))
 }
 
 /// Resolved plaintext secrets for this account (best-effort; unresolvable
@@ -1008,4 +1094,70 @@ pub fn parse_references(raw: &[u8]) -> (Option<String>, Vec<String>) {
         }
     }
     (message_id, references)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_transient_classifies_errors() {
+        // Transient: IO failures and network-flavored backend errors.
+        assert!(is_transient(&Error::Io(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "timed out"
+        ))));
+        assert!(is_transient(&Error::Backend("connection reset".into())));
+        assert!(is_transient(&Error::Backend("IMAP timeout waiting for response".into())));
+        assert!(is_transient(&Error::Backend("watch error".into())));
+        assert!(is_transient(&Error::Backend("server sent BYE".into())));
+
+        // Permanent: auth/config/data errors must fail fast.
+        assert!(!is_transient(&Error::Backend("auth failed".into())));
+        assert!(!is_transient(&Error::Config("no IMAP".into())));
+        assert!(!is_transient(&Error::AccountNotFound("x".into())));
+        assert!(!is_transient(&Error::Store(rusqlite::Error::ExecuteReturnedResults)));
+    }
+
+    #[test]
+    fn backoff_delay_grows_caps_and_jitters() {
+        let base = Duration::from_secs(2);
+        let cap = Duration::from_secs(300);
+
+        // Deterministic jitter extremes stay within ±20%.
+        for attempt in 0..10 {
+            for seed in [0u64, u64::MAX / 2, u64::MAX] {
+                let delay = backoff_delay(attempt, base, cap, seed);
+                let expected = base
+                    .saturating_mul(2u32.saturating_pow(attempt.min(16)))
+                    .min(cap);
+                let span = expected.as_millis() / 5;
+                assert!(
+                    delay.as_millis() + span >= expected.as_millis()
+                        && delay.as_millis() <= expected.as_millis() + span,
+                    "attempt {attempt} seed {seed}: {delay:?} outside ±20% of {expected:?}"
+                );
+            }
+        }
+        // Growth reaches the cap.
+        assert!(backoff_delay(10, base, cap, 0) <= cap);
+        assert!(backoff_delay(30, base, cap, 0) <= cap);
+    }
+
+    #[test]
+    fn reconnect_limiter_caps_streak() {
+        let mut limiter = ReconnectLimiter::new();
+        for _ in 0..9 {
+            let wait = limiter.record_failure();
+            assert!(wait <= Duration::from_secs(300), "under streak cap: {wait:?}");
+        }
+        // 10th consecutive failure drops into the 60s slow mode.
+        let slow = limiter.record_failure();
+        assert_eq!(slow, Duration::from_secs(60));
+        assert_eq!(limiter.record_failure(), Duration::from_secs(60));
+
+        // Success resets the streak.
+        limiter.record_success();
+        assert_eq!(limiter.consecutive(), 0);
+    }
 }
