@@ -25,7 +25,7 @@ fn build_deep_multiparts(depth: usize) -> Vec<u8> {
 fn build_huge_headers(size: usize) -> Vec<u8> {
     let mut raw = headers("huge");
     raw.extend_from_slice(b"X-Pad: ");
-    raw.extend(std::iter::repeat(b'A').take(size));
+    raw.extend(std::iter::repeat_n(b'A', size));
     raw.extend_from_slice(b"\r\n\r\nbody");
     raw
 }
