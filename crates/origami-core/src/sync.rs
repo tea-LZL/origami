@@ -420,9 +420,9 @@ impl SyncEngine {
                 // 1. New arrivals.
                 let new_uids = with_network_timeout(backend.search_uids_after(&mailbox.name, after_uid)).await?;
                 if !new_uids.is_empty() {
-                    let envelopes = backend
-                        .fetch_envelopes_by_uids(&mailbox.name, &new_uids)
-                        .await?;
+                    let envelopes =
+                        with_network_timeout(backend.fetch_envelopes_by_uids(&mailbox.name, &new_uids))
+                            .await?;
                     for envelope in envelopes {
                         let (_, inserted) = self.store.upsert_envelope(folder_db_id, &envelope)?;
                         if inserted {
@@ -791,7 +791,7 @@ impl SyncEngine {
                             with_network_timeout(OrigamiSmtp::connect(smtp)).await?;
                         with_network_timeout(sender.send_message(&raw)).await?;
                         let mut appended = false;
-                        if let Ok(mailboxes) = backend.list_mailboxes().await {
+                        if let Ok(mailboxes) = with_network_timeout(backend.list_mailboxes()).await {
                             if let Some(sent) = mailboxes
                                 .iter()
                                 .find(|mailbox| mailbox.role == crate::model::MailboxRole::Sent)
