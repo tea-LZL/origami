@@ -66,7 +66,15 @@ function mergeSelectedIntoUnreadPage(
       extrasById.set(envelope.id, envelope);
     }
   }
-  if (selectedEnvelope && keep.has(selectedEnvelope.id) && !loadedIds.has(selectedEnvelope.id)) {
+  // A selection carried from an earlier state must not overwrite an extra we
+  // already took from `previous` — `previous` is newer than the selection
+  // when the optimistic Seen patch has already been applied to the page.
+  if (
+    selectedEnvelope
+    && keep.has(selectedEnvelope.id)
+    && !loadedIds.has(selectedEnvelope.id)
+    && !extrasById.has(selectedEnvelope.id)
+  ) {
     extrasById.set(selectedEnvelope.id, selectedEnvelope);
   }
   if (extrasById.size === 0) return loaded;

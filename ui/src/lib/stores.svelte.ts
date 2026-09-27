@@ -672,8 +672,13 @@ export async function selectEnvelope(envelope: Envelope) {
       const envelopes = retainForUnreadFilter(app.value.envelopes.map((item) =>
         item.id === envelope.id ? { ...item, flags: next } : item
       ));
+      const selectedNext =
+        envelopes.find((item) => item.id === envelope.id) ?? app.value.selectedEnvelope;
       patch({
         envelopes,
+        // Keep the selection state in sync with the page patch — a stale
+        // unseen copy would otherwise win later merges (see known-drift).
+        selectedEnvelope: selectedNext,
         message: {
           ...messageWithAttachmentState,
           envelope: { ...messageWithAttachmentState.envelope, flags: next },

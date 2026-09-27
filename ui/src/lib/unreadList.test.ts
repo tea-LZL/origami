@@ -97,6 +97,26 @@ describe("applyUnreadListReload", () => {
     expect(result.envelopes.map((item) => item.id)).toEqual(["unread"]);
     expect(result.selectedMessageIds).toEqual([]);
   });
+
+  it("keeps_the_patched_seen_row_when_selection_state_is_stale", () => {
+    // First-open marked the row Seen in the page (previous), but the user has
+    // not yet got a fresh selection state: the stale selectedEnvelope must
+    // not overwrite the already-patched previous entry.
+    const openSeen = envelope({ id: "open", flags: ["Seen"] });
+    const staleSelected = envelope({ id: "open", flags: [] });
+
+    const result = applyUnreadListReload({
+      loaded: [envelope({ id: "fresh-unread" })],
+      previous: [openSeen, envelope({ id: "other", flags: ["Seen"] })],
+      selectedEnvelope: staleSelected,
+      selectedMessageIds: [],
+      unreadOnly: true,
+    });
+
+    const kept = result.envelopes.find((item) => item.id === "open");
+    expect(kept, "kept open row must survive").toBeTruthy();
+    expect(kept!.flags).toContain("Seen");
+  });
 });
 
 describe("folderViewKey", () => {

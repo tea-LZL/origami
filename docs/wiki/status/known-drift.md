@@ -38,12 +38,10 @@ trusted. Precedence is defined in [[SCHEMA]]: code wins for *current*, plans win
   before quoting it.
 - Verify the Sent-projection and tray behavior against current source before relying on
   [[hermes-sent-tray-background]] as a description of *current* behavior.
-- After a folder sync while a just-opened message is selected, `mergeSelectedIntoUnreadPage`
-  (`ui/src/lib/unreadList.ts`) can overwrite a patched Seen previous-page envelope with a
-  stale unseen `selectedEnvelope`. The open row may keep looking unread and stay in the
-  unread-only list after the selection moves. Intended fix: do not overwrite `extrasById`
-  with `selectedEnvelope` if previous already has the id; also patch `selectedEnvelope`
-  flags on first-open Seen. Product code, not a wiki edit — [[unread-only-list-filter]].
+- RESOLVED (2026-09-27): first-open Seen now patches `selectedEnvelope` from the freshly
+  patched page, and `mergeSelectedIntoUnreadPage` no longer lets a stale selection overwrite
+  an extra already taken from `previous` (`keeps_the_patched_seen_row_when_selection_state_is_stale`
+  in `ui/src/lib/unreadList.test.ts`). [[unread-only-list-filter]].
 
 ## Standing instruction
 
