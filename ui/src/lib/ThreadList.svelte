@@ -337,6 +337,7 @@
         isUnread={isUnread}
         onSelect={onRowSelect}
         onHover={(e) => prefetcher.hover(e)}
+        onVisibleRange={(range) => prefetcher.viewport(visibleEnvelopes, range)}
         onEndReached={loadMoreEnvelopes}
         restoreScroll={restoredFolderScroll()}
         restoreKey={app.value.selectedFolderId ?? ""}

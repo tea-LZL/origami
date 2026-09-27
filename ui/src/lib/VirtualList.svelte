@@ -11,6 +11,7 @@
     render: Snippet<[T, number]>;
     onSelect?: (item: T, event: MouseEvent | KeyboardEvent) => void;
     onHover?: (item: T) => void;
+    onVisibleRange?: (range: { start: number; end: number }) => void;
     selectedId?: (item: T) => string | null;
     activeId?: string | null;
     isSelected?: (item: T) => boolean;
@@ -27,6 +28,7 @@
     render,
     onSelect,
     onHover,
+    onVisibleRange,
     selectedId,
     activeId = null,
     isSelected,
@@ -66,6 +68,10 @@
   const visible = $derived(items.slice(startIndex, endIndex));
   const offsetY = $derived(startIndex * itemHeight);
   const totalHeight = $derived(total * itemHeight);
+
+  $effect(() => {
+    onVisibleRange?.({ start: startIndex, end: endIndex });
+  });
 
   function onScroll() {
     if (!scroller) return;
