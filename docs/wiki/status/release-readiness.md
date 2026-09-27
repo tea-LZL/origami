@@ -77,7 +77,8 @@ split into required-1.0 items and documented post-1.0 scope.
 ## Recommended QoL order
 
 1. Preserve folder/search selection and scroll state.
-2. Add explicit Discard/Start-clean actions for recovered composer drafts.
+2. ~~Add explicit Discard/Start-clean actions for recovered composer drafts.~~ Delivered
+   (PR `composer-draft-discard`, 2026-09-27).
 3. Label global-search context correctly and show its result count.
 4. Add configurable delayed mark-as-read and message zoom.
 5. Add recipient chips over the existing learned correspondent data.
