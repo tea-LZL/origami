@@ -123,9 +123,9 @@ impl AppState {
             engine
                 .run_account_loop(aid.clone(), sync_account, token_clone)
                 .await;
-            // Loop exited (cancel or shutdown): clear the syncing marker so
-            // the UI never shows a dead account as syncing.
-            syncing_accounts.lock().unwrap().remove(&aid);
+            // The "syncing" marker is event-driven (AccountSyncStarted /
+            // Error / AccountSynced) plus stop paths; removing it here would
+            // race a restarted loop's fresh marker.
         });
 
         if let Some(oauth) = oauth {
