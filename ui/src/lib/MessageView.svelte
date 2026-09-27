@@ -10,7 +10,7 @@
     setSelectedFlag,
   } from "./stores.svelte";
   import { api } from "./api";
-  import { sanitizeMessageHtml } from "./messageHtml";
+  import { allowedLinkHref, sanitizeMessageHtml } from "./messageHtml";
   import {
     allowRemoteOrigins,
     allowRemoteSender,
@@ -85,12 +85,14 @@
     const href = anchor.getAttribute("href");
     if (!href) return;
 
+    const normalized = allowedLinkHref(href);
+    if (!normalized) {
+      app.value.lastError = `Could not open link: Unsupported link type: ${href}`;
+      return;
+    }
+
     try {
-      const url = new URL(href);
-      if (!["http:", "https:", "mailto:"].includes(url.protocol)) {
-        throw new Error(`Unsupported link type: ${url.protocol}`);
-      }
-      openUrl(url.href).catch((error) => {
+      openUrl(normalized).catch((error) => {
         app.value.lastError = `Could not open link: ${String(error)}`;
       });
     } catch (error) {
