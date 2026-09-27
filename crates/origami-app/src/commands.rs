@@ -501,10 +501,13 @@ pub async fn get_attachment(
         origami_core::message::attachment_bytes(&raw, index).ok_or("attachment not found")?
     } else {
         let backend = state.backend(&account_config_id).await.map_err(err)?;
-        backend
-            .fetch_attachment_section(&mailbox, server_uid, &attachment.part_path)
-            .await
-            .map_err(err)?
+        origami_core::sync::with_network_timeout(backend.fetch_attachment_section(
+            &mailbox,
+            server_uid,
+            &attachment.part_path,
+        ))
+        .await
+        .map_err(err)?
     };
     Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
 }

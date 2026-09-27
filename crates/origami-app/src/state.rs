@@ -216,7 +216,8 @@ impl AppState {
             .imap
             .as_ref()
             .ok_or_else(|| Error::Config(format!("account `{account_config_id}` has no IMAP")))?;
-        ImapBackend::connect(account_config_id, imap).await
+        origami_core::sync::with_network_timeout(ImapBackend::connect(account_config_id, imap))
+            .await
     }
 
     /// Resolve a folder UUID to (account_config_id, account_db_id, mailbox name).
