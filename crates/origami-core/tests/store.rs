@@ -951,3 +951,47 @@ fn existing_data_perms_tightened() {
     drop(store);
     drop(blobs);
 }
+
+fn cache_display_row(store: &Store, folder: &str, uid: u32, received_at: i64) {
+    let mut envelope = envelope(uid, &format!("subject {uid}"));
+    envelope.received_at = Some(received_at);
+    store.upsert_envelope(folder, &envelope).unwrap();
+    store
+        .set_parsed_message_and_index(folder, uid, &ParsedMessage::default(), "thread")
+        .unwrap();
+}
+
+#[test]
+fn evict_display_cache_age() {
+    let (store, _account, folder) = setup();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let day = 24 * 60 * 60;
+    cache_display_row(&store, &folder, 1, now - 40 * day);
+    cache_display_row(&store, &folder, 2, now - day);
+
+    let removed = store.evict_display_cache(2000, 30).unwrap();
+    assert_eq!(removed, 1, "only the stale row is age-evicted");
+    assert!(store.parsed_message(&folder, 2).unwrap().is_some());
+    assert!(store.parsed_message(&folder, 1).unwrap().is_none());
+}
+
+#[test]
+fn evict_display_cache_count() {
+    let (store, _account, folder) = setup();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    cache_display_row(&store, &folder, 1, now - 3000);
+    cache_display_row(&store, &folder, 2, now - 2000);
+    cache_display_row(&store, &folder, 3, now - 1000);
+
+    let removed = store.evict_display_cache(2, 3650).unwrap();
+    assert_eq!(removed, 1, "oldest received is evicted first");
+    assert!(store.parsed_message(&folder, 1).unwrap().is_none());
+    assert!(store.parsed_message(&folder, 2).unwrap().is_some());
+    assert!(store.parsed_message(&folder, 3).unwrap().is_some());
+}

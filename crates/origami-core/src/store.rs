@@ -879,6 +879,35 @@ impl Store {
             .collect())
     }
 
+    /// Bound the parsed-display cache: drop rows older than `max_age_days`
+    /// (by message received time, falling back to cache time), then keep only
+    /// the newest `max_rows`. `message_cache` is a pure cache — blobs, FTS,
+    /// and envelope rows are untouched. Returns the number of rows deleted.
+    pub fn evict_display_cache(&self, max_rows: u32, max_age_days: u32) -> Result<u32> {
+        let conn = self.conn()?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|error| Error::Backend(format!("system clock before Unix epoch: {error}")))?
+            .as_secs() as i64;
+        let cutoff = now - i64::from(max_age_days) * 24 * 60 * 60;
+        let aged = conn.execute(
+            "DELETE FROM message_cache WHERE message_id IN (
+                 SELECT c.message_id FROM message_cache c
+                 JOIN messages m ON m.id = c.message_id
+                 WHERE COALESCE(m.received_at, c.cached_at) < ?1)",
+            params![cutoff],
+        )?;
+        let capped = conn.execute(
+            "DELETE FROM message_cache WHERE message_id IN (
+                 SELECT c.message_id FROM message_cache c
+                 JOIN messages m ON m.id = c.message_id
+                 ORDER BY COALESCE(m.received_at, c.cached_at) DESC
+                 LIMIT -1 OFFSET ?1)",
+            params![max_rows],
+        )?;
+        Ok((aged + capped) as u32)
+    }
+
     /// List recent messages whose display data is not cached locally.
     ///
     /// The received timestamp is populated from the normalized message date

@@ -319,6 +319,8 @@ impl SyncEngine {
                 cached += 1;
             }
         }
+        // Keep the display cache bounded after warming a batch.
+        self.store.evict_display_cache(2000, 30)?;
         Ok(cached)
     }
 
