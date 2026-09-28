@@ -6,7 +6,7 @@ function focusableIn(node: HTMLElement): HTMLElement[] {
   );
 }
 
-export function trapFocus(node: HTMLElement) {
+export function trapFocus(node: HTMLElement, options?: { onEscape?: () => void }) {
   const previously = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const frame = requestAnimationFrame(() => {
     if (node.contains(document.activeElement)) return;
@@ -14,6 +14,10 @@ export function trapFocus(node: HTMLElement) {
   });
 
   function onKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      options?.onEscape?.();
+      return;
+    }
     if (event.key !== "Tab") return;
     const items = focusableIn(node);
     if (items.length === 0) return;

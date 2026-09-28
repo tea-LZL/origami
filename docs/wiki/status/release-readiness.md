@@ -85,10 +85,15 @@ split into required-1.0 items and documented post-1.0 scope.
 3. Label global-search context correctly and show its result count.
 4. ~~Add configurable delayed mark-as-read and message zoom.~~ Delivered (branch
    `markread-zoom`, 2026-09-27).
-5. Add recipient chips over the existing learned correspondent data.
-6. Complete dialog focus entry/trapping/restoration and keyboard interaction tests.
-7. Add folder hierarchy/subscription support.
-8. Add signatures/plain-text compose mode before inline-image editing.
+5. ~~Add recipient chips over the existing learned correspondent data.~~ Delivered (branch
+   `recipient-chips`, 2026-09-27).
+6. ~~Complete dialog focus entry/trapping/restoration and keyboard interaction tests.~~
+   Delivered (branch `qol-batch`, 2026-09-27: Escape handling in `trapFocus`, all dialogs
+   wired, Outbox integration test).
+7. ~~Add folder hierarchy/subscription support.~~ Delivered (branch `qol-batch`,
+   2026-09-27: hierarchy landed earlier; subscriptions now).
+8. ~~Add signatures/plain-text compose mode before inline-image editing.~~ Delivered
+   (branch `qol-batch`, 2026-09-27).
 9. Consolidate repeated dialog/button/status patterns only as each flow is touched.
 
 Avoid speculative provider abstractions, new background services, or broad component

@@ -180,3 +180,33 @@ persisted) scales the reading pane: text mode via body font-size, HTML mode via 
 document root font-size, with Ctrl+= / Ctrl+- / Ctrl+0 shortcuts in the message view and a
 Preferences select for both. Tests: `stores.markread.test.ts` (6) +
 `applies_message_zoom_to_text_body`. [[release-readiness]] QoL order item 4 delivered.
+
+## [2026-09-27] update | recipient chips in composer
+QoL item delivered: To/Cc/Bcc are chip inputs (`RecipientInput.svelte`) fed by the learned
+correspondents datalist — Enter/comma commits, Backspace removes the last chip, per-chip
+remove, dedupe, and address-shape validation. Draft model unchanged (comma-separated
+strings), so existing drafts stay compatible. Tests: `RecipientInput.test.ts` (5) +
+Composer focus tests preserved. [[release-readiness]] QoL order item 5 delivered.
+
+## [2026-09-27] update | dialog Escape handling + focus test coverage
+QoL item 6 (keyboard half): `trapFocus` accepts `{ onEscape }` and all five dialogs
+(Outbox, Preferences, AccountSettings, AddAccount, Composer) close on Escape; focus
+restoration on close was already implemented and is pinned by the harness test plus a new
+Outbox integration test (`escape_closes_the_outbox`). Entry/trap/restore covered in
+`trapFocus.test.ts` (3 tests).
+
+## [2026-09-27] update | folder subscriptions
+QoL item delivered: folders carry a `subscribed` flag (migration v10, default subscribed),
+toggled per Other-role folder from the sidebar context menu (Subscribe/Unsubscribe) with a
+best-effort IMAP SUBSCRIBE/UNSUBSCRIBE (`subscribe_mailbox`/`unsubscribe_mailbox` in the
+backend; offline keeps the local choice and surfaces the error). Unsubscribed folders
+render dimmed. Sync upserts preserve the user's choice. Store test:
+`folder_subscriptions_toggle_and_persist`. [[release-readiness]] QoL order item 7 delivered.
+
+## [2026-09-27] update | signatures + plain-text compose
+QoL item delivered: per-account plain-text signature (`AccountConfig.signature`, editable in
+AccountSettings, appended escaped to fresh/reply compositions) and a Rich/Plain compose
+toggle — plain mode swaps the TipTap editor for a monospace textarea and sends a text-only
+message (`compose.rs` now omits `html_body` when the HTML body is empty; test
+`builds_text_only_when_html_empty`). `composeMode` round-trips through stored drafts.
+[[release-readiness]] QoL order item 8 delivered (signatures + plain-text compose).

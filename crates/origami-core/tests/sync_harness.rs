@@ -40,6 +40,7 @@ fn test_account() -> AccountConfig {
             }),
         }),
         smtp: None,
+        signature: None,
     }
 }
 

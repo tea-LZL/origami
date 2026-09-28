@@ -137,6 +137,9 @@ pub struct AccountConfig {
     pub default: bool,
     pub imap: Option<ImapConfig>,
     pub smtp: Option<SmtpConfig>,
+    /// Plain-text signature appended to new compositions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

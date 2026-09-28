@@ -5,6 +5,7 @@ import { flattenFolderTree, folderRoleHue, sidebarFolders, sidebarTree } from ".
 function folder(partial: Partial<Mailbox> & Pick<Mailbox, "id" | "name" | "role">): Mailbox {
   return {
     accountId: "acct",
+    subscribed: true,
     total: 1,
     unread: 0,
     sourceIds: [],

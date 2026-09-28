@@ -103,6 +103,7 @@ export interface State {
     bcc: string;
     subject: string;
     html: string;
+    composeMode: "rich" | "plain";
   };
   composerThreading: {
     inReplyTo: string | null;
@@ -156,7 +157,7 @@ const initial: State = {
   composerAccountId: null,
   sending: false,
   composerAttachments: [],
-  composerDraft: { to: "", cc: "", bcc: "", subject: "", html: "" },
+  composerDraft: { to: "", cc: "", bcc: "", subject: "", html: "", composeMode: "rich" },
   composerThreading: { inReplyTo: null, references: [] },
   composerRecovered: false,
   composerDiscarded: false,
@@ -1229,6 +1230,7 @@ function blankDraft() {
     bcc: "",
     subject: "",
     html: "<p></p>",
+    composeMode: "rich" as "rich" | "plain",
   };
 }
 
@@ -1267,6 +1269,14 @@ export async function openComposer(
     }
   }
   if (loadToken !== composerLoadToken) return;
+  const restored = { ...blankDraft(), ...(draft ?? legacy ?? recovered?.draft ?? {}) };
+  const signature = account?.signature ?? null;
+  if (signature && !restored.html.includes("-- ")) {
+    restored.html += `<p></p><p>-- </p><p>${signature
+      .split(/\r?\n/)
+      .map((line) => htmlEscape(line) || "<br>")
+      .join("<br>")}</p>`;
+  }
   patch({
     composerOpen: true,
     composerAccountId: recovered?.accountId ?? account?.id ?? null,
@@ -1277,8 +1287,8 @@ export async function openComposer(
       ...(threading ?? {}),
     },
     composerDraft: {
-      ...blankDraft(),
-      ...(draft ?? legacy ?? recovered?.draft ?? {}),
+      ...restored,
+      composeMode: legacy?.composeMode ?? recovered?.draft.composeMode ?? "rich",
     },
     composerRecovered: !draft && (legacy !== null || recovered !== null),
     composerDiscarded: false,
@@ -1381,6 +1391,7 @@ export async function sendComposer() {
   }
   patch({ sending: true });
   try {
+    const plain = draft.composeMode === "plain";
     const result = await api.sendMessage({
       fromName: account.name,
       fromAddr: account.email,
@@ -1388,7 +1399,8 @@ export async function sendComposer() {
       cc,
       bcc,
       subject: draft.subject,
-      html: draft.html,
+      html: plain ? "" : draft.html,
+      text: plain ? draft.html : undefined,
       inReplyTo: app.value.composerThreading.inReplyTo,
       references: app.value.composerThreading.references,
       attachments: app.value.composerAttachments.map(({ name, mime, dataBase64 }) => ({

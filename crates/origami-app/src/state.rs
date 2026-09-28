@@ -484,6 +484,7 @@ mod tests {
                     secret: Some(Secret::Raw { raw: "p".into() }),
                 }),
                 smtp: None,
+                signature: None,
             },
         );
         let config = Arc::new(RwLock::new(config));

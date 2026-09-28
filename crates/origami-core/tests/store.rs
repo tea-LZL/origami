@@ -1195,6 +1195,28 @@ fn shutdown_flush_checkpoints() {
 }
 
 #[test]
+fn folder_subscriptions_toggle_and_persist() {
+    let (store, account, folder) = setup();
+
+    let folders = store.list_folders(&account).unwrap();
+    assert!(folders[0].subscribed, "new folders default to subscribed");
+
+    store.set_folder_subscribed(&folder, false).unwrap();
+    let folders = store.list_folders(&account).unwrap();
+    assert!(!folders[0].subscribed);
+
+    // A later sync upsert must not reset the user's choice.
+    store
+        .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
+        .unwrap();
+    let folders = store.list_folders(&account).unwrap();
+    assert!(!folders[0].subscribed, "subscription survives re-sync");
+
+    store.set_folder_subscribed(&folder, true).unwrap();
+    assert!(store.list_folders(&account).unwrap()[0].subscribed);
+}
+
+#[test]
 fn search_count_matches_page_total() {
     let (store, account, folder) = setup();
     for (uid, subject) in [

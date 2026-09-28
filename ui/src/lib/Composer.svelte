@@ -4,6 +4,7 @@
   import { app, closeComposer, discardComposerDraft, sendComposer } from "./stores.svelte";
   import { api } from "./api";
   import Select from "./Select.svelte";
+  import RecipientInput from "./RecipientInput.svelte";
   import { trapFocus } from "./trapFocus";
 
   let editor: Editor | null = null;
@@ -125,7 +126,7 @@
 </script>
 
 {#if app.value.composerOpen}
-  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="composer-title" use:trapFocus>
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="composer-title" use:trapFocus={{ onEscape: onClose }}>
     <div class="composer">
       <header>
         <h2 id="composer-title">New message</h2>
@@ -157,9 +158,25 @@
             }))}
           />
         </label>
-        <label>To <input use:focusOnMount type="text" list="origami-correspondents" bind:value={app.value.composerDraft.to} /></label>
-        <label>Cc <input type="text" list="origami-correspondents" bind:value={app.value.composerDraft.cc} /></label>
-        <label>Bcc <input type="text" list="origami-correspondents" bind:value={app.value.composerDraft.bcc} /></label>
+        <RecipientInput
+          label="To"
+          value={app.value.composerDraft.to}
+          correspondents={app.value.correspondents}
+          onChange={(value) => (app.value.composerDraft.to = value)}
+          focusOnMount
+        />
+        <RecipientInput
+          label="Cc"
+          value={app.value.composerDraft.cc}
+          correspondents={app.value.correspondents}
+          onChange={(value) => (app.value.composerDraft.cc = value)}
+        />
+        <RecipientInput
+          label="Bcc"
+          value={app.value.composerDraft.bcc}
+          correspondents={app.value.correspondents}
+          onChange={(value) => (app.value.composerDraft.bcc = value)}
+        />
         <label>Subject <input type="text" bind:value={app.value.composerDraft.subject} /></label>
         <datalist id="origami-correspondents">
           {#each app.value.correspondents as contact (contact.addr)}
@@ -169,6 +186,22 @@
       </div>
 
       <div class="toolbar">
+        <button
+          type="button"
+          class="mode-toggle"
+          class:active={app.value.composerDraft.composeMode === "rich"}
+          title="Rich text"
+          onclick={() => (app.value.composerDraft.composeMode = "rich")}
+        >Rich</button>
+        <button
+          type="button"
+          class="mode-toggle"
+          class:active={app.value.composerDraft.composeMode === "plain"}
+          title="Plain text"
+          onclick={() => (app.value.composerDraft.composeMode = "plain")}
+        >Plain</button>
+        <span class="sep" aria-hidden="true"></span>
+        {#if app.value.composerDraft.composeMode === "rich"}
         <button type="button" onclick={() => exec("bold")} title="Bold"><b>B</b></button>
         <button type="button" onclick={() => exec("italic")} title="Italic"><i>I</i></button>
         <button type="button" onclick={() => exec("h2")} title="Heading">H</button>
@@ -180,9 +213,18 @@
           Attach
           <input type="file" multiple onchange={addAttachments} />
         </label>
+        {/if}
       </div>
 
+      {#if app.value.composerDraft.composeMode === "plain"}
+        <textarea
+          class="plain-editor"
+          aria-label="Plain text body"
+          bind:value={app.value.composerDraft.html}
+        ></textarea>
+      {:else}
       <div class="editor" use:mountEditor></div>
+      {/if}
 
       {#if app.value.composerAttachments.length > 0}
         <div class="attachments" aria-label="Attachments">
@@ -330,6 +372,15 @@
     padding: 10px 16px;
     border-top: 1px solid var(--border);
     background: color-mix(in oklab, var(--bg-sunken) 56%, var(--bg-raised));
+  }
+  .mode-toggle { padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 11px; cursor: pointer; color: var(--fg-muted); background: var(--bg-raised); }
+  .mode-toggle.active { color: var(--accent-fg); background: var(--accent); border-color: var(--accent); }
+  .toolbar .sep { width: 1px; height: 18px; background: var(--border); }
+  .plain-editor {
+    min-height: 220px; resize: vertical; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    background: var(--bg-raised); color: var(--fg);
+    font: 13px/1.5 var(--font-mono); white-space: pre-wrap;
   }
   .draft-state { margin-right: auto; align-self: center; color: var(--fg-subtle); font-size: 10px; }
   .recovered {

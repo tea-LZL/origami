@@ -14,6 +14,7 @@ export interface EnvelopeSource {
 }
 
 export interface Mailbox {
+  subscribed: boolean;
   id: string;
   accountId: string;
   name: string;

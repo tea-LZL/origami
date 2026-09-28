@@ -145,6 +145,17 @@
     }
   }
 
+  async function toggleFolderSubscription(folder: Mailbox) {
+    try {
+      await api.setFolderSubscribed(folder.id, !folder.subscribed);
+      app.value.folders = app.value.folders.map((item) =>
+        item.id === folder.id ? { ...item, subscribed: !folder.subscribed } : item
+      );
+    } catch (error) {
+      app.value.lastError = String(error);
+    }
+  }
+
   async function confirmFolderDelete() {
     if (!folderDelete) return;
     folderBusy = true;
@@ -258,6 +269,7 @@
               class="folder"
               class:selected={row.folder != null && app.value.selectedFolderId === row.folder.id}
               class:virtual={row.folder == null}
+              class:unsubscribed={row.folder?.subscribed === false}
               role="treeitem"
               aria-selected={row.folder != null && app.value.selectedFolderId === row.folder.id}
               aria-expanded={row.expandable ? row.expanded : undefined}
@@ -345,6 +357,13 @@
 
 {#if folderMenu}
   <div class="context-menu" style:left="{folderMenu.x}px" style:top="{folderMenu.y}px" role="menu">
+    <button type="button" role="menuitem" onclick={() => {
+      const folder = folderMenu!.folder;
+      folderMenu = null;
+      void toggleFolderSubscription(folder);
+    }}>
+      {folderMenu!.folder.subscribed ? "Unsubscribe" : "Subscribe"}
+    </button>
     <button type="button" role="menuitem" onclick={() => {
       folderName = folderMenu!.folder.name;
       folderDialog = { mode: "rename", accountId: "", folderId: folderMenu!.folder.id };
@@ -589,6 +608,7 @@
   .twist:focus-visible {
     outline-offset: -2px;
   }
+  .folder.unsubscribed .folder-name { opacity: 0.55; }
   .folder-name { text-align: left; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; gap: 8px; }
   .role-hue-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--fg-subtle); }
   .role-hue-inbox { background: var(--accent); }

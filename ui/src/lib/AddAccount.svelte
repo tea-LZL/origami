@@ -199,7 +199,7 @@
 </script>
 
 {#if open}
-  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="add-account-title" use:trapFocus>
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="add-account-title" use:trapFocus={{ onEscape: close }}>
     <div class="wizard">
       {#if step === 0}
         <h2 id="add-account-title">Add an email account</h2>

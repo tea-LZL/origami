@@ -79,6 +79,7 @@ pub struct AccountDto {
     pub email: String,
     pub has_imap: bool,
     pub has_smtp: bool,
+    pub signature: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -218,6 +219,7 @@ pub fn list_accounts(state: State<'_, AppState>) -> CmdResult<Vec<AccountDto>> {
             email: account.email.clone(),
             has_imap: account.imap.is_some(),
             has_smtp: account.smtp.is_some(),
+            signature: account.signature.clone(),
         });
     }
     Ok(out)
@@ -271,6 +273,32 @@ pub async fn create_folder(
         .store
         .upsert_folder(&account_db_id, name, MailboxRole::Other)
         .map_err(err)?;
+    Ok(())
+}
+
+/// Toggle a folder subscription: local choice persists immediately; the
+/// IMAP SUBSCRIBE/UNSUBSCRIBE is best-effort (offline keeps the local state
+/// and reports the error).
+#[tauri::command]
+pub async fn set_folder_subscribed(
+    state: State<'_, AppState>,
+    folder_id: String,
+    subscribed: bool,
+) -> CmdResult<()> {
+    let (account_config_id, _account_db_id, mailbox) =
+        state.resolve_folder(&folder_id).map_err(err)?;
+    state
+        .store
+        .set_folder_subscribed(&folder_id, subscribed)
+        .map_err(err)?;
+    if let Ok(backend) = state.backend(&account_config_id).await {
+        let result = if subscribed {
+            backend.subscribe_mailbox(&mailbox).await
+        } else {
+            backend.unsubscribe_mailbox(&mailbox).await
+        };
+        result.map_err(err)?;
+    }
     Ok(())
 }
 
@@ -965,6 +993,7 @@ pub async fn add_account(
         default: is_default,
         imap: imap_with_secret,
         smtp: smtp_with_secret,
+        signature: None,
     };
 
     config.accounts.insert(account_id.clone(), account.clone());
@@ -982,6 +1011,10 @@ pub async fn add_account(
         )
         .map_err(err)?;
 
+    let signature = config
+        .accounts
+        .get(&account_id)
+        .and_then(|account| account.signature.clone());
     let dto = AccountDto {
         id: account_id.clone(),
         db_id,
@@ -989,6 +1022,7 @@ pub async fn add_account(
         email: dto_email,
         has_imap,
         has_smtp,
+        signature,
     };
 
     // Start the account's managed sync loop so initial import continues
@@ -1041,6 +1075,7 @@ pub async fn remove_account(
             email: account.email.clone(),
             has_imap: account.imap.is_some(),
             has_smtp: account.smtp.is_some(),
+            signature: account.signature.clone(),
         });
     }
     Ok(out)
@@ -1272,6 +1307,7 @@ pub struct AccountSettingsDto {
     username: Option<String>,
     auth: Option<String>,
     oauth_provider: Option<String>,
+    signature: Option<String>,
 }
 
 #[tauri::command]
@@ -1321,6 +1357,7 @@ pub fn get_account_settings(
             .or_else(|| account.smtp.as_ref().map(|smtp| smtp.username.clone())),
         auth,
         oauth_provider,
+        signature: account.signature.clone(),
     })
 }
 
@@ -1342,6 +1379,7 @@ pub async fn update_account(
     password: Option<String>,
     oauth_access_token: Option<String>,
     oauth_refresh_token: Option<String>,
+    signature: Option<String>,
 ) -> CmdResult<()> {
     let mut config = state.read_config();
     let existing = config
@@ -1354,6 +1392,13 @@ pub async fn update_account(
     }
     if let Some(e) = email {
         existing.email = e;
+    }
+    if let Some(sig) = signature {
+        existing.signature = if sig.trim().is_empty() {
+            None
+        } else {
+            Some(sig)
+        };
     }
     if let Some(u) = username {
         if let Some(imap) = &mut existing.imap {
@@ -1865,6 +1910,7 @@ mod tests {
                 account_id: "account-a".into(),
                 name: "Sent".into(),
                 role: MailboxRole::Sent,
+                subscribed: true,
                 total: 4,
                 unread: 1,
             },
@@ -1873,6 +1919,7 @@ mod tests {
                 account_id: "account-a".into(),
                 name: "[Gmail]/Sent Mail".into(),
                 role: MailboxRole::Sent,
+                subscribed: true,
                 total: 68,
                 unread: 2,
             },
@@ -1881,6 +1928,7 @@ mod tests {
                 account_id: "account-a".into(),
                 name: "INBOX".into(),
                 role: MailboxRole::Inbox,
+                subscribed: true,
                 total: 10,
                 unread: 3,
             },
@@ -1889,6 +1937,7 @@ mod tests {
                 account_id: "account-b".into(),
                 name: "Sent".into(),
                 role: MailboxRole::Sent,
+                subscribed: true,
                 total: 7,
                 unread: 4,
             },

@@ -27,7 +27,7 @@ function seedAccount() {
 }
 
 function blankDraft() {
-  return { to: "", cc: "", bcc: "", subject: "", html: "<p></p>" };
+  return { to: "", cc: "", bcc: "", subject: "", html: "<p></p>", composeMode: "rich" };
 }
 
 const loadDraft = vi.mocked(api.loadComposerDraft);

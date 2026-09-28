@@ -82,4 +82,13 @@ describe("Outbox", () => {
     expect(await screen.findByText("Pending")).toBeInTheDocument();
     expect(screen.getByText("Failed")).toBeInTheDocument();
   });
+
+  it("escape_closes_the_outbox", async () => {
+    render(Outbox);
+    await screen.findByText("Failed");
+
+    await fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+    expect(mocks.app.value.outboxAccountId).toBeNull();
+  });
 });
