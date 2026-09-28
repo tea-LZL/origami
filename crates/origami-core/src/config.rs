@@ -56,6 +56,10 @@ pub struct NotificationConfig {
     pub folder_scope: NotificationFolderScope,
     #[serde(default)]
     pub quiet_hours: Option<QuietHours>,
+    /// Group notifications per account: one replace-style notification per
+    /// account instead of one per message.
+    #[serde(default)]
+    pub grouped_per_account: bool,
 }
 
 impl Default for NotificationConfig {
@@ -63,6 +67,7 @@ impl Default for NotificationConfig {
         Self {
             preview: NotificationPreview::Full,
             folder_scope: NotificationFolderScope::All,
+            grouped_per_account: false,
             quiet_hours: None,
         }
     }
@@ -449,6 +454,7 @@ mod tests {
                     start: "22:30".into(),
                     end: "07:15".into(),
                 }),
+                grouped_per_account: true,
             },
             ..Config::default()
         };

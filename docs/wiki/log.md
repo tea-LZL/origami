@@ -218,3 +218,24 @@ view merges loaded-page members with the cross-folder results
 (`mergeThreadMembers` in `threads.ts`, loaded entries win on id collisions). Thread-id-less
 messages keep page-local grouping. Tests: `thread_envelopes_spans_folders_within_account`
 (store) + `mergeThreadMembers` (UI).
+
+## [2026-09-27] update | grouped notifications + unread badge
+Daily-driver gap delivered: `NotificationConfig.grouped_per_account` groups desktop
+notifications per account — one replace-style notification (XDG id reuse) shows a running
+"N new" count instead of stacking per-message toasts, reset on full account sync. The tray
+tooltip now carries an unread badge (`total_unread()` across all accounts, updated on
+NewEnvelope/AccountSynced). Preferences gains a "Group per account" toggle. Config
+round-trip test extended.
+
+## [2026-09-27] update | per-folder view restoration at startup
+Daily-driver gap delivered: the last-viewed folder (or unified Inbox) persists in
+`localStorage` key `origami-last-folder` and bootstrap restores it — falling back to the
+first Inbox when the folder vanished. In-memory per-folder snapshots (envelopes, selection,
+scroll) continue to cover in-session switches. Tests: `stores.startup.test.ts` (4).
+
+## [2026-09-27] update | inline images in composer
+Daily-driver gap delivered: the composer toolbar gains an insert-image action (rich mode) —
+files are validated (image type, 5 MB cap) and embedded as `data:` URLs in the HTML body via
+TipTap's Image node (`@tiptap/extension-image`). The reading-side sanitizer already permits
+`img-src data:`, so sent/received inline images render inside the sandboxed frame. Tests:
+`inlineImage.test.ts` (3).

@@ -63,12 +63,16 @@ several proof and distribution gates are absent.
   automated accessibility or visual-regression checks (the palette contrast gate covers
   token contrast only — [[build-and-verification]]).
 
-### 5. Daily-driver gaps
-Recipient chips/contact management, signatures, inline images, plain-text compose; folder
-hierarchy/subscriptions; cross-folder thread query (delivered 2026-09-27, branch `cross-folder-threads`) and per-folder view restoration;
-font/message zoom and configurable mark-read; explicit discard/start-clean draft and
-search-context/result-count header; grouped notification routing and unread badge behavior.
+### 5. Daily-driver gaps — **delivered 2026-09-27** (branch `daily-driver`)
 
+The full QoL order and daily-driver gap list are complete: recipient chips, signatures,
+plain-text compose, inline image embedding, folder subscriptions (hierarchy landed
+earlier), cross-folder thread query, per-folder view restoration at startup, message zoom,
+configurable delayed mark-as-read, draft discard/keep, search context + result count,
+grouped notification routing, and the tray unread badge. See `docs/wiki/log.md` for the
+per-item records and `docs/superpowers/plans/` for the executed plans.
+
+## Release rule
 ## Release rule
 
 Do not declare 1.0 until the first four groups have explicit evidence. The fifth group can be

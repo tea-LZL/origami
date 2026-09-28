@@ -347,6 +347,17 @@ impl Store {
     }
 
     /// List folders of an account with live message counts.
+    /// Total unread messages across every account (tray badge).
+    pub fn total_unread(&self) -> Result<u32> {
+        let conn = self.conn()?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM messages WHERE flags_json NOT LIKE '%\"Seen\"%'",
+            [],
+            |row| row.get(0),
+        )?;
+        u32::try_from(count).map_err(|_| Error::Backend("unread count exceeds u32".into()))
+    }
+
     /// Toggle a folder's subscription (local preference; the IMAP call is
     /// made by the command layer).
     pub fn set_folder_subscribed(&self, folder_id: &str, subscribed: bool) -> Result<()> {

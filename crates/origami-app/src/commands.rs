@@ -1231,6 +1231,7 @@ pub struct NotificationSettingsDto {
     preview: String,
     folder_scope: String,
     quiet_hours: Option<QuietHoursDto>,
+    grouped_per_account: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1258,6 +1259,7 @@ impl From<NotificationConfig> for NotificationSettingsDto {
                 start: hours.start,
                 end: hours.end,
             }),
+            grouped_per_account: settings.grouped_per_account,
         }
     }
 }
@@ -1288,6 +1290,7 @@ pub fn update_notification_settings(
             start: hours.start,
             end: hours.end,
         }),
+        grouped_per_account: settings.grouped_per_account,
     };
     notifications.validate().map_err(err)?;
     let mut config = state.read_config();
