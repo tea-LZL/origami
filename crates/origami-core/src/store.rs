@@ -381,6 +381,81 @@ impl Store {
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
+    /// Envelopes sharing a thread id across every folder of the account —
+    /// powers the cross-folder conversation view. Newest first.
+    pub fn thread_envelopes(&self, account_id: &str, thread_id: &str) -> Result<Vec<Envelope>> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT m.id, m.folder_id, m.server_uid, m.message_id, m.thread_id, m.subject,
+                    m.from_json, m.to_json, m.date, m.received_at, m.size, m.flags_json,
+                    m.keywords_json, m.has_attachment, f.account_id
+               FROM messages m
+               JOIN folders f ON f.id = m.folder_id
+              WHERE f.account_id = ?1 AND m.thread_id = ?2
+              ORDER BY COALESCE(m.received_at, 0) DESC, m.rowid DESC",
+        )?;
+        let rows = stmt.query_map(params![account_id, thread_id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, Option<String>>(3)?,
+                r.get::<_, Option<String>>(4)?,
+                r.get::<_, String>(5)?,
+                r.get::<_, String>(6)?,
+                r.get::<_, String>(7)?,
+                r.get::<_, Option<String>>(8)?,
+                r.get::<_, Option<i64>>(9)?,
+                r.get::<_, i64>(10)?,
+                r.get::<_, String>(11)?,
+                r.get::<_, String>(12)?,
+                r.get::<_, i64>(13)?,
+                r.get::<_, String>(14)?,
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (
+                id,
+                mailbox_id,
+                uid,
+                message_id,
+                thread_id,
+                subject,
+                from_json,
+                to_json,
+                date,
+                received_at,
+                size,
+                flags_json,
+                keywords_json,
+                has_att,
+                _account_id,
+            ) = row?;
+            out.push(Envelope {
+                id,
+                mailbox_id: mailbox_id.clone(),
+                subject,
+                from: serde_json::from_str(&from_json).unwrap_or_default(),
+                to: serde_json::from_str(&to_json).unwrap_or_default(),
+                date,
+                received_at,
+                flags: serde_json::from_str(&flags_json).unwrap_or_default(),
+                keywords: serde_json::from_str(&keywords_json).unwrap_or_default(),
+                has_attachment: has_att != 0,
+                size: size as u32,
+                server_uid: Some(uid as u32),
+                message_id,
+                thread_id,
+                sources: vec![EnvelopeSource {
+                    mailbox_id,
+                    server_uid: uid as u32,
+                }],
+            });
+        }
+        Ok(out)
+    }
+
     /// Count logical messages across physical folders without counting a
     /// provider label copy more than once.
     pub fn logical_envelope_counts(&self, folder_ids: &[String]) -> Result<(u32, u32)> {

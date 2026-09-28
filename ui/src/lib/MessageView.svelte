@@ -19,7 +19,7 @@
     normalizeRemoteSender,
     REMOTE_CONTENT_POLICY_EVENT,
   } from "./remoteContent";
-  import { threadMembers } from "./threads";
+  import { mergeThreadMembers, threadMembers } from "./threads";
   import { messageBodyKeyboard } from "./navigation";
   import OrigamiArtwork from "./OrigamiArtwork.svelte";
   import ActionIcon from "./ActionIcon.svelte";
@@ -105,7 +105,12 @@
   });
 
   const safeText = $derived(app.value.message?.text ?? "");
-  const conversation = $derived(threadMembers(app.value.envelopes, app.value.selectedEnvelope));
+  const conversation = $derived(
+    mergeThreadMembers(
+      threadMembers(app.value.envelopes, app.value.selectedEnvelope),
+      app.value.threadCrossFolder,
+    ),
+  );
 
   function openExternalLink(event: MouseEvent) {
     const target = event.target;
