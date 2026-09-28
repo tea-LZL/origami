@@ -40,7 +40,18 @@ function mailbox(id: string, role: Mailbox["role"]): Mailbox {
 
 describe("startup folder restoration", () => {
   beforeEach(() => {
-    localStorage.clear();
+    // jsdom may not provide localStorage in every environment (see
+    // MessageView.test.ts for the same pattern).
+    const values = new Map<string, string>();
+    Object.defineProperty(globalThis, "localStorage", {
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key),
+        clear: () => values.clear(),
+      },
+      configurable: true,
+    });
     vi.clearAllMocks();
     app.value.ready = false;
     app.value.selectedFolderId = null;
