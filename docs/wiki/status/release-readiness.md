@@ -45,9 +45,10 @@ several proof and distribution gates are absent.
 - The GreenMail SMTP round-trip tolerates a known `io-smtp` greeting-parser incompatibility
   ([[test-suite-md]]).
 - No Playwright daily-driver suite and no native WebKit automated workflow.
-- **Cached-open budget landed** (mean LRU hit < 50 ms,
-  `crates/origami-app/tests/open_latency.rs`, `--ignored`); explicit 10,000-row, search, and
-  sync budgets are still missing.
+- **Budgets landed** (2026-09-28): cached-open (mean LRU hit < 50 ms,
+  `open_latency.rs`, `--ignored`) and 10,000-row scale budgets
+  (`crates/origami-core/tests/perf_budget.rs`: list/dedupe/search/count/thread/eviction).
+  Sync runtime is network-bound and not budgeted.
 - The Docker-harness end-to-end runs added/affected by the hardening track (folder failure
   isolation, poison outbox replay) have not been executed.
 

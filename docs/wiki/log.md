@@ -239,3 +239,10 @@ files are validated (image type, 5 MB cap) and embedded as `data:` URLs in the H
 TipTap's Image node (`@tiptap/extension-image`). The reading-side sanitizer already permits
 `img-src data:`, so sent/received inline images render inside the sandboxed frame. Tests:
 `inlineImage.test.ts` (3).
+
+## [2026-09-28] update | 10k-row performance budgets
+Blocker-3 item delivered: `perf_budget.rs` seeds 10,000 envelopes (batched upserts + FTS
+index) and asserts generous CI-safe budgets — list page, unread-only dedupe/filter page,
+search page + count, cross-folder thread query, tray unread count, display-cache eviction,
+folder listing. Full pass runs in ~4 s. Cached-open budget previously landed
+(`open_latency.rs`). Sync runtime remains network-bound and is not budgeted.
