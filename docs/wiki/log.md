@@ -232,3 +232,10 @@ Daily-driver gap delivered: the last-viewed folder (or unified Inbox) persists i
 `localStorage` key `origami-last-folder` and bootstrap restores it — falling back to the
 first Inbox when the folder vanished. In-memory per-folder snapshots (envelopes, selection,
 scroll) continue to cover in-session switches. Tests: `stores.startup.test.ts` (4).
+
+## [2026-09-27] update | inline images in composer
+Daily-driver gap delivered: the composer toolbar gains an insert-image action (rich mode) —
+files are validated (image type, 5 MB cap) and embedded as `data:` URLs in the HTML body via
+TipTap's Image node (`@tiptap/extension-image`). The reading-side sanitizer already permits
+`img-src data:`, so sent/received inline images render inside the sandboxed frame. Tests:
+`inlineImage.test.ts` (3).

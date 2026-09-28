@@ -1,6 +1,8 @@
 <script lang="ts">
   import { Editor } from "@tiptap/core";
+  import Image from "@tiptap/extension-image";
   import StarterKit from "@tiptap/starter-kit";
+  import { fileToInlineImage } from "./inlineImage";
   import { app, closeComposer, discardComposerDraft, sendComposer } from "./stores.svelte";
   import { api } from "./api";
   import Select from "./Select.svelte";
@@ -42,7 +44,7 @@
   function mountEditor(node: HTMLDivElement) {
     const instance = new Editor({
       element: node,
-      extensions: [StarterKit],
+      extensions: [StarterKit, Image],
       content: app.value.composerDraft.html,
       editorProps: {
         attributes: {
@@ -110,6 +112,21 @@
         size: file.size,
         dataBase64: bytesToBase64(bytes),
       });
+    }
+    input.value = "";
+  }
+
+  let inlineImageInput: HTMLInputElement | null = null;
+
+  async function addInlineImages(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    for (const file of Array.from(input.files ?? [])) {
+      try {
+        const src = await fileToInlineImage(file);
+        editor?.chain().focus().setImage({ src }).run();
+      } catch (cause) {
+        app.value.lastError = String(cause);
+      }
     }
     input.value = "";
   }
@@ -209,6 +226,10 @@
         <button type="button" onclick={() => exec("orderedList")} title="Numbered list">1.</button>
         <button type="button" onclick={() => exec("blockquote")} title="Quote">❝</button>
         <button type="button" onclick={() => exec("code")} title="Code">{`</>`}</button>
+        <label class="attach-button" title="Insert image">
+          <input type="file" accept="image/*" multiple hidden onchange={addInlineImages} />
+          ⛶
+        </label>
         <label class="attach-button">
           Attach
           <input type="file" multiple onchange={addAttachments} />

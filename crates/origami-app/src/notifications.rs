@@ -69,7 +69,7 @@ pub fn grouped_mail_notification(
         notification.timeout(notify_rust::Timeout::Milliseconds(8000));
     }
     let handle = notification.show().ok()?;
-    Some(u32::try_from(handle.id()).unwrap_or(0))
+    Some(handle.id())
 }
 
 /** Grouped summary line: one running count per account. */
