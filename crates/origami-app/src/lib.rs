@@ -127,15 +127,18 @@ pub fn run() {
             let state = app.state::<state::AppState>();
             let mut events = state.engine.subscribe();
             let handle = app.handle().clone();
+            let next_notification_id = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(1));
             let account_errors = state.account_errors.clone();
             let syncing_accounts = state.syncing_accounts.clone();
             let badge_tray = tray_slot.clone();
             tauri::async_runtime::spawn(async move {
                 use std::collections::HashMap;
+                use std::sync::atomic::Ordering as AtomicOrdering;
                 use tauri::Emitter;
                 let mut notified_messages = HashSet::new();
                 let mut grouped_counts: HashMap<String, u32> = HashMap::new();
                 let mut grouped_ids: HashMap<String, u32> = HashMap::new();
+                let next_notification_id = next_notification_id.clone();
 
                 fn update_unread_badge(
                     handle: &tauri::AppHandle,
@@ -200,19 +203,20 @@ pub fn run() {
                                                 .entry(account_id.clone())
                                                 .or_insert(0);
                                             *count += 1;
-                                            let previous = grouped_ids.get(account_id).copied();
-                                            if let Some(id) =
-                                                notifications::grouped_mail_notification(
-                                                    &account_name(&handle, account_id),
-                                                    *count,
-                                                    &settings,
-                                                    &envelope.subject,
-                                                    &from,
-                                                    previous,
-                                                )
-                                            {
-                                                grouped_ids.insert(account_id.clone(), id);
-                                            }
+                                            let id = *grouped_ids
+                                                .entry(account_id.clone())
+                                                .or_insert_with(|| {
+                                                    next_notification_id
+                                                        .fetch_add(1, AtomicOrdering::Relaxed)
+                                                });
+                                            notifications::grouped_mail_notification(
+                                                &account_name(&handle, account_id),
+                                                *count,
+                                                &settings,
+                                                &envelope.subject,
+                                                &from,
+                                                id,
+                                            );
                                         } else {
                                             notifications::new_mail_notification(
                                                 &settings,
