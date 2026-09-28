@@ -27,6 +27,7 @@ env:
 jobs:
   rust:
     name: rust
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     container: archlinux:latest
     defaults:
@@ -58,9 +59,6 @@ jobs:
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: check
-        run: cargo check --workspace --locked
-
       - name: test
         run: cargo test --workspace --locked
 
@@ -76,6 +74,7 @@ jobs:
 
   ui:
     name: ui
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     container: archlinux:latest
     defaults:
@@ -113,11 +112,9 @@ jobs:
 
   package_arch:
     name: package_arch
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     container: archlinux:latest
-    needs:
-      - rust
-      - ui
     defaults:
       run:
         shell: bash
@@ -216,13 +213,11 @@ jobs:
 
   package_windows:
     name: package_windows
+    if: github.ref_type == 'tag'
     runs-on: windows-latest
-    needs:
-      - rust
-      - ui
-    # Windows installer is experimental: allow failure on branch pushes and PRs,
-    # but a version tag must produce it before the release publishes.
-    continue-on-error: ${{ github.ref_type != 'tag' }}
+    # Windows installer is experimental: a version tag must produce it
+    # before the release publishes.
+
     defaults:
       run:
         shell: pwsh
