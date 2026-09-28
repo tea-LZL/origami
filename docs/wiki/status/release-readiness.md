@@ -60,9 +60,9 @@ several proof and distribution gates are absent.
   attachment scoping; link-scheme allowlist tests; secret redaction on errors and outbox
   rows ([[store-and-search]], [[content-addressed-store]],
   [[hardening-caching-palette-spec]]).
-- Still open: no navigation fuzz gate; keyboard/focus behavior only partially tested; no
-  automated accessibility or visual-regression checks (the palette contrast gate covers
-  token contrast only — [[build-and-verification]]).
+- Still open: automated accessibility or visual-regression checks beyond the palette
+  contrast gate and dialog keyboard tests (the fuzz gate for the search boundary and the
+  FTS under-index invariant landed 2026-09-28, branch `daily-driver`).
 
 ### 5. Daily-driver gaps — **delivered 2026-09-27** (branch `daily-driver`)
 

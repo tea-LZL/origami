@@ -246,3 +246,10 @@ index) and asserts generous CI-safe budgets — list page, unread-only dedupe/fi
 search page + count, cross-folder thread query, tray unread count, display-cache eviction,
 folder listing. Full pass runs in ~4 s. Cached-open budget previously landed
 (`open_latency.rs`). Sync runtime remains network-bound and is not budgeted.
+
+## [2026-09-28] update | search fuzz gate + FTS under-index invariant
+Blocker-3/4 items delivered: a proptest fuzz gate over the search boundary (256 cases of
+arbitrary query strings — SQL metacharacters, stray colons, filter tokens — with
+`search_count`/`search_page` consistency and per-field filter execution) and idempotent
+repeated upserts. `assert_store_invariants` now also catches FTS under-indexing: a fetched
+body without a search-index row fails the check.

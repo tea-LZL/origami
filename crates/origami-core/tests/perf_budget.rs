@@ -8,7 +8,7 @@ use origami_core::model::{Address, Envelope, Flag, MailboxRole};
 use origami_core::store::Store;
 use std::time::{Duration, Instant};
 
-fn seed_10k(store: &Store, account: &str, folder: &str) {
+fn seed_10k(store: &Store, _account: &str, folder: &str) {
     const TOTAL: u32 = 10_000;
     const PAGE: usize = 500;
     let mut batch = Vec::with_capacity(PAGE);
@@ -28,7 +28,11 @@ fn seed_10k(store: &Store, account: &str, folder: &str) {
             to: vec![],
             date: None,
             received_at: Some(uid as i64),
-            flags: if uid % 3 == 0 { vec![Flag::Seen] } else { vec![] },
+            flags: if uid % 3 == 0 {
+                vec![Flag::Seen]
+            } else {
+                vec![]
+            },
             keywords: vec![],
             has_attachment: false,
             size: 1_024,
@@ -90,21 +94,33 @@ fn ten_thousand_row_budgets() {
 
     let seed_start = Instant::now();
     seed_10k(&store, &account, &folder);
-    within("seed 10,000 rows + index", seed_start.elapsed(), Duration::from_secs(120));
+    within(
+        "seed 10,000 rows + index",
+        seed_start.elapsed(),
+        Duration::from_secs(120),
+    );
 
     let listed = store
-        .list_envelopes_in_folders(&[folder.clone()], 1, 200, false)
+        .list_envelopes_in_folders(std::slice::from_ref(&folder), 1, 200, false)
         .unwrap();
     assert_eq!(listed.len(), 200);
-    within("list page 1 (200 rows)", Duration::from_secs(0), Duration::from_secs(5));
+    within(
+        "list page 1 (200 rows)",
+        Duration::from_secs(0),
+        Duration::from_secs(5),
+    );
 
     let start = Instant::now();
     let unread_page = store
-        .list_envelopes_in_folders(&[folder.clone()], 1, 200, true)
+        .list_envelopes_in_folders(std::slice::from_ref(&folder), 1, 200, true)
         .unwrap();
     assert!(!unread_page.is_empty());
     // Dedupe + unread filter must stay indexed at scale.
-    within("unread-only page (dedupe + filter)", start.elapsed(), Duration::from_secs(5));
+    within(
+        "unread-only page (dedupe + filter)",
+        start.elapsed(),
+        Duration::from_secs(5),
+    );
 
     let start = Instant::now();
     let search_page = store.search_page("invoice", 1, 200).unwrap();
@@ -117,11 +133,13 @@ fn ten_thousand_row_budgets() {
     within("search count", start.elapsed(), Duration::from_secs(5));
 
     let start = Instant::now();
-    let thread = store
-        .thread_envelopes(&account, "thread-10")
-        .unwrap();
+    let thread = store.thread_envelopes(&account, "thread-10").unwrap();
     assert!(!thread.is_empty());
-    within("cross-folder thread query", start.elapsed(), Duration::from_secs(5));
+    within(
+        "cross-folder thread query",
+        start.elapsed(),
+        Duration::from_secs(5),
+    );
 
     let start = Instant::now();
     let unread_total = store.total_unread().unwrap();
@@ -131,9 +149,17 @@ fn ten_thousand_row_budgets() {
     let start = Instant::now();
     let removed = store.evict_display_cache(2_000, 30).unwrap();
     assert!(removed >= 1, "eviction must run at scale");
-    within("display-cache eviction", start.elapsed(), Duration::from_secs(10));
+    within(
+        "display-cache eviction",
+        start.elapsed(),
+        Duration::from_secs(10),
+    );
 
     let start = Instant::now();
     let _folders = store.list_folders(&account).unwrap();
-    within("folder listing with counts", start.elapsed(), Duration::from_secs(2));
+    within(
+        "folder listing with counts",
+        start.elapsed(),
+        Duration::from_secs(2),
+    );
 }

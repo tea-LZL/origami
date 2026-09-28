@@ -2276,6 +2276,19 @@ pub fn assert_store_invariants(conn: &Connection) -> Result<()> {
             "{orphan_fts} fts rows reference missing messages"
         )));
     }
+    // Under-indexing: a fetched body (blob present) must always be searchable.
+    let under_indexed: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM messages m
+         WHERE m.blob_hash IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM messages_fts f WHERE f.rowid = m.rowid)",
+        [],
+        |row| row.get(0),
+    )?;
+    if under_indexed > 0 {
+        return Err(Error::Backend(format!(
+            "{under_indexed} fetched messages are missing from the search index"
+        )));
+    }
     Ok(())
 }
 
