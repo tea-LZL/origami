@@ -41,6 +41,42 @@ pub(crate) fn claim_notification(seen: &mut HashSet<String>, key: &str) -> bool 
     seen.insert(key.to_string())
 }
 
+/// Grouped per-account notification: replaces the account's previous
+/// notification (XDG `id` reuse) and reports the running unread count.
+/// Returns the notification id so the caller can replace it next time.
+pub fn grouped_mail_notification(
+    account_name: &str,
+    count: u32,
+    settings: &NotificationConfig,
+    subject: &str,
+    from: &str,
+    previous_id: Option<u32>,
+) -> Option<u32> {
+    let mut notification = Notification::new();
+    notification.appname("Origami");
+    if let Some(id) = previous_id {
+        notification.id(id);
+    }
+    let summary = grouped_summary(account_name, count);
+    let (sender, subject_line) = render_preview(settings.preview, subject, from);
+    let body = match settings.preview {
+        NotificationPreview::Full => format!("{sender}: {subject_line}"),
+        NotificationPreview::SenderOnly => sender,
+        NotificationPreview::Hidden => subject_line,
+    };
+    notification.summary(&summary).body(&body).icon("origami");
+    if !settings.grouped_per_account {
+        notification.timeout(notify_rust::Timeout::Milliseconds(8000));
+    }
+    let handle = notification.show().ok()?;
+    Some(u32::try_from(handle.id()).unwrap_or(0))
+}
+
+/** Grouped summary line: one running count per account. */
+fn grouped_summary(account_name: &str, count: u32) -> String {
+    format!("{account_name} — {count} new")
+}
+
 fn is_quiet_at(settings: &NotificationConfig, minute: u16) -> bool {
     let Some(hours) = &settings.quiet_hours else {
         return false;
@@ -78,6 +114,12 @@ fn render_preview(preview: NotificationPreview, subject: &str, from: &str) -> (S
 mod tests {
     use super::*;
     use origami_core::config::QuietHours;
+
+    #[test]
+    fn grouped_summary_counts_per_account() {
+        assert_eq!(grouped_summary("Work", 3), "Work — 3 new");
+        assert_eq!(grouped_summary("Personal", 1), "Personal — 1 new");
+    }
 
     #[test]
     fn previews_hide_the_requested_content() {

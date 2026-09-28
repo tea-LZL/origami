@@ -218,3 +218,11 @@ view merges loaded-page members with the cross-folder results
 (`mergeThreadMembers` in `threads.ts`, loaded entries win on id collisions). Thread-id-less
 messages keep page-local grouping. Tests: `thread_envelopes_spans_folders_within_account`
 (store) + `mergeThreadMembers` (UI).
+
+## [2026-09-27] update | grouped notifications + unread badge
+Daily-driver gap delivered: `NotificationConfig.grouped_per_account` groups desktop
+notifications per account — one replace-style notification (XDG id reuse) shows a running
+"N new" count instead of stacking per-message toasts, reset on full account sync. The tray
+tooltip now carries an unread badge (`total_unread()` across all accounts, updated on
+NewEnvelope/AccountSynced). Preferences gains a "Group per account" toggle. Config
+round-trip test extended.

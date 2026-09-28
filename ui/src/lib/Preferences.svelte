@@ -20,6 +20,7 @@
     preview: "full",
     folderScope: "inbox",
     quietHours: null,
+    groupedPerAccount: false,
   });
   let remoteAllowlist = $state<RemoteContentAllowlist>(loadRemoteContentAllowlist());
 
@@ -245,6 +246,15 @@
                 { value: "hidden", label: "Hide message details" },
               ]}
               onValueChange={() => saved = false}
+            />
+          </label>
+
+          <label>
+            Group per account
+            <input
+              type="checkbox"
+              bind:checked={notifications.groupedPerAccount}
+              onchange={() => saved = false}
             />
           </label>
 

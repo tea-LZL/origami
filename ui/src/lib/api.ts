@@ -138,6 +138,7 @@ export interface NotificationSettings {
   preview: "full" | "sender_only" | "hidden";
   folderScope: "all" | "inbox";
   quietHours: { start: string; end: string } | null;
+  groupedPerAccount: boolean;
 }
 
 export const api = {

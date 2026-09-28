@@ -67,7 +67,7 @@ several proof and distribution gates are absent.
 Recipient chips/contact management, signatures, inline images, plain-text compose; folder
 hierarchy/subscriptions; cross-folder thread query (delivered 2026-09-27, branch `cross-folder-threads`) and per-folder view restoration;
 font/message zoom and configurable mark-read; explicit discard/start-clean draft and
-search-context/result-count header; grouped notification routing and unread badge behavior.
+search-context/result-count header; grouped notification routing and unread badge behavior (delivered 2026-09-27, branch `daily-driver`).
 
 ## Release rule
 

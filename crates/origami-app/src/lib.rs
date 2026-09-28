@@ -77,6 +77,9 @@ pub fn run() {
             })?;
             app.manage(app_state);
 
+            let tray_slot: std::sync::Arc<std::sync::Mutex<Option<tauri::tray::TrayIcon>>> =
+                std::sync::Arc::new(std::sync::Mutex::new(None));
+
             #[cfg(desktop)]
             {
                 let window = app
@@ -101,7 +104,7 @@ pub fn run() {
                 let open_id = open.id().clone();
                 let quit_id = quit.id().clone();
                 let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))?;
-                TrayIconBuilder::with_id("origami-tray")
+                let tray = TrayIconBuilder::with_id("origami-tray")
                     .icon(icon)
                     .menu(&menu)
                     .tooltip("Origami")
@@ -118,6 +121,7 @@ pub fn run() {
                         }
                     })
                     .build(app)?;
+                tray_slot.lock().unwrap().replace(tray);
             }
 
             let state = app.state::<state::AppState>();
@@ -125,9 +129,39 @@ pub fn run() {
             let handle = app.handle().clone();
             let account_errors = state.account_errors.clone();
             let syncing_accounts = state.syncing_accounts.clone();
+            let badge_tray = tray_slot.clone();
             tauri::async_runtime::spawn(async move {
+                use std::collections::HashMap;
                 use tauri::Emitter;
                 let mut notified_messages = HashSet::new();
+                let mut grouped_counts: HashMap<String, u32> = HashMap::new();
+                let mut grouped_ids: HashMap<String, u32> = HashMap::new();
+
+                fn update_unread_badge(
+                    handle: &tauri::AppHandle,
+                    tray: &std::sync::Mutex<Option<tauri::tray::TrayIcon>>,
+                ) {
+                    let state = handle.state::<state::AppState>();
+                    let unread = state.store.total_unread().unwrap_or(0);
+                    let tooltip = if unread > 0 {
+                        format!("Origami — {unread} unread")
+                    } else {
+                        "Origami".to_string()
+                    };
+                    if let Some(tray) = tray.lock().unwrap().as_ref() {
+                        let _ = tray.set_tooltip(Some(tooltip));
+                    }
+                }
+
+                fn account_name(handle: &tauri::AppHandle, account_id: &str) -> String {
+                    handle
+                        .state::<state::AppState>()
+                        .read_config()
+                        .accounts
+                        .get(account_id)
+                        .map(|account| account.name.clone())
+                        .unwrap_or_else(|| account_id.to_string())
+                }
                 loop {
                     match events.recv().await {
                         Ok(event) => {
@@ -161,6 +195,34 @@ pub fn run() {
                                                 a.name.clone().unwrap_or_else(|| a.addr.clone())
                                             })
                                             .unwrap_or_default();
+                                        if settings.grouped_per_account {
+                                            let count = grouped_counts
+                                                .entry(account_id.clone())
+                                                .or_insert(0);
+                                            *count += 1;
+                                            let previous = grouped_ids.get(account_id).copied();
+                                            if let Some(id) =
+                                                notifications::grouped_mail_notification(
+                                                    &account_name(&handle, account_id),
+                                                    *count,
+                                                    &settings,
+                                                    &envelope.subject,
+                                                    &from,
+                                                    previous,
+                                                )
+                                            {
+                                                grouped_ids.insert(account_id.clone(), id);
+                                            }
+                                        } else {
+                                            notifications::new_mail_notification(
+                                                &settings,
+                                                folder_role,
+                                                unread,
+                                                &envelope.subject,
+                                                &from,
+                                            );
+                                        }
+                                        update_unread_badge(&handle, &badge_tray);
                                         notifications::new_mail_notification(
                                             &settings,
                                             folder_role,
@@ -186,6 +248,8 @@ pub fn run() {
                                 } => {
                                     syncing_accounts.lock().unwrap().remove(account_id);
                                     account_errors.lock().unwrap().remove(account_id);
+                                    grouped_counts.remove(account_id);
+                                    update_unread_badge(&handle, &badge_tray);
                                 }
                                 _ => {}
                             }
