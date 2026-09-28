@@ -18,6 +18,7 @@
   let username = $state("");
   let password = $state("");
   let auth = $state("login");
+  let signature = $state("");
   let oauthProvider = $state<"google" | "microsoft" | null>(null);
   let reconnecting = $state(false);
   let loadGeneration = 0;
@@ -37,6 +38,7 @@
       name: string; email: string; imapHost: string | null; imapPort: number | null;
       smtpHost: string | null; smtpPort: number | null; username: string | null;
       auth: string | null; oauthProvider: "google" | "microsoft" | null;
+      signature: string | null;
     }>("get_account_settings", { accountId }).then((settings) => {
       if (generation !== loadGeneration) return;
       name = settings.name;
@@ -48,6 +50,7 @@
       username = settings.username ?? "";
       auth = settings.auth ?? "login";
       oauthProvider = settings.oauthProvider;
+      signature = settings.signature ?? "";
       password = "";
     }).catch((reason) => {
       if (generation === loadGeneration) error = String(reason);
@@ -65,6 +68,7 @@
         accountId,
         name: name || undefined,
         email: email || undefined,
+        signature: signature || undefined,
         imapHost: imapHost || undefined,
         imapPort,
         smtpHost: smtpHost || undefined,
@@ -131,6 +135,13 @@
           <label>Port <input type="number" bind:value={smtpPort} /></label>
         </fieldset>
         <label>Username <input type="text" bind:value={username} /></label>
+        <label>Signature
+          <textarea
+            bind:value={signature}
+            rows="3"
+            placeholder="Appended to new messages"
+          ></textarea>
+        </label>
         {#if (auth === "xoauth2" || auth === "oauthbearer") && oauthProvider}
           <div class="oauth-reconnect">
             <div>

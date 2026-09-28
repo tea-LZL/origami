@@ -92,7 +92,8 @@ split into required-1.0 items and documented post-1.0 scope.
    wired, Outbox integration test).
 7. ~~Add folder hierarchy/subscription support.~~ Delivered (branch `qol-batch`,
    2026-09-27: hierarchy landed earlier; subscriptions now).
-8. Add signatures/plain-text compose mode before inline-image editing.
+8. ~~Add signatures/plain-text compose mode before inline-image editing.~~ Delivered
+   (branch `qol-batch`, 2026-09-27).
 9. Consolidate repeated dialog/button/status patterns only as each flow is touched.
 
 Avoid speculative provider abstractions, new background services, or broad component

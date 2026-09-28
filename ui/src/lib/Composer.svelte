@@ -186,6 +186,22 @@
       </div>
 
       <div class="toolbar">
+        <button
+          type="button"
+          class="mode-toggle"
+          class:active={app.value.composerDraft.composeMode === "rich"}
+          title="Rich text"
+          onclick={() => (app.value.composerDraft.composeMode = "rich")}
+        >Rich</button>
+        <button
+          type="button"
+          class="mode-toggle"
+          class:active={app.value.composerDraft.composeMode === "plain"}
+          title="Plain text"
+          onclick={() => (app.value.composerDraft.composeMode = "plain")}
+        >Plain</button>
+        <span class="sep" aria-hidden="true"></span>
+        {#if app.value.composerDraft.composeMode === "rich"}
         <button type="button" onclick={() => exec("bold")} title="Bold"><b>B</b></button>
         <button type="button" onclick={() => exec("italic")} title="Italic"><i>I</i></button>
         <button type="button" onclick={() => exec("h2")} title="Heading">H</button>
@@ -197,9 +213,18 @@
           Attach
           <input type="file" multiple onchange={addAttachments} />
         </label>
+        {/if}
       </div>
 
+      {#if app.value.composerDraft.composeMode === "plain"}
+        <textarea
+          class="plain-editor"
+          aria-label="Plain text body"
+          bind:value={app.value.composerDraft.html}
+        ></textarea>
+      {:else}
       <div class="editor" use:mountEditor></div>
+      {/if}
 
       {#if app.value.composerAttachments.length > 0}
         <div class="attachments" aria-label="Attachments">
@@ -347,6 +372,15 @@
     padding: 10px 16px;
     border-top: 1px solid var(--border);
     background: color-mix(in oklab, var(--bg-sunken) 56%, var(--bg-raised));
+  }
+  .mode-toggle { padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 11px; cursor: pointer; color: var(--fg-muted); background: var(--bg-raised); }
+  .mode-toggle.active { color: var(--accent-fg); background: var(--accent); border-color: var(--accent); }
+  .toolbar .sep { width: 1px; height: 18px; background: var(--border); }
+  .plain-editor {
+    min-height: 220px; resize: vertical; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    background: var(--bg-raised); color: var(--fg);
+    font: 13px/1.5 var(--font-mono); white-space: pre-wrap;
   }
   .draft-state { margin-right: auto; align-self: center; color: var(--fg-subtle); font-size: 10px; }
   .recovered {

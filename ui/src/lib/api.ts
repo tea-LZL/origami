@@ -9,6 +9,7 @@ export interface AccountDto {
   email: string;
   hasImap: boolean;
   hasSmtp: boolean;
+  signature?: string | null;
 }
 
 export interface AccountStatusDto {
@@ -102,7 +103,8 @@ export interface SavedComposerDraft {
     bcc: string;
     subject: string;
     html: string;
-  };
+    composeMode?: "rich" | "plain";
+};
   attachments: {
     name: string;
     mime: string;
@@ -215,6 +217,7 @@ export const api = {
     password?: string;
     oauthAccessToken?: string;
     oauthRefreshToken?: string;
+    signature?: string;
   }) => invoke<void>("update_account", args),
 };
 

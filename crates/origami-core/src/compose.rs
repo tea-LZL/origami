@@ -85,7 +85,9 @@ fn build_message_inner(draft: &Draft, require_recipients: bool) -> Result<Vec<u8
     }
     builder = builder.subject(&draft.subject);
     builder = builder.text_body(text);
-    builder = builder.html_body(&draft.html);
+    if !draft.html.trim().is_empty() {
+        builder = builder.html_body(&draft.html);
+    }
     for attachment in &draft.attachments {
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(&attachment.data_base64)
@@ -107,6 +109,29 @@ fn html_to_text(html: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn builds_text_only_when_html_empty() {
+        let draft = Draft {
+            from_name: None,
+            from_addr: "me@example.org".into(),
+            to: vec!["you@example.org".into()],
+            cc: vec![],
+            bcc: vec![],
+            subject: "plain".into(),
+            html: String::new(),
+            text: Some("just text".into()),
+            in_reply_to: None,
+            references: vec![],
+            attachments: vec![],
+        };
+
+        let raw = String::from_utf8(build_message(&draft).unwrap()).unwrap();
+
+        assert!(raw.contains("just text"));
+        assert!(!raw.contains("multipart/alternative"));
+        assert!(!raw.to_lowercase().contains("text/html"));
+    }
 
     #[test]
     fn builds_multipart_alternative() {

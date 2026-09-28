@@ -79,6 +79,7 @@ pub struct AccountDto {
     pub email: String,
     pub has_imap: bool,
     pub has_smtp: bool,
+    pub signature: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -218,6 +219,7 @@ pub fn list_accounts(state: State<'_, AppState>) -> CmdResult<Vec<AccountDto>> {
             email: account.email.clone(),
             has_imap: account.imap.is_some(),
             has_smtp: account.smtp.is_some(),
+            signature: account.signature.clone(),
         });
     }
     Ok(out)
@@ -991,6 +993,7 @@ pub async fn add_account(
         default: is_default,
         imap: imap_with_secret,
         smtp: smtp_with_secret,
+        signature: None,
     };
 
     config.accounts.insert(account_id.clone(), account.clone());
@@ -1008,6 +1011,10 @@ pub async fn add_account(
         )
         .map_err(err)?;
 
+    let signature = config
+        .accounts
+        .get(&account_id)
+        .and_then(|account| account.signature.clone());
     let dto = AccountDto {
         id: account_id.clone(),
         db_id,
@@ -1015,6 +1022,7 @@ pub async fn add_account(
         email: dto_email,
         has_imap,
         has_smtp,
+        signature,
     };
 
     // Start the account's managed sync loop so initial import continues
@@ -1067,6 +1075,7 @@ pub async fn remove_account(
             email: account.email.clone(),
             has_imap: account.imap.is_some(),
             has_smtp: account.smtp.is_some(),
+            signature: account.signature.clone(),
         });
     }
     Ok(out)
@@ -1298,6 +1307,7 @@ pub struct AccountSettingsDto {
     username: Option<String>,
     auth: Option<String>,
     oauth_provider: Option<String>,
+    signature: Option<String>,
 }
 
 #[tauri::command]
@@ -1347,6 +1357,7 @@ pub fn get_account_settings(
             .or_else(|| account.smtp.as_ref().map(|smtp| smtp.username.clone())),
         auth,
         oauth_provider,
+        signature: account.signature.clone(),
     })
 }
 
@@ -1368,6 +1379,7 @@ pub async fn update_account(
     password: Option<String>,
     oauth_access_token: Option<String>,
     oauth_refresh_token: Option<String>,
+    signature: Option<String>,
 ) -> CmdResult<()> {
     let mut config = state.read_config();
     let existing = config
@@ -1380,6 +1392,13 @@ pub async fn update_account(
     }
     if let Some(e) = email {
         existing.email = e;
+    }
+    if let Some(sig) = signature {
+        existing.signature = if sig.trim().is_empty() {
+            None
+        } else {
+            Some(sig)
+        };
     }
     if let Some(u) = username {
         if let Some(imap) = &mut existing.imap {

@@ -17,6 +17,7 @@ async fn failed_sync_emits_started_and_terminal_error() {
         default: true,
         imap: None,
         smtp: None,
+        signature: None,
     };
 
     assert!(engine.sync_account("missing", &account).await.is_err());

@@ -202,3 +202,11 @@ best-effort IMAP SUBSCRIBE/UNSUBSCRIBE (`subscribe_mailbox`/`unsubscribe_mailbox
 backend; offline keeps the local choice and surfaces the error). Unsubscribed folders
 render dimmed. Sync upserts preserve the user's choice. Store test:
 `folder_subscriptions_toggle_and_persist`. [[release-readiness]] QoL order item 7 delivered.
+
+## [2026-09-27] update | signatures + plain-text compose
+QoL item delivered: per-account plain-text signature (`AccountConfig.signature`, editable in
+AccountSettings, appended escaped to fresh/reply compositions) and a Rich/Plain compose
+toggle — plain mode swaps the TipTap editor for a monospace textarea and sends a text-only
+message (`compose.rs` now omits `html_body` when the HTML body is empty; test
+`builds_text_only_when_html_empty`). `composeMode` round-trips through stored drafts.
+[[release-readiness]] QoL order item 8 delivered (signatures + plain-text compose).

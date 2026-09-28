@@ -26,6 +26,7 @@ fn spawn_recent_prefetch_without_a_runtime_does_not_panic() {
         default: false,
         imap: None,
         smtp: None,
+        signature: None,
     };
 
     // Deliberately not a `#[tokio::test]`: no runtime is entered on this
