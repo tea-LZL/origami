@@ -1195,6 +1195,55 @@ fn shutdown_flush_checkpoints() {
 }
 
 #[test]
+fn thread_envelopes_spans_folders_within_account() {
+    let (store, account, inbox) = setup();
+    let sent = store
+        .upsert_folder(&account, "Sent", MailboxRole::Sent)
+        .unwrap();
+
+    // Same thread in two folders + an unrelated message.
+    for (id, folder, uid, subject, thread) in [
+        ("m-inbox", inbox.clone(), 1u32, "Re: plan", "thread-plan"),
+        ("m-sent", sent.clone(), 2, "Re: plan", "thread-plan"),
+        ("m-other", inbox.clone(), 3, "lunch", "thread-lunch"),
+    ] {
+        let mut envelope = envelope(uid, subject);
+        envelope.id = id.into();
+        envelope.mailbox_id = folder.clone();
+        envelope.thread_id = Some(thread.into());
+        envelope.message_id = Some(format!("<{id}@example.org>"));
+        store.upsert_envelope(&folder, &envelope).unwrap();
+    }
+
+    let members = store.thread_envelopes(&account, "thread-plan").unwrap();
+    assert_eq!(members.len(), 2, "cross-folder members found");
+    assert!(members
+        .iter()
+        .all(|envelope| envelope.thread_id.as_deref() == Some("thread-plan")));
+    assert!(members.iter().any(|envelope| envelope.mailbox_id == inbox));
+    assert!(members.iter().any(|envelope| envelope.mailbox_id == sent));
+
+    // Account boundary respected.
+    let other_account = store
+        .upsert_account("other", "Other", "o@example.org")
+        .unwrap();
+    let other_folder = store
+        .upsert_folder(&other_account, "INBOX", MailboxRole::Inbox)
+        .unwrap();
+    let mut stray = envelope(9, "Re: plan");
+    stray.mailbox_id = other_folder.clone();
+    stray.thread_id = Some("thread-plan".into());
+    store.upsert_envelope(&other_folder, &stray).unwrap();
+    assert_eq!(
+        store
+            .thread_envelopes(&account, "thread-plan")
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
 fn folder_subscriptions_toggle_and_persist() {
     let (store, account, folder) = setup();
 

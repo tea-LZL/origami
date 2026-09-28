@@ -181,6 +181,8 @@ export const api = {
   syncNow: (accountId?: string) => invoke<void>("sync_now", { accountId: accountId ?? null }),
   search: (query: string, limit = 50) => invoke<Envelope[]>("search", { query, limit }),
   searchCount: (query: string) => invoke<number>("search_count", { query }),
+  threadEnvelopes: (folderId: string, threadId: string) =>
+    invoke<Envelope[]>("thread_envelopes", { folderId, threadId }),
   searchPage: (query: string, page = 1, pageSize = 200) =>
     invoke<Envelope[]>("search_page", { query, page, pageSize }),
   listSavedSearches: () => invoke<SavedSearch[]>("list_saved_searches"),

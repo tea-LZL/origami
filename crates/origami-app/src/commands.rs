@@ -1594,6 +1594,21 @@ pub fn search(
     state.store.search(&query, limit.unwrap_or(50)).map_err(err)
 }
 
+/// Cross-folder conversation members for one thread id (account-scoped).
+#[tauri::command]
+pub fn thread_envelopes(
+    state: State<'_, AppState>,
+    folder_id: String,
+    thread_id: String,
+) -> CmdResult<Vec<Envelope>> {
+    let (_account_config_id, account_db_id, _mailbox) =
+        state.resolve_folder(&folder_id).map_err(err)?;
+    state
+        .store
+        .thread_envelopes(&account_db_id, &thread_id)
+        .map_err(err)
+}
+
 #[tauri::command]
 pub fn search_count(state: State<'_, AppState>, query: String) -> CmdResult<u32> {
     state.store.search_count(&query).map_err(err)

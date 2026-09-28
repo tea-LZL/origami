@@ -210,3 +210,11 @@ toggle — plain mode swaps the TipTap editor for a monospace textarea and sends
 message (`compose.rs` now omits `html_body` when the HTML body is empty; test
 `builds_text_only_when_html_empty`). `composeMode` round-trips through stored drafts.
 [[release-readiness]] QoL order item 8 delivered (signatures + plain-text compose).
+
+## [2026-09-27] update | cross-folder thread query
+Daily-driver gap delivered: conversations now span folders. `Store::thread_envelopes`
+queries all envelopes sharing a thread id within the account (newest first); the message
+view merges loaded-page members with the cross-folder results
+(`mergeThreadMembers` in `threads.ts`, loaded entries win on id collisions). Thread-id-less
+messages keep page-local grouping. Tests: `thread_envelopes_spans_folders_within_account`
+(store) + `mergeThreadMembers` (UI).

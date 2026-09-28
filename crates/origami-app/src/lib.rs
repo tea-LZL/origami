@@ -228,6 +228,7 @@ pub fn run() {
             commands::prefetch_selected_folder,
             commands::search,
             commands::search_count,
+            commands::thread_envelopes,
             commands::search_page,
             commands::list_saved_searches,
             commands::save_search,

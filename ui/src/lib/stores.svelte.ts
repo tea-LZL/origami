@@ -13,6 +13,7 @@ import {
   type AccountStatusDto,
 } from "./api";
 import { withUnreadToken } from "./searchHighlight";
+import { mergeThreadMembers } from "./threads";
 import { createPrefetcher } from "./prefetch";
 import {
   applyUnreadListReload,
@@ -109,6 +110,8 @@ export interface State {
     inReplyTo: string | null;
     references: string[];
   };
+  threadCrossFolder: Envelope[];
+  threadRequest: number;
   composerRecovered: boolean;
   composerDiscarded: boolean;
   markReadDelay: number;
@@ -159,6 +162,8 @@ const initial: State = {
   composerAttachments: [],
   composerDraft: { to: "", cc: "", bcc: "", subject: "", html: "", composeMode: "rich" },
   composerThreading: { inReplyTo: null, references: [] },
+  threadCrossFolder: [],
+  threadRequest: 0,
   composerRecovered: false,
   composerDiscarded: false,
   markReadDelay: 0,
@@ -693,6 +698,7 @@ export async function selectEnvelope(envelope: Envelope) {
       ),
     });
     prefetcher.focusMove(envelope);
+    void loadThreadMembers(envelope);
     // First-open marks as read per the configured delay: optimistic local
     // flip + command. Delayed flips fire only if the same message is still
     // selected when the timer lands.
@@ -738,6 +744,25 @@ export async function selectEnvelope(envelope: Envelope) {
   } catch (e) {
     if (request !== messageRequest) return;
     patch({ messageLoading: false, lastError: String(e) });
+  }
+}
+
+
+let threadRequest = 0;
+
+/** Cross-folder conversation members for the selected thread. */
+export async function loadThreadMembers(envelope: Envelope) {
+  const request = ++threadRequest;
+  if (!envelope.threadId) {
+    patch({ threadCrossFolder: [] });
+    return;
+  }
+  try {
+    const members = await api.threadEnvelopes(envelope.mailboxId, envelope.threadId);
+    if (request !== threadRequest || app.value.selectedEnvelope?.id !== envelope.id) return;
+    patch({ threadCrossFolder: members });
+  } catch {
+    if (request === threadRequest) patch({ threadCrossFolder: [] });
   }
 }
 
