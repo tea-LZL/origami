@@ -406,8 +406,15 @@ export async function bootstrap() {
       ),
       ready: true,
     });
-    const initialFolder = folders.find((folder) => folder.role === "Inbox") ?? folders[0];
-    if (initialFolder) await selectFolder(initialFolder.id);
+    const lastViewed = localStorage.getItem("origami-last-folder");
+    if (lastViewed === "unified") {
+      await selectUnifiedInbox();
+    } else {
+      const initialFolder = (lastViewed && folders.find((folder) => folder.id === lastViewed))
+        ?? folders.find((folder) => folder.role === "Inbox")
+        ?? folders[0];
+      if (initialFolder) await selectFolder(initialFolder.id);
+    }
   } catch (e) {
     patch({ ready: true, lastError: String(e) });
   }
@@ -457,6 +464,7 @@ export async function selectFolder(folderId: string) {
   snapshotFolderView();
   messageRequest += 1;
   prefetcher.cancel();
+  localStorage.setItem("origami-last-folder", folderId);
   const cached = folderViews.get(folderViewKey(folderId));
   folderScrollTop = cached?.scrollTop ?? 0;
   patch({
@@ -487,6 +495,7 @@ export async function selectFolder(folderId: string) {
 export async function selectUnifiedInbox() {
   messageRequest += 1;
   prefetcher.cancel();
+  localStorage.setItem("origami-last-folder", "unified");
   patch({
     selectedFolderId: null,
     unifiedInbox: true,

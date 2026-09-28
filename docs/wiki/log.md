@@ -226,3 +226,9 @@ notifications per account — one replace-style notification (XDG id reuse) show
 tooltip now carries an unread badge (`total_unread()` across all accounts, updated on
 NewEnvelope/AccountSynced). Preferences gains a "Group per account" toggle. Config
 round-trip test extended.
+
+## [2026-09-27] update | per-folder view restoration at startup
+Daily-driver gap delivered: the last-viewed folder (or unified Inbox) persists in
+`localStorage` key `origami-last-folder` and bootstrap restores it — falling back to the
+first Inbox when the folder vanished. In-memory per-folder snapshots (envelopes, selection,
+scroll) continue to cover in-session switches. Tests: `stores.startup.test.ts` (4).
