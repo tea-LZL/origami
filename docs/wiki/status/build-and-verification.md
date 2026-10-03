@@ -2,7 +2,7 @@
 title: Build and verification
 type: status
 status: current
-updated: 2026-09-27
+updated: 2026-10-03
 sources:
   - MEMORY.md
   - .github/workflows/ci.yml
@@ -68,7 +68,9 @@ navigation, and both themes.
   on pull requests, `master` pushes, and manual dispatch; the publish job uploads four
   assets (Arch package + checksum, Windows installer + checksum) as a GitHub Release for
   `vX.Y.Z` tags ([[github-cicd-md]]). First verified run: 36269969749 (2026-09-26) — ui,
-  rust, package_arch green; artifact `origami-master` (9.2 MB) uploaded.
+  rust, package_arch green; artifact `origami-master` (9.2 MB) uploaded. Latest verified
+  tag run: 37146060642 (`v0.2.0`, 2026-10-03) — package_arch, package_windows, publish
+  green; master pushes skip rust/ui/package jobs by design (`if:` gates on PR/tag refs).
 
 ## Palette verification (2026-09-27)
 

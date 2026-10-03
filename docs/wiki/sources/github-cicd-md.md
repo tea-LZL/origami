@@ -2,7 +2,7 @@
 title: "Source: docs/GITHUB_CICD.md"
 type: source
 status: current
-updated: 2026-09-27
+updated: 2026-10-03
 sources: [docs/GITHUB_CICD.md]
 ---
 
@@ -29,7 +29,8 @@ packaging runs on GitHub-hosted `windows-latest` runners.
 - The Windows installer is **not a supported Windows release** — unsigned, SmartScreen warns.
   `package_windows` allows failure on branch pushes but must succeed for a version tag.
 - **A tag version must match four files**: `Cargo.toml`, `crates/origami-app/tauri.conf.json`,
-  `ui/package.json`, and `packaging/arch/PKGBUILD`. All four report `0.1.0` today.
+  `ui/package.json`, and `packaging/arch/PKGBUILD`. All four report `0.2.0` since the
+  `v0.2.0` release.
 - Branch runs do not publish; only `vX.Y.Z` tags run the publish job.
 
 ## Why GitHub over GitLab

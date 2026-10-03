@@ -260,3 +260,10 @@ SMTP `smtp.purelymail.com:465`, `auth: login`) and a wizard hint in `AddAccount.
 noting an app password is required only with 2FA. TDD regression test
 `provider_hints::tests::purelymail_hints_fill_imap_smtp_login`. Distilled into
 [[accounts-and-secrets]] and [[overview]].
+
+## [2026-10-03] release | v0.2.0 published
+Version bumped to `0.2.0` in `Cargo.toml`, `crates/origami-app/tauri.conf.json`,
+`ui/package.json`, and `packaging/arch/PKGBUILD`. Tag `v0.2.0` (commit `9510002`)
+published 4 assets via run 37146060642: `origami-0.2.0-8-x86_64.pkg.tar.zst` + sha256
+(9.8 MB) and `Origami_0.2.0_x64-setup.exe` + sha256 (7.9 MB). Distilled into
+[[release-readiness]] and [[github-cicd-md]].

@@ -2,7 +2,7 @@
 title: Release readiness
 type: status
 status: current
-updated: 2026-09-27
+updated: 2026-10-03
 sources:
   - docs/superpowers/specs/2026-09-26-hardening-caching-palette-design.md
   - MEMORY.md
@@ -25,7 +25,8 @@ several proof and distribution gates are absent.
 - GitHub Actions CI verifies Rust/UI, builds an Arch package in an Arch container and an
   unsigned Windows NSIS installer on `windows-latest`, and publishes both with checksums as
   GitHub Release assets. `v0.1.0` released 2026-09-27 with all four assets (runs 36269969749,
-  36276664146, 36278995728). Windows installer is unsigned/experimental — SmartScreen warns
+  36276664146, 36278995728); `v0.2.0` released 2026-10-03 with all four assets (run
+  37146060642). Windows installer is unsigned/experimental — SmartScreen warns
   ([[github-cicd-md]]). PR #1 (`harden-cache-palette`) ran the full matrix green
   (run 36308544416) including the new `cargo-audit` / `cargo-deny` steps.
 - `packaging/arch/PKGBUILD` is tracked and installs the native binary, desktop entry, and
