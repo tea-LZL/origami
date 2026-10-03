@@ -2,7 +2,7 @@
 title: Log
 type: log
 status: current
-updated: 2026-09-19
+updated: 2026-10-03
 ---
 
 # Log
@@ -253,3 +253,10 @@ arbitrary query strings — SQL metacharacters, stray colons, filter tokens — 
 `search_count`/`search_page` consistency and per-field filter execution) and idempotent
 repeated upserts. `assert_store_invariants` now also catches FTS under-indexing: a fetched
 body without a search-index row fails the check.
+
+## [2026-10-03] change | Purelymail onboarding recognized
+Added `purelymail.com` to `provider_hints::for_domain` (IMAP `imap.purelymail.com:993`,
+SMTP `smtp.purelymail.com:465`, `auth: login`) and a wizard hint in `AddAccount.svelte`
+noting an app password is required only with 2FA. TDD regression test
+`provider_hints::tests::purelymail_hints_fill_imap_smtp_login`. Distilled into
+[[accounts-and-secrets]] and [[overview]].

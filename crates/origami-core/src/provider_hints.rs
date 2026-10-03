@@ -43,6 +43,12 @@ pub fn for_domain(domain: &str) -> Option<KnownProvider> {
             auth: AuthMechanism::Login,
             description: "Fastmail",
         }),
+        "purelymail.com" => Some(KnownProvider {
+            imap: ("imap.purelymail.com", 993),
+            smtp: ("smtp.purelymail.com", 465),
+            auth: AuthMechanism::Login,
+            description: "Purelymail",
+        }),
         "protonmail.com" | "proton.me" | "pm.me" => Some(KnownProvider {
             imap: ("127.0.0.1", 1143),
             smtp: ("127.0.0.1", 1025),
@@ -79,4 +85,28 @@ pub fn default_smtp(domain: &str) -> Option<SmtpConfig> {
         username: String::new(),
         secret: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn purelymail_hints_fill_imap_smtp_login() {
+        let p = for_domain("purelymail.com").expect("purelymail.com should be a known provider");
+        assert_eq!(p.imap, ("imap.purelymail.com", 993));
+        assert_eq!(p.smtp, ("smtp.purelymail.com", 465));
+        assert_eq!(p.auth, AuthMechanism::Login);
+        assert_eq!(p.description, "Purelymail");
+
+        let imap = default_imap("purelymail.com").expect("imap defaults");
+        assert_eq!(imap.host, "imap.purelymail.com");
+        assert_eq!(imap.port, Some(993));
+        assert!(imap.tls && !imap.starttls);
+
+        let smtp = default_smtp("purelymail.com").expect("smtp defaults");
+        assert_eq!(smtp.host, "smtp.purelymail.com");
+        assert_eq!(smtp.port, Some(465));
+        assert!(smtp.tls && !smtp.starttls);
+    }
 }

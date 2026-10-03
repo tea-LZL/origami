@@ -2,7 +2,7 @@
 title: Overview
 type: overview
 status: current
-updated: 2026-09-27
+updated: 2026-10-03
 sources:
   - README.md
   - docs/PLAN.md
@@ -54,7 +54,7 @@ See [[logical-vs-physical-message]] and [[adr-0001-app-owned-keys]].
 ## What works today
 
 The main daily-driver flows are implemented: multi-account onboarding with password and
-app-password providers (Gmail, iCloud, Yahoo, Fastmail) plus Microsoft OAuth, and
+app-password providers (Gmail, iCloud, Yahoo, Fastmail, Purelymail) plus Microsoft OAuth, and
 keyring-backed secrets; nested sidebar folders with unread rollup and a tag catalog;
 indexed envelope sync; SQLite/FTS search, saved searches, unified Inbox, tags,
 conversations, and a sticky unread-only thread-list view; body-on-demand plus an in-memory

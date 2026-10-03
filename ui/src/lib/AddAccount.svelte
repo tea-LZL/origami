@@ -41,6 +41,9 @@
     if (haystack.includes("fastmail")) return "fastmail";
     return null;
   });
+  const isPurelymail = $derived.by(() => {
+    return `${description} ${email}`.toLowerCase().includes("purelymail");
+  });
 
   async function detect() {
     if (!email.includes("@")) {
@@ -281,6 +284,13 @@
               Password / app token
               <input type="password" bind:value={password} />
             </label>
+            {#if isPurelymail}
+              <p class="hint">
+                Purelymail accepts your account password. If Two-Factor
+                Authentication is enabled, use an app password created in the
+                Purelymail admin portal instead.
+              </p>
+            {/if}
           {/if}
 
           {#if knownProvider}

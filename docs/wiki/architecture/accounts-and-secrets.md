@@ -2,7 +2,7 @@
 title: Accounts and secrets
 type: architecture
 status: current
-updated: 2026-09-19
+updated: 2026-10-03
 sources:
   - crates/origami-core/src/config.rs
   - crates/origami-core/src/oauth.rs
@@ -36,7 +36,7 @@ OAuth refresh tokens live there.
 
 `AddAccount.svelte` is a three-step dialog (email → configure → done). Domain lookup goes
 through `provider_hints` (`crates/origami-core/src/provider_hints.rs`): Gmail, Microsoft,
-Yahoo, iCloud, Fastmail, and Proton Bridge defaults.
+Yahoo, iCloud, Fastmail, Purelymail, and Proton Bridge defaults.
 
 **Current wizard paths:**
 
@@ -44,6 +44,10 @@ Yahoo, iCloud, Fastmail, and Proton Bridge defaults.
 - **Gmail, iCloud, Yahoo, Fastmail** — app password (`auth: login`). Gmail does not offer
   "Sign in with Google". A rejected Gmail app password gets a dedicated command-layer
   explanation (`classify_login_error`).
+- **Purelymail** — account password (`auth: login`, `imap.purelymail.com:993` /
+  `smtp.purelymail.com:465`); the wizard shows a hint that an app password is required only
+  when Two-Factor Authentication is enabled (regression test
+  `provider_hints::tests::purelymail_hints_fill_imap_smtp_login`).
 - Unknown domains — manual IMAP/SMTP fields.
 
 On success the wizard selects that account's Inbox and leaves Inbox sync running.
