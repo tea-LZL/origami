@@ -16,7 +16,10 @@ use origami_core::smtp::OrigamiSmtp;
 use origami_core::{MailBackend, SmtpSender};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tauri::State;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use tauri::{Manager, State};
 
 use crate::display_lru::{display_key, parsed_with_cache};
 use crate::oauth_flow;
@@ -504,6 +507,155 @@ pub async fn get_message(
     message_dto(&state, &folder_id, server_uid, parsed)
 }
 
+struct LoadedAttachment {
+    name: String,
+    mime: String,
+    bytes: Vec<u8>,
+}
+
+async fn load_attachment(
+    state: &AppState,
+    folder_id: &str,
+    server_uid: u32,
+    index: usize,
+) -> CmdResult<LoadedAttachment> {
+    let (account_config_id, _account_db_id, mailbox) =
+        state.resolve_folder(folder_id).map_err(err)?;
+    let parsed = state
+        .store
+        .parsed_message(folder_id, server_uid)
+        .map_err(err)?
+        .ok_or("message not opened yet")?;
+    let attachment = parsed
+        .attachments
+        .iter()
+        .find(|item| item.index == index)
+        .ok_or("attachment not found")?;
+    let part_path = attachment.part_path.clone();
+    let attachment_index = attachment.index;
+    let name = attachment
+        .name
+        .clone()
+        .unwrap_or_else(|| format!("attachment-{attachment_index}"));
+    let mime = attachment.mime.clone();
+    let bytes = if let Some(hash) = state.store.blob_hash(folder_id, server_uid).map_err(err)? {
+        let raw = state.engine.blobs().get(&hash).map_err(err)?;
+        origami_core::message::attachment_bytes_at_path(&raw, &part_path)
+            .or_else(|| origami_core::message::attachment_bytes(&raw, attachment_index))
+            .ok_or("attachment not found")?
+    } else {
+        let backend = state.backend(&account_config_id).await.map_err(err)?;
+        origami_core::sync::with_network_timeout(
+            backend.fetch_attachment_section(&mailbox, server_uid, &part_path),
+        )
+        .await
+        .map_err(err)?
+    };
+    Ok(LoadedAttachment { name, mime, bytes })
+}
+
+fn extension_for_mime(mime: &str) -> Option<&'static str> {
+    match mime.split(';').next()?.trim().to_ascii_lowercase().as_str() {
+        "application/pdf" => Some("pdf"),
+        "image/png" => Some("png"),
+        "image/jpeg" | "image/jpg" => Some("jpg"),
+        "image/gif" => Some("gif"),
+        "image/webp" => Some("webp"),
+        "image/svg+xml" => Some("svg"),
+        "text/plain" => Some("txt"),
+        "text/csv" => Some("csv"),
+        "text/html" => Some("html"),
+        "message/rfc822" => Some("eml"),
+        "application/zip" => Some("zip"),
+        "application/json" => Some("json"),
+        _ => None,
+    }
+}
+
+/// A single path segment. Directory pieces in the MIME filename are dropped
+/// so an attachment named `../../etc/passwd` cannot leave the cache directory.
+fn safe_attachment_file_name(raw_name: &str, mime: &str, index: usize) -> String {
+    let base = Path::new(raw_name)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("");
+    let cleaned: String = base
+        .chars()
+        .filter(|ch| !ch.is_control() && *ch != '/' && *ch != '\\')
+        .take(120)
+        .collect();
+    let cleaned = cleaned.trim().trim_matches('.').trim();
+    let mut name = if cleaned.is_empty() {
+        format!("attachment-{index}")
+    } else {
+        cleaned.to_string()
+    };
+    let has_extension = Path::new(&name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| !ext.is_empty());
+    if !has_extension {
+        if let Some(ext) = extension_for_mime(mime) {
+            name = format!("{name}.{ext}");
+        }
+    }
+    name
+}
+
+fn unique_child_dir(root: &Path) -> std::io::Result<PathBuf> {
+    static NONCE: AtomicU64 = AtomicU64::new(1);
+    for _ in 0..100 {
+        let nonce = NONCE.fetch_add(1, Ordering::Relaxed);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        let dir = root.join(format!("{nanos:x}-{nonce:x}"));
+        match std::fs::create_dir(&dir) {
+            Ok(()) => return Ok(dir),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(std::io::Error::other(
+        "could not create attachment directory",
+    ))
+}
+
+fn write_attachment_file(
+    root: &Path,
+    raw_name: &str,
+    mime: &str,
+    index: usize,
+    bytes: &[u8],
+) -> std::io::Result<PathBuf> {
+    std::fs::create_dir_all(root)?;
+    let root = root.canonicalize()?;
+    let dir = unique_child_dir(&root)?;
+    let name = safe_attachment_file_name(raw_name, mime, index);
+    let path = dir.join(&name);
+    if path.parent() != Some(dir.as_path()) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "attachment name escaped cache directory",
+        ));
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)?;
+    file.write_all(bytes)?;
+    let written = path.canonicalize()?;
+    if !written.starts_with(&root) {
+        let _ = std::fs::remove_file(&path);
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "attachment path escaped cache directory",
+        ));
+    }
+    Ok(written)
+}
+
 /// Decoded bytes of one attachment (base64 for IPC transport).
 #[tauri::command]
 pub async fn get_attachment(
@@ -513,31 +665,24 @@ pub async fn get_attachment(
     index: usize,
 ) -> CmdResult<String> {
     use base64::Engine;
-    let (account_config_id, _account_db_id, mailbox) =
-        state.resolve_folder(&folder_id).map_err(err)?;
-    let parsed = state
-        .store
-        .parsed_message(&folder_id, server_uid)
-        .map_err(err)?
-        .ok_or("message not opened yet")?;
-    let attachment = parsed
-        .attachments
-        .get(index)
-        .ok_or("attachment not found")?;
-    let bytes = if let Some(hash) = state.store.blob_hash(&folder_id, server_uid).map_err(err)? {
-        let raw = state.engine.blobs().get(&hash).map_err(err)?;
-        origami_core::message::attachment_bytes(&raw, index).ok_or("attachment not found")?
-    } else {
-        let backend = state.backend(&account_config_id).await.map_err(err)?;
-        origami_core::sync::with_network_timeout(backend.fetch_attachment_section(
-            &mailbox,
-            server_uid,
-            &attachment.part_path,
-        ))
-        .await
-        .map_err(err)?
-    };
-    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+    let loaded = load_attachment(state.inner(), &folder_id, server_uid, index).await?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(loaded.bytes))
+}
+
+/// Write one attachment under the app cache and open it with the system handler.
+#[tauri::command]
+pub async fn open_attachment(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    folder_id: String,
+    server_uid: u32,
+    index: usize,
+) -> CmdResult<()> {
+    let loaded = load_attachment(state.inner(), &folder_id, server_uid, index).await?;
+    let root = app.path().app_cache_dir().map_err(err)?.join("attachments");
+    let path = write_attachment_file(&root, &loaded.name, &loaded.mime, index, &loaded.bytes)
+        .map_err(err)?;
+    tauri_plugin_opener::open_path(&path, None::<&str>).map_err(err)
 }
 
 /// Replace a message's flags; immediate when online, queued otherwise.
@@ -1918,6 +2063,39 @@ mod tests {
 
         assert_eq!(summary.kind, "Send");
         assert!(!summary.detail.contains(payload));
+    }
+
+    #[test]
+    fn attachment_file_stays_inside_cache_dir() {
+        let root = tempfile::tempdir().unwrap();
+        let path = write_attachment_file(
+            root.path(),
+            "../../etc/passwd",
+            "application/pdf",
+            0,
+            b"hello",
+        )
+        .unwrap();
+        let root_canon = root.path().canonicalize().unwrap();
+        assert!(path.starts_with(&root_canon));
+        assert_eq!(std::fs::read(&path).unwrap(), b"hello");
+        assert_eq!(path.file_name().unwrap(), "passwd.pdf");
+    }
+
+    #[test]
+    fn attachment_file_replaces_dot_name() {
+        let root = tempfile::tempdir().unwrap();
+        let path =
+            write_attachment_file(root.path(), "..", "application/octet-stream", 3, b"x").unwrap();
+        assert_eq!(path.file_name().unwrap(), "attachment-3");
+    }
+
+    #[test]
+    fn attachment_file_keeps_existing_extension() {
+        let root = tempfile::tempdir().unwrap();
+        let path = write_attachment_file(root.path(), "notes.txt", "text/plain", 1, b"hi").unwrap();
+        assert_eq!(path.file_name().unwrap(), "notes.txt");
+        assert_eq!(std::fs::read(&path).unwrap(), b"hi");
     }
 
     #[test]

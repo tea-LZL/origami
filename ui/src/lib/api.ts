@@ -167,6 +167,8 @@ export const api = {
     invoke<MessageDto>("get_message", { folderId, serverUid }),
   getAttachment: (folderId: string, serverUid: number, index: number) =>
     invoke<string>("get_attachment", { folderId, serverUid, index }),
+  openAttachment: (folderId: string, serverUid: number, index: number) =>
+    invoke<void>("open_attachment", { folderId, serverUid, index }),
   storeFlags: (folderId: string, serverUid: number, flags: Flag[]) =>
     invoke<void>("store_flags", { folderId, serverUid, flags }),
   storeFlagsBatch: (folderId: string, updates: { serverUid: number; flags: Flag[] }[]) =>

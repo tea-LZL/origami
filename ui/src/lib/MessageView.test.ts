@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
       threadCrossFolder: [] as unknown[],
       envelopes: [],
       selectedEnvelope: null as unknown,
-      lastError: null,
+      lastError: null as string | null,
     },
   },
   clearMessageView: vi.fn(),
@@ -20,10 +20,17 @@ const mocks = vi.hoisted(() => ({
   selectEnvelopeExclusive: vi.fn(),
   setLayout: vi.fn(),
   setSelectedFlag: vi.fn(),
+  getAttachment: vi.fn(),
+  openAttachment: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
-vi.mock("./api", () => ({ api: { getAttachment: vi.fn() } }));
+vi.mock("./api", () => ({
+  api: {
+    getAttachment: mocks.getAttachment,
+    openAttachment: mocks.openAttachment,
+  },
+}));
 vi.mock("./stores.svelte", () => mocks);
 
 import MessageView from "./MessageView.svelte";
@@ -84,6 +91,8 @@ describe("MessageView", () => {
       selectedEnvelope: message.envelope,
       lastError: null,
     };
+    mocks.getAttachment.mockReset();
+    mocks.openAttachment.mockReset();
   });
 
   it("offers a one-message remote image override", async () => {
@@ -249,5 +258,94 @@ describe("MessageView", () => {
 
     expect(screen.getByRole("heading", { name: "Remote images" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Stale envelope subject" })).toBeNull();
+  });
+
+  it("views an image attachment in the reading pane", async () => {
+    mocks.getAttachment.mockResolvedValue("aGVsbG8=");
+    mocks.app.value.message = {
+      ...message,
+      attachments: [{
+        index: 0,
+        partPath: "2",
+        name: "photo.png",
+        mime: "image/png",
+        size: 5,
+        inline: false,
+        cid: null,
+      }],
+    };
+    render(MessageView);
+
+    await fireEvent.click(screen.getByRole("button", { name: "View photo.png" }));
+
+    expect(mocks.getAttachment).toHaveBeenCalledWith("folder-1", 1, 0);
+    expect(mocks.openAttachment).not.toHaveBeenCalled();
+    const img = await screen.findByRole("img", { name: "photo.png" });
+    expect(img).toHaveAttribute("src", "data:image/png;base64,aGVsbG8=");
+    expect(document.querySelector("a[download]")).toBeNull();
+  });
+
+  it("views a text attachment in the reading pane", async () => {
+    mocks.getAttachment.mockResolvedValue("aGVsbG8gd29ybGQ=");
+    mocks.app.value.message = {
+      ...message,
+      attachments: [{
+        index: 1,
+        partPath: "2",
+        name: "notes.txt",
+        mime: "text/plain",
+        size: 11,
+        inline: false,
+        cid: null,
+      }],
+    };
+    render(MessageView);
+
+    await fireEvent.click(screen.getByRole("button", { name: "View notes.txt" }));
+
+    expect(await screen.findByRole("region", { name: "Preview of notes.txt" })).toHaveTextContent("hello world");
+  });
+
+  it("opens a non-previewable attachment with the system handler", async () => {
+    mocks.openAttachment.mockResolvedValue(undefined);
+    mocks.app.value.message = {
+      ...message,
+      attachments: [{
+        index: 0,
+        partPath: "2",
+        name: "report.pdf",
+        mime: "application/pdf",
+        size: 20,
+        inline: false,
+        cid: null,
+      }],
+    };
+    render(MessageView);
+
+    expect(screen.queryByRole("button", { name: "View report.pdf" })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Open report.pdf" }));
+
+    expect(mocks.openAttachment).toHaveBeenCalledWith("folder-1", 1, 0);
+    expect(mocks.getAttachment).not.toHaveBeenCalled();
+    expect(document.querySelector("a[download]")).toBeNull();
+  });
+
+  it("does not preview a hostile image mime", () => {
+    mocks.app.value.message = {
+      ...message,
+      attachments: [{
+        index: 0,
+        partPath: "2",
+        name: "photo.png",
+        mime: 'image/png" onerror="alert(1)',
+        size: 20,
+        inline: false,
+        cid: null,
+      }],
+    };
+    render(MessageView);
+
+    expect(screen.queryByRole("button", { name: "View photo.png" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Open photo.png" })).toBeInTheDocument();
   });
 });

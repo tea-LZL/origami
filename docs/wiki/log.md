@@ -2,7 +2,7 @@
 title: Log
 type: log
 status: current
-updated: 2026-10-03
+updated: 2026-10-06
 ---
 
 # Log
@@ -267,3 +267,10 @@ Version bumped to `0.2.0` in `Cargo.toml`, `crates/origami-app/tauri.conf.json`,
 published 4 assets via run 37146060642: `origami-0.2.0-8-x86_64.pkg.tar.zst` + sha256
 (9.8 MB) and `Origami_0.2.0_x64-setup.exe` + sha256 (7.9 MB). Distilled into
 [[release-readiness]] and [[github-cicd-md]].
+
+## [2026-10-06] fix | Attachment list can be viewed and opened
+Listed attachments previously tried to download through an `<a download>` blob URL.
+The desktop webview never completes that download, so the row looked clickable and
+did nothing. Images and plain text now preview in the reading pane. Other types are
+written under the app cache (single path segment) and opened with the system handler.
+Recorded in [[ui-state-and-rendering]].

@@ -11,6 +11,7 @@
     setSelectedFlag,
   } from "./stores.svelte";
   import { api } from "./api";
+  import { attachmentAction, imageDataUrl, previewText } from "./attachmentOpen";
   import { allowedLinkHref, sanitizeMessageHtml } from "./messageHtml";
   import {
     allowRemoteOrigins,
@@ -32,6 +33,30 @@
   let senderRemoteContentAllowed = $state(false);
   let frameResizeObserver: ResizeObserver | null = null;
   let emailFrame: HTMLIFrameElement | null = null;
+  let preview = $state<{
+    index: number;
+    name: string;
+    kind: "image" | "text";
+    url: string | null;
+    text: string | null;
+  } | null>(null);
+  let busyIndex = $state<number | null>(null);
+  let busyMode = $state<"view" | "open" | null>(null);
+
+  function focusNode(node: HTMLElement) {
+    node.focus();
+  }
+
+  $effect(() => {
+    if (!preview || typeof window === "undefined") return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      preview = null;
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   function applyFrameZoom() {
     const doc = emailFrame?.contentDocument;
@@ -81,6 +106,7 @@
     contentMode = "html";
     detailsOpen = false;
     remoteContentAllowed = false;
+    preview = null;
     refreshRemoteAllowlist();
   });
 
@@ -212,26 +238,68 @@
     senderRemoteContentAllowed = next.senders.includes(sender);
   }
 
-  async function downloadAttachment(index: number, name: string | null) {
+  function attachmentLabel(attachment: { index: number; name: string | null }): string {
+    return attachment.name ?? `attachment-${attachment.index}`;
+  }
+
+  function closePreview() {
+    preview = null;
+  }
+
+  async function viewAttachment(index: number) {
     const msg = app.value.message;
     const attachment = msg?.attachments.find((item) => item.index === index);
     if (!msg || !attachment) return;
+    const name = attachmentLabel(attachment);
+    if (msg.envelope.serverUid == null) {
+      app.value.lastError = `Could not view attachment: this message has no server copy`;
+      return;
+    }
+    const messageId = msg.envelope.id;
+    const folderId = msg.envelope.mailboxId;
+    const serverUid = msg.envelope.serverUid;
+    busyIndex = index;
+    busyMode = "view";
     try {
-      const b64 = await api.getAttachment(
-        msg.envelope.mailboxId,
-        msg.envelope.serverUid!,
-        index,
-      );
-      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-      const blob = new Blob([bytes], { type: attachment.mime });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = name ?? `attachment-${index}`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const b64 = await api.getAttachment(folderId, serverUid, index);
+      if (app.value.message?.envelope.id !== messageId) return;
+      const kind = attachmentAction(attachment.mime, attachment.size);
+      if (kind === "image") {
+        preview = { index, name, kind, url: imageDataUrl(attachment.mime, b64), text: null };
+      } else if (kind === "text") {
+        preview = { index, name, kind, url: null, text: previewText(b64) };
+      }
     } catch (error) {
-      app.value.lastError = `Could not download attachment: ${String(error)}`;
+      app.value.lastError = `Could not view attachment: ${String(error)}`;
+    } finally {
+      if (busyIndex === index && busyMode === "view") {
+        busyIndex = null;
+        busyMode = null;
+      }
+    }
+  }
+
+  async function openAttachment(index: number) {
+    const msg = app.value.message;
+    const attachment = msg?.attachments.find((item) => item.index === index);
+    if (!msg || !attachment) return;
+    if (msg.envelope.serverUid == null) {
+      app.value.lastError = `Could not open attachment: this message has no server copy`;
+      return;
+    }
+    const messageId = msg.envelope.id;
+    busyIndex = index;
+    busyMode = "open";
+    try {
+      await api.openAttachment(msg.envelope.mailboxId, msg.envelope.serverUid, index);
+      if (app.value.message?.envelope.id !== messageId) return;
+    } catch (error) {
+      app.value.lastError = `Could not open attachment: ${String(error)}`;
+    } finally {
+      if (busyIndex === index && busyMode === "open") {
+        busyIndex = null;
+        busyMode = null;
+      }
     }
   }
 </script>
@@ -369,6 +437,26 @@
         <div class="parse-warning" role="status">Some MIME parts could not be decoded completely.</div>
       {/if}
 
+      {#if preview}
+        <div
+          class="attachment-view"
+          role="region"
+          aria-label={`Preview of ${preview.name}`}
+          tabindex="-1"
+          use:focusNode
+        >
+          <div class="attachment-view-bar">
+            <strong>{preview.name}</strong>
+            <button type="button" onclick={closePreview}>Close preview</button>
+          </div>
+          {#if preview.kind === "image" && preview.url}
+            <img src={preview.url} alt={preview.name} />
+          {:else if preview.text}
+            <pre>{preview.text}</pre>
+          {/if}
+        </div>
+      {/if}
+
       {#key env.id}
       <div
         class="body"
@@ -400,11 +488,31 @@
           <h2>Attachments</h2>
           <ul>
             {#each message.attachments as att (att.index)}
+              {@const name = attachmentLabel(att)}
+              {@const action = attachmentAction(att.mime, att.size)}
               <li>
-                <button type="button" onclick={() => downloadAttachment(att.index, att.name)}>
-                  {att.name ?? `attachment-${att.index}`}
-                  <small>{att.mime} · {formatBytes(att.size)}{att.inline ? " · inline" : ""}</small>
-                </button>
+                <div class="file">
+                  <div class="file-name">
+                    <strong>{name}</strong>
+                    <small>{att.mime} · {formatBytes(att.size)}{att.inline ? " · inline" : ""}</small>
+                  </div>
+                  <div class="file-actions">
+                    {#if action === "image" || action === "text"}
+                      <button
+                        type="button"
+                        aria-label={`View ${name}`}
+                        disabled={busyIndex !== null}
+                        onclick={() => viewAttachment(att.index)}
+                      >{busyIndex === att.index && busyMode === "view" ? "Viewing…" : "View"}</button>
+                    {/if}
+                    <button
+                      type="button"
+                      aria-label={`Open ${name}`}
+                      disabled={busyIndex !== null}
+                      onclick={() => openAttachment(att.index)}
+                    >{busyIndex === att.index && busyMode === "open" ? "Opening…" : "Open"}</button>
+                  </div>
+                </div>
               </li>
             {/each}
           </ul>
@@ -652,17 +760,81 @@
   }
   footer h2 { font-size: 13px; text-transform: uppercase; color: var(--fg-muted); margin: 0 0 8px; }
   footer ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
-  footer button {
-    background: var(--bg-sunken);
-    padding: 8px 12px;
-    border-radius: var(--radius-sm);
-    width: 100%;
-    text-align: left;
+  footer .file {
     display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-sunken);
+    border-radius: var(--radius-sm);
+    padding: 6px 8px 6px 12px;
+  }
+  footer .file-name {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  footer .file-name strong { overflow-wrap: anywhere; }
+  footer .file-actions { display: flex; flex-shrink: 0; gap: 4px; }
+  footer .file-actions button {
+    width: auto;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 6px 10px;
+    color: var(--fg);
+    font-size: 12px;
+    font-weight: 650;
+  }
+  footer .file-actions button:hover { border-color: var(--accent); color: var(--accent); }
+  footer .file-actions button:disabled { opacity: 0.55; }
+  footer small { color: var(--fg-subtle); font-size: 11px; }
+  .attachment-view {
+    flex-shrink: 0;
+    width: 100%;
+    max-width: min(100%, var(--message-measure));
+    margin: 0 auto 12px;
+    max-height: 45vh;
+    overflow: auto;
+    padding: 12px 16px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg-sunken);
+  }
+  .attachment-view:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .attachment-view-bar {
+    display: flex;
+    align-items: center;
     justify-content: space-between;
     gap: 12px;
+    margin-bottom: 10px;
   }
-  footer small { color: var(--fg-subtle); font-size: 11px; }
+  .attachment-view-bar strong { overflow-wrap: anywhere; }
+  .attachment-view-bar button {
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-raised);
+    padding: 4px 8px;
+    color: var(--fg-muted);
+    font-size: 12px;
+  }
+  .attachment-view img {
+    display: block;
+    max-width: 100%;
+    max-height: 36vh;
+    margin: 0 auto;
+    object-fit: contain;
+  }
+  .attachment-view pre {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.5;
+  }
 
   @media (max-width: 760px) {
     .back-to-messages { display: inline-flex; }

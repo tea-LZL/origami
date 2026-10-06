@@ -341,6 +341,47 @@ pub fn attachment_bytes(raw: &[u8], index: usize) -> Option<Vec<u8>> {
     Some(contents)
 }
 
+fn is_mime_part_path(part_path: &str) -> bool {
+    !part_path.is_empty()
+        && !part_path.starts_with("part-")
+        && part_path
+            .split('.')
+            .all(|segment| segment.parse::<u32>().ok().is_some_and(|number| number > 0))
+}
+
+/// Extract the decoded bytes of the MIME part at `part_path`.
+///
+/// Listed attachments are addressed by this path (the same path IMAP
+/// BODYSTRUCTURE uses). The mail-parser attachment index can disagree with
+/// that list, so callers try the path first.
+pub fn attachment_bytes_at_path(raw: &[u8], part_path: &str) -> Option<Vec<u8>> {
+    if !is_mime_part_path(part_path) {
+        return None;
+    }
+    let message = MessageParser::default().parse(raw)?;
+    let mut parts = Vec::new();
+    let mut paths = HashMap::new();
+    let root_path = if message
+        .parts
+        .first()
+        .is_some_and(|part| part.sub_parts().is_some())
+    {
+        ""
+    } else {
+        "1"
+    };
+    collect_parts(&message, 0, root_path, &mut parts, &mut paths);
+    let part_id = paths
+        .iter()
+        .find(|(_, path)| path.as_str() == part_path)
+        .map(|(id, _)| *id)?;
+    let contents = message.parts.get(part_id as usize)?.contents().to_vec();
+    if contents.len() > MAX_ATTACH_DECODE_BYTES {
+        return None;
+    }
+    Some(contents)
+}
+
 /// Text suitable for local indexing without parsing the raw message again.
 pub fn body_text_for_index(parsed: &ParsedMessage) -> String {
     parsed
@@ -506,6 +547,17 @@ mod tests {
     fn attachment_bytes_rejects_bad_index() {
         assert!(attachment_bytes(RAW.as_bytes(), 5).is_none());
         assert!(attachment_bytes(RAW.as_bytes(), usize::MAX).is_none());
+    }
+
+    #[test]
+    fn attachment_bytes_at_path_matches_listed_part() {
+        assert_eq!(
+            attachment_bytes_at_path(RAW.as_bytes(), "2").as_deref(),
+            Some(b"hello".as_slice())
+        );
+        assert!(attachment_bytes_at_path(RAW.as_bytes(), "9").is_none());
+        assert!(attachment_bytes_at_path(RAW.as_bytes(), "../2").is_none());
+        assert!(attachment_bytes_at_path(RAW.as_bytes(), "part-2").is_none());
     }
 
     #[test]

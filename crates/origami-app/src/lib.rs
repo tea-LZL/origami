@@ -286,6 +286,7 @@ pub fn run() {
             commands::get_cached_message,
             commands::get_message,
             commands::get_attachment,
+            commands::open_attachment,
             commands::store_flags,
             commands::store_flags_batch,
             commands::store_keywords_batch,

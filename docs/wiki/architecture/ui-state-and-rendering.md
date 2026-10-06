@@ -2,7 +2,7 @@
 title: UI state and rendering
 type: architecture
 status: current
-updated: 2026-09-27
+updated: 2026-10-06
 sources:
   - ui/src/lib/stores.svelte.ts
   - ui/src/lib/ThreadList.svelte
@@ -20,6 +20,8 @@ sources:
   - ui/src/lib/AddAccount.svelte
   - ui/src/lib/OrigamiArtwork.svelte
   - ui/src/lib/messageHtml.ts
+  - ui/src/lib/MessageView.svelte
+  - ui/src/lib/attachmentOpen.ts
   - ui/src/lib/remoteContent.ts
   - crates/origami-core/src/store.rs
   - crates/origami-app/src/commands.rs
@@ -122,6 +124,11 @@ with **DOMPurify** (a production dependency) and rendered under a restrictive CS
 - keep HTML email script-free, sandboxed, sanitized, and CSP-restricted;
 - block remote images, external CSS, tracking resources, and attachments from automatic
   download; expose per-origin controls via `remoteContent.ts`;
+- open a listed attachment on request: images and plain text (`text/plain`, `text/csv`)
+  preview in the reading pane from a `data:` URL built only from a MIME token
+  (`attachmentOpen.ts`). Other types, and oversized previews, are written under the app
+  cache and opened with the system handler (`open_attachment`). The webview download
+  attribute is not used. Filenames are reduced to one path segment before the write;
 - intercept links, validate external URLs, open them through the **system** handler, and
   never navigate the app webview;
 - serve `cid:` through a Tauri custom protocol scoped per message.
