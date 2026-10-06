@@ -2,7 +2,7 @@
 # Builds Origami from the enclosing repository checkout.
 
 pkgname=origami
-pkgver=0.2.0
+pkgver=0.2.1
 pkgrel=8
 pkgdesc="A fast, offline-first desktop email client"
 arch=('x86_64')

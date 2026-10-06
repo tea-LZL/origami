@@ -2955,7 +2955,7 @@ dependencies = [
 
 [[package]]
 name = "origami-app"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2980,7 +2980,7 @@ dependencies = [
 
 [[package]]
 name = "origami-cli"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -2990,7 +2990,7 @@ dependencies = [
 
 [[package]]
 name = "origami-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
