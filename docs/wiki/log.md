@@ -274,3 +274,32 @@ The desktop webview never completes that download, so the row looked clickable a
 did nothing. Images and plain text now preview in the reading pane. Other types are
 written under the app cache (single path segment) and opened with the system handler.
 Recorded in [[ui-state-and-rendering]].
+
+## [2026-10-07] fix | Open attachment uses the on-screen message
+Opening a listed attachment looked up only this folder's cache row. The reader
+can show a message from the display cache or from another physical copy, so
+Open reported "message not opened yet" while that message was on screen. Open
+and view now use the same lookup as the reader. Recorded in
+[[ui-state-and-rendering]].
+
+## [2026-10-07] change | Message timestamps use local time
+The thread list and reading pane printed the raw RFC 5322 Date header, so UTC
+mail showed `+0000 (UTC)`. Dates now parse to an instant and render with
+`Intl.DateTimeFormat` in the runtime locale and local timezone. Recorded in
+[[ui-state-and-rendering]].
+
+## [2026-10-08] change | Compose sessions replace the single draft modal
+Compose is now a docked read-pane surface with one tab per open session
+(`ComposePane.svelte`, `ComposeTabs.svelte`). Drafts persist per session id in
+the SQLite `drafts` table, restore as minimized tabs on launch, and blank
+ghost drafts / the "Recovered draft" banner are gone. Send and discard delete
+the local row plus its server Drafts copy. Spec:
+`docs/superpowers/specs/2026-10-08-compose-tabs-and-drafts-design.md`.
+Recorded in [[ui-state-and-rendering]].
+
+## [2026-10-08] fix | Duplicate desktop notification per new mail
+The sync event loop called `new_mail_notification` unconditionally after the
+grouped/single branch, so every inbox mail produced two notifications. The
+per-envelope decision now lives in `notifications::notify_new_mail` (single
+call site, grouped or single exactly once, logical-id dedupe retained) with
+regression test `one_notification_per_new_mail_in_both_modes`.

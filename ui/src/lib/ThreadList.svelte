@@ -29,6 +29,7 @@
   import MessageSelectCheckbox from "./MessageSelectCheckbox.svelte";
   import OrigamiArtwork from "./OrigamiArtwork.svelte";
   import { tagColor } from "./tags";
+  import { formatMessageDate } from "./formatDate";
 
   const rowHeight = $derived(app.value.density === "compact" ? 52 : 60);
   let listEl: HTMLElement | null = $state(null);
@@ -90,7 +91,7 @@
   }
 
   function onKeydown(event: KeyboardEvent) {
-    if (event.defaultPrevented || app.value.composerOpen) return;
+    if (event.defaultPrevented || app.value.activeComposerId !== null) return;
     const target = event.target as Element | null;
     if (target?.closest("input, button, select, textarea, [contenteditable='true']")) return;
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
@@ -365,7 +366,7 @@
                   <span class:search-match={part.match}>{part.text}</span>
                 {/each}
               </span>
-              <span class="date">{item.date ?? ""}</span>
+              <span class="date">{formatMessageDate(item.date)}</span>
             </div>
             <div class="subject" aria-label={subject}>
               {#each highlightSearchText(subject, app.value.searchQuery) as part}

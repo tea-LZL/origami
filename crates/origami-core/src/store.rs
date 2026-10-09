@@ -2009,6 +2009,16 @@ impl Store {
             .optional()?)
     }
 
+    pub fn list_drafts(&self) -> Result<Vec<(String, String)>> {
+        let conn = self.conn()?;
+        let mut stmt = conn
+            .prepare("SELECT id, draft_json FROM drafts ORDER BY updated_at DESC, rowid DESC")?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     pub fn delete_draft(&self, id: &str) -> Result<()> {
         self.conn()?
             .execute("DELETE FROM drafts WHERE id = ?1", params![id])?;
@@ -2344,6 +2354,21 @@ mod tests {
             .find(|envelope| envelope.server_uid == Some(uid))
             .unwrap()
             .flags
+    }
+
+    #[test]
+    fn list_drafts_returns_newest_first_with_ids() {
+        let store = Store::open_in_memory().unwrap();
+        store.save_draft("a", "{\"v\":1}").unwrap();
+        store.save_draft("b", "{\"v\":2}").unwrap();
+
+        let rows = store.list_drafts().unwrap();
+
+        assert_eq!(
+            rows.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(),
+            vec!["b", "a"]
+        );
+        assert_eq!(rows[0].1, "{\"v\":2}");
     }
 
     #[test]

@@ -123,6 +123,23 @@ describe("MessageView", () => {
     expect(screen.getByText("sender@example.org")).toBeInTheDocument();
   });
 
+  it("shows the message date in local time", () => {
+    mocks.app.value.message = {
+      ...message,
+      envelope: {
+        ...message.envelope,
+        date: "Fri, 18 Sep 2026 09:52:41 +0000 (UTC)",
+      },
+    };
+    render(MessageView);
+    const expected = new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date("2026-09-18T09:52:41.000Z"));
+    expect(screen.getByText(expected)).toBeInTheDocument();
+    expect(screen.queryByText(/UTC|\+0000/)).not.toBeInTheDocument();
+  });
+
   it("announces message loading while showing a non-interactive skeleton", () => {
     mocks.app.value.message = null;
     mocks.app.value.messageLoading = true;

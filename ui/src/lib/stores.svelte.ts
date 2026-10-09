@@ -11,6 +11,8 @@ import {
   type Correspondent,
   type KeywordCount,
   type AccountStatusDto,
+  type SavedComposerDraft,
+  type StoredComposerDraft,
 } from "./api";
 import { withUnreadToken } from "./searchHighlight";
 import { mergeThreadMembers } from "./threads";
@@ -22,6 +24,7 @@ import {
   unreadKeepIds,
 } from "./unreadList";
 import type { Envelope, EnvelopeSource, Flag, Mailbox, MailboxRole } from "./types";
+import { formatMessageDate } from "./formatDate";
 
 /// Shared display-prefetch scheduler (hover/keyboard predicted, viewport later).
 export const prefetcher = createPrefetcher();
@@ -65,6 +68,32 @@ export function applyThemePreference(pref: ThemePref): void {
 
 export type WorkspaceLayout = "three-pane" | "two-pane" | "reading";
 
+export interface ComposerAttachment {
+  name: string;
+  mime: string;
+  size: number;
+  dataBase64: string;
+}
+
+export interface ComposerSession {
+  id: string;
+  accountId: string | null;
+  draft: {
+    to: string;
+    cc: string;
+    bcc: string;
+    subject: string;
+    html: string;
+    composeMode: "rich" | "plain";
+  };
+  attachments: ComposerAttachment[];
+  threading: { inReplyTo: string | null; references: string[] };
+  saveState: "idle" | "saving" | "saved" | "error";
+  syncState: "local" | "syncing" | "synced" | "error";
+  lastSavedAt: number | null;
+  lastSyncedHash: string | null;
+}
+
 export interface State {
   ready: boolean;
   accounts: AccountDto[];
@@ -89,31 +118,12 @@ export interface State {
   selectionAnchorId: string | null;
   message: MessageDto | null;
   messageLoading: boolean;
-  composerOpen: boolean;
-  composerAccountId: string | null;
-  sending: boolean;
-  composerAttachments: {
-    name: string;
-    mime: string;
-    size: number;
-    dataBase64: string;
-  }[];
-  composerDraft: {
-    to: string;
-    cc: string;
-    bcc: string;
-    subject: string;
-    html: string;
-    composeMode: "rich" | "plain";
-  };
-  composerThreading: {
-    inReplyTo: string | null;
-    references: string[];
-  };
+  composerSessions: ComposerSession[];
+  activeComposerId: string | null;
+  sendingComposerId: string | null;
+  discardConfirmId: string | null;
   threadCrossFolder: Envelope[];
   threadRequest: number;
-  composerRecovered: boolean;
-  composerDiscarded: boolean;
   markReadDelay: number;
   messageZoom: number;
   syncing: boolean;
@@ -156,16 +166,12 @@ const initial: State = {
   selectionAnchorId: null,
   message: null,
   messageLoading: false,
-  composerOpen: false,
-  composerAccountId: null,
-  sending: false,
-  composerAttachments: [],
-  composerDraft: { to: "", cc: "", bcc: "", subject: "", html: "", composeMode: "rich" },
-  composerThreading: { inReplyTo: null, references: [] },
+  composerSessions: [],
+  activeComposerId: null,
+  sendingComposerId: null,
+  discardConfirmId: null,
   threadCrossFolder: [],
   threadRequest: 0,
-  composerRecovered: false,
-  composerDiscarded: false,
   markReadDelay: 0,
   messageZoom: 100,
   syncing: false,
@@ -197,8 +203,13 @@ let pendingUndo: {
   restore: () => void;
   execute: () => Promise<void>;
 } | null = null;
-let composerLoadToken = 0;
 let accountStatusRequest = 0;
+
+/** Single-draft key used before per-session drafts; kept for migration. */
+export const LEGACY_COMPOSER_DRAFT_ID = "composer";
+
+const composerSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const composerSyncTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 type FolderView = {
   envelopes: Envelope[];
@@ -406,6 +417,7 @@ export async function bootstrap() {
       ),
       ready: true,
     });
+    await restoreComposerSessions();
     const lastViewed = localStorage.getItem("origami-last-folder");
     if (lastViewed === "unified") {
       await selectUnifiedInbox();
@@ -483,6 +495,7 @@ export async function selectFolder(folderId: string) {
       ? app.value.message
       : null,
     messageLoading: false,
+    activeComposerId: null,
   });
   await loadEnvelopes(folderId);
   api.prefetchSelectedFolder(folderId).catch(() => {});
@@ -509,6 +522,7 @@ export async function selectUnifiedInbox() {
     selectionAnchorId: null,
     message: null,
     messageLoading: false,
+    activeComposerId: null,
   });
   await loadUnifiedInbox();
 }
@@ -652,7 +666,7 @@ export async function selectEnvelope(envelope: Envelope) {
     clearTimeout(markReadTimer);
     markReadTimer = null;
   }
-  patch({ selectedEnvelope: envelope, messageLoading: true });
+  patch({ selectedEnvelope: envelope, messageLoading: true, activeComposerId: null });
   try {
     let message: MessageDto | null = null;
     let loadedSource: EnvelopeSource | null = null;
@@ -783,6 +797,7 @@ export async function searchMessages(query: string) {
     selectedMessageIds: [],
     selectionAnchorId: null,
     selectingAll: false,
+    activeComposerId: null,
   });
   if (!normalized) {
     patch({ searchTotal: null });
@@ -1257,33 +1272,136 @@ export async function deleteSelectedPermanently() {
   });
 }
 
-function blankDraft() {
+function blankDraft(): ComposerSession["draft"] {
   return {
     to: "",
     cc: "",
     bcc: "",
     subject: "",
     html: "<p></p>",
-    composeMode: "rich" as "rich" | "plain",
+    composeMode: "rich",
   };
 }
 
-function blankThreading(): State["composerThreading"] {
+function blankThreading(): ComposerSession["threading"] {
   return { inReplyTo: null, references: [] };
 }
 
-function legacySavedDraft(): State["composerDraft"] | null {
-  try {
-    const raw = localStorage.getItem("origami-composer-draft");
-    return raw ? JSON.parse(raw) as State["composerDraft"] : null;
-  } catch {
-    return null;
-  }
+function newComposerId(): string {
+  const uuid = globalThis.crypto?.randomUUID;
+  if (typeof uuid === "function") return uuid.call(globalThis.crypto);
+  return `composer-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-export async function openComposer(
-  draft?: Partial<State["composerDraft"]>,
-  threading?: Partial<State["composerThreading"]>,
+/** A session with nothing worth keeping is never persisted or synced. */
+export function composerIsBlank(session: ComposerSession): boolean {
+  const hasRecipients = [session.draft.to, session.draft.cc, session.draft.bcc]
+    .some((value) => value.trim() !== "");
+  const hasSubject = session.draft.subject.trim() !== "";
+  const hasBody = session.draft.html
+    .replace(/<[^>]*>/g, "")
+    .replaceAll("&nbsp;", " ")
+    .trim() !== "";
+  return !hasRecipients && !hasSubject && !hasBody && session.attachments.length === 0;
+}
+
+function composerSnapshot(session: ComposerSession): SavedComposerDraft {
+  return {
+    accountId: session.accountId,
+    draft: {
+      to: session.draft.to,
+      cc: session.draft.cc,
+      bcc: session.draft.bcc,
+      subject: session.draft.subject,
+      html: session.draft.html,
+      composeMode: session.draft.composeMode,
+    },
+    attachments: session.attachments.map(({ name, mime, size, dataBase64 }) => ({
+      name,
+      mime,
+      size,
+      dataBase64,
+    })),
+    threading: {
+      inReplyTo: session.threading.inReplyTo,
+      references: [...session.threading.references],
+    },
+  };
+}
+
+function composerPayloadHash(session: ComposerSession): string {
+  return JSON.stringify(composerSnapshot(session));
+}
+
+function findComposerSession(id: string): ComposerSession | null {
+  return app.value.composerSessions.find((session) => session.id === id) ?? null;
+}
+
+function composerSessionFromSaved(id: string, saved: SavedComposerDraft): ComposerSession {
+  return {
+    id,
+    accountId: saved.accountId ?? null,
+    draft: { ...blankDraft(), ...(saved.draft ?? {}) },
+    attachments: saved.attachments ?? [],
+    threading: { ...blankThreading(), ...(saved.threading ?? {}) },
+    saveState: "saved",
+    syncState: "local",
+    lastSavedAt: null,
+    lastSyncedHash: null,
+  };
+}
+
+function composerSessionFromLocalDraft(saved: Partial<ComposerSession["draft"]>): ComposerSession {
+  return {
+    id: newComposerId(),
+    accountId: null,
+    draft: { ...blankDraft(), ...saved },
+    attachments: [],
+    threading: blankThreading(),
+    saveState: "idle",
+    syncState: "local",
+    lastSavedAt: null,
+    lastSyncedHash: null,
+  };
+}
+
+/** Reopen every stored draft as a minimized tab. Keeps dirty-worktree
+ * semantics: nothing is deleted unless it is blank. */
+export async function restoreComposerSessions(): Promise<void> {
+  if (app.value.accounts.length === 0) return;
+  let rows: StoredComposerDraft[] = [];
+  try {
+    rows = await api.listComposerDrafts();
+  } catch {
+    // Offline or backend unavailable: keep the drafts for the next launch.
+    return;
+  }
+  const sessions: ComposerSession[] = [];
+  for (const row of [...rows].reverse()) {
+    const session = composerSessionFromSaved(row.id, row.draft);
+    if (composerIsBlank(session)) {
+      api.deleteComposerDraft(row.id).catch(() => {});
+      continue;
+    }
+    sessions.push(session);
+  }
+  const legacyRaw = localStorage.getItem("origami-composer-draft");
+  if (legacyRaw !== null) {
+    localStorage.removeItem("origami-composer-draft");
+    try {
+      const parsed = JSON.parse(legacyRaw) as Partial<ComposerSession["draft"]>;
+      const legacy = composerSessionFromLocalDraft(parsed);
+      if (!composerIsBlank(legacy)) sessions.push(legacy);
+    } catch {
+      // A corrupt legacy draft is dropped; the key is already gone.
+    }
+  }
+  patch({ composerSessions: sessions, activeComposerId: null });
+}
+
+export function openComposer(
+  draft?: Partial<ComposerSession["draft"]>,
+  threading?: Partial<ComposerSession["threading"]>,
 ) {
   if (app.value.accounts.length === 0) {
     patch({ lastNotice: "Add an account before composing a message." });
@@ -1292,18 +1410,7 @@ export async function openComposer(
   const folder = app.value.folders.find((item) => item.id === app.value.selectedFolderId);
   const account = app.value.accounts.find((item) => item.dbId === folder?.accountId)
     ?? app.value.accounts[0];
-  const loadToken = ++composerLoadToken;
-  const legacy = draft ? null : legacySavedDraft();
-  let recovered: Awaited<ReturnType<typeof api.loadComposerDraft>> = null;
-  if (!draft && !legacy) {
-    try {
-      recovered = await api.loadComposerDraft();
-    } catch {
-      // A missing draft must never prevent opening the composer.
-    }
-  }
-  if (loadToken !== composerLoadToken) return;
-  const restored = { ...blankDraft(), ...(draft ?? legacy ?? recovered?.draft ?? {}) };
+  const restored = { ...blankDraft(), ...(draft ?? {}) };
   const signature = account?.signature ?? null;
   if (signature && !restored.html.includes("-- ")) {
     restored.html += `<p></p><p>-- </p><p>${signature
@@ -1311,40 +1418,87 @@ export async function openComposer(
       .map((line) => htmlEscape(line) || "<br>")
       .join("<br>")}</p>`;
   }
+  const session: ComposerSession = {
+    id: newComposerId(),
+    accountId: account?.id ?? null,
+    draft: restored,
+    attachments: [],
+    threading: { ...blankThreading(), ...(threading ?? {}) },
+    saveState: "idle",
+    syncState: "local",
+    lastSavedAt: null,
+    lastSyncedHash: null,
+  };
   patch({
-    composerOpen: true,
-    composerAccountId: recovered?.accountId ?? account?.id ?? null,
-    composerAttachments: recovered?.attachments ?? [],
-    composerThreading: {
-      ...blankThreading(),
-      ...(recovered?.threading ?? {}),
-      ...(threading ?? {}),
-    },
-    composerDraft: {
-      ...restored,
-      composeMode: legacy?.composeMode ?? recovered?.draft.composeMode ?? "rich",
-    },
-    composerRecovered: !draft && (legacy !== null || recovered !== null),
-    composerDiscarded: false,
+    composerSessions: [...app.value.composerSessions, session],
+    activeComposerId: session.id,
+    discardConfirmId: null,
   });
 }
 
-/** Throw away a recovered draft: local copies and the stored draft are
- * deleted, the composer blanks, and closing it will not re-save. */
-export async function discardComposerDraft() {
-  try {
-    await api.deleteComposerDraft();
-  } catch {
-    // Nothing to delete is fine; the local state still resets.
+export function activateComposer(id: string) {
+  if (!findComposerSession(id)) return;
+  patch({ activeComposerId: id, discardConfirmId: null });
+}
+
+export function minimizeComposer() {
+  const id = app.value.activeComposerId;
+  if (!id) return;
+  patch({ activeComposerId: null, discardConfirmId: null });
+  void (async () => {
+    await flushComposerSave(id);
+    scheduleComposerSync(id);
+  })();
+}
+
+/** Remove a session and activate the nearest remaining tab. */
+function removeComposerSession(id: string, index: number) {
+  const saveTimer = composerSaveTimers.get(id);
+  if (saveTimer !== undefined) {
+    clearTimeout(saveTimer);
+    composerSaveTimers.delete(id);
   }
-  localStorage.removeItem("origami-composer-draft");
-  patch({
-    composerDraft: blankDraft(),
-    composerAttachments: [],
-    composerThreading: blankThreading(),
-    composerRecovered: false,
-    composerDiscarded: true,
-  });
+  const syncTimer = composerSyncTimers.get(id);
+  if (syncTimer !== undefined) {
+    clearTimeout(syncTimer);
+    composerSyncTimers.delete(id);
+  }
+  const sessions = app.value.composerSessions.filter((session) => session.id !== id);
+  const active = app.value.activeComposerId === id
+    ? sessions[Math.min(index, sessions.length - 1)]?.id ?? null
+    : app.value.activeComposerId;
+  patch({ composerSessions: sessions, activeComposerId: active, discardConfirmId: null });
+}
+
+export async function discardComposer(id: string) {
+  const index = app.value.composerSessions.findIndex((session) => session.id === id);
+  if (index === -1) return;
+  patch({ discardConfirmId: null });
+  try {
+    await api.deleteComposerDraft(id);
+  } catch {
+    patch({ lastNotice: "Draft removed locally; server copy may remain" });
+  }
+  removeComposerSession(id, index);
+}
+
+/** Blank sessions close synchronously: they were never persisted. */
+export function requestDiscardComposer(id: string) {
+  const session = findComposerSession(id);
+  if (!session) return;
+  if (composerIsBlank(session)) {
+    const index = app.value.composerSessions.findIndex((item) => item.id === id);
+    removeComposerSession(id, index);
+    // A session can become blank after being saved (user cleared it), so an
+    // existing row and its remote copy still need deleting.
+    api.deleteComposerDraft(id).catch(() => {});
+    return;
+  }
+  patch({ discardConfirmId: id });
+}
+
+export function cancelDiscardComposer() {
+  patch({ discardConfirmId: null });
 }
 
 function htmlEscape(text: string): string {
@@ -1373,7 +1527,8 @@ export function openReplyComposer(mode: "reply" | "replyAll" | "forward") {
     : `${prefix} ${message.envelope.subject}`;
   const quoted = htmlEscape(message.text ?? message.envelope.subject);
   const author = htmlEscape((message.envelope.from[0]?.name ?? sender) || "the sender");
-  const attribution = htmlEscape(`On ${message.envelope.date ?? "an earlier date"}, ${author} wrote:`);
+  const when = formatMessageDate(message.envelope.date) || "an earlier date";
+  const attribution = htmlEscape(`On ${when}, ${author} wrote:`);
   openComposer({
     to: recipients.join(", "),
     subject,
@@ -1384,68 +1539,141 @@ export function openReplyComposer(mode: "reply" | "replyAll" | "forward") {
   });
 }
 
-export async function closeComposer() {
-  if (app.value.composerDiscarded) {
-    // The recovered draft was explicitly discarded; do not resurrect it as
-    // an empty saved draft.
-    patch({ composerOpen: false, composerDiscarded: false });
+/** Persist one session locally now. No-op for blank sessions. */
+export async function flushComposerSave(id: string): Promise<void> {
+  const pending = composerSaveTimers.get(id);
+  if (pending !== undefined) {
+    clearTimeout(pending);
+    composerSaveTimers.delete(id);
+  }
+  const session = findComposerSession(id);
+  if (!session) return;
+  if (composerIsBlank(session)) {
+    session.saveState = "idle";
     return;
   }
+  // No pending timer and nothing new since the last save: calling flush from
+  // the sync path must not re-save (and re-schedule sync) forever.
+  if (session.saveState === "saved" && pending === undefined) return;
+  session.saveState = "saving";
   try {
-    await api.saveComposerDraft({
-      accountId: app.value.composerAccountId,
-      draft: app.value.composerDraft,
-      attachments: app.value.composerAttachments,
-      threading: app.value.composerThreading,
-    });
+    await api.saveComposerDraft(id, composerSnapshot(session));
+    const current = findComposerSession(id);
+    if (!current) {
+      // The tab was discarded or sent while this save was in flight; the
+      // row this write just re-created must not survive.
+      api.deleteComposerDraft(id).catch(() => {});
+      return;
+    }
+    current.saveState = "saved";
+    current.lastSavedAt = Date.now();
+    scheduleComposerSync(id);
   } catch {
-    patch({ lastNotice: "Draft could not be saved" });
+    const current = findComposerSession(id);
+    if (current) current.saveState = "error";
   }
-  patch({ composerOpen: false });
-  api.syncComposerDraft().catch(() => {
-    patch({ lastNotice: "Draft saved locally; server Drafts sync will retry next time" });
-  });
 }
 
-export async function sendComposer() {
-  if (app.value.sending) return;
-  const account = app.value.accounts.find((item) => item.id === app.value.composerAccountId)
+export function scheduleComposerSave(id: string) {
+  if (!findComposerSession(id)) return;
+  const pending = composerSaveTimers.get(id);
+  if (pending !== undefined) clearTimeout(pending);
+  composerSaveTimers.set(id, setTimeout(() => {
+    void flushComposerSave(id);
+  }, 400));
+}
+
+async function syncComposerSession(id: string) {
+  const session = findComposerSession(id);
+  if (!session || composerIsBlank(session)) return;
+  // The backend sync uploads whatever the DB row holds, so flush first and
+  // remember the hash of exactly that payload.
+  await flushComposerSave(id);
+  const current = findComposerSession(id);
+  if (!current || composerIsBlank(current)) return;
+  const hash = composerPayloadHash(current);
+  if (current.syncState === "synced" && current.lastSyncedHash === hash) return;
+  current.syncState = "syncing";
+  try {
+    await api.syncComposerDraft(id);
+    const done = findComposerSession(id);
+    if (!done) return;
+    done.lastSyncedHash = hash;
+    done.syncState = "synced";
+  } catch {
+    const current = findComposerSession(id);
+    if (current) current.syncState = "error";
+  }
+}
+
+function scheduleComposerSync(id: string) {
+  if (!findComposerSession(id)) return;
+  const pending = composerSyncTimers.get(id);
+  if (pending !== undefined) clearTimeout(pending);
+  composerSyncTimers.set(id, setTimeout(() => {
+    void syncComposerSession(id);
+  }, 4000));
+}
+
+export async function syncComposerNow(id: string) {
+  const pending = composerSyncTimers.get(id);
+  if (pending !== undefined) {
+    clearTimeout(pending);
+    composerSyncTimers.delete(id);
+  }
+  await syncComposerSession(id);
+}
+
+export async function sendComposer(id: string) {
+  const session = findComposerSession(id);
+  if (!session || app.value.sendingComposerId !== null) return;
+  const account = app.value.accounts.find((item) => item.id === session.accountId)
     ?? app.value.accounts[0];
   if (!account) {
     patch({ lastError: "no account configured" });
     return;
   }
-  const draft = app.value.composerDraft;
-  const to = draft.to.split(/[,\s]+/).filter(Boolean);
-  const cc = draft.cc.split(/[,\s]+/).filter(Boolean);
-  const bcc = draft.bcc.split(/[,\s]+/).filter(Boolean);
+  const parse = (value: string) => value.split(/[,\s]+/).filter(Boolean);
+  const to = parse(session.draft.to);
+  const cc = parse(session.draft.cc);
+  const bcc = parse(session.draft.bcc);
+  const invalid = [...to, ...cc, ...bcc]
+    .find((address) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address));
+  if (invalid) {
+    patch({ lastError: `invalid recipient: ${invalid}` });
+    return;
+  }
   if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
     patch({ lastError: "add at least one recipient" });
     return;
   }
-  patch({ sending: true });
+  patch({ sendingComposerId: id });
   try {
-    const plain = draft.composeMode === "plain";
+    const plain = session.draft.composeMode === "plain";
     const result = await api.sendMessage({
       fromName: account.name,
       fromAddr: account.email,
       to,
       cc,
       bcc,
-      subject: draft.subject,
-      html: plain ? "" : draft.html,
-      text: plain ? draft.html : undefined,
-      inReplyTo: app.value.composerThreading.inReplyTo,
-      references: app.value.composerThreading.references,
-      attachments: app.value.composerAttachments.map(({ name, mime, dataBase64 }) => ({
+      subject: session.draft.subject,
+      html: plain ? "" : session.draft.html,
+      text: plain ? session.draft.html : undefined,
+      inReplyTo: session.threading.inReplyTo,
+      references: session.threading.references,
+      attachments: session.attachments.map(({ name, mime, dataBase64 }) => ({
         name,
         mime,
         dataBase64,
       })),
     });
-    localStorage.removeItem("origami-composer-draft");
-    await api.deleteComposerDraft();
-    patch({ composerOpen: false, composerRecovered: false, composerDiscarded: false });
+    try {
+      await api.deleteComposerDraft(id);
+    } catch {
+      patch({ lastNotice: "Draft removed locally; server copy may remain" });
+    }
+    const index = app.value.composerSessions.findIndex((item) => item.id === id);
+    removeComposerSession(id, Math.max(index, 0));
     patch({
       lastError: null,
       lastNotice: result.queued ? "Message queued and will send when the account reconnects" : "Message sent",
@@ -1453,7 +1681,7 @@ export async function sendComposer() {
   } catch (e) {
     patch({ lastError: String(e) });
   } finally {
-    patch({ sending: false });
+    if (app.value.sendingComposerId === id) patch({ sendingComposerId: null });
   }
 }
 

@@ -4,27 +4,119 @@ use chrono::Timelike;
 use notify_rust::Notification;
 use origami_core::config::{parse_time, NotificationConfig, NotificationPreview};
 use origami_core::model::MailboxRole;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-pub fn new_mail_notification(
+/// Rendered notification, before it reaches the OS. Keeping this separate
+/// from `notify_rust` lets tests count exactly what a new mail produces.
+pub struct NotificationDraft {
+    pub summary: String,
+    pub body: String,
+    /// XDG notification id for grouped replacement, when grouping is on.
+    pub id: Option<u32>,
+    pub timeout_ms: Option<u32>,
+}
+
+/// Per-process state for the notification policy: which logical messages
+/// were already announced, and the running grouped counts/ids per account.
+#[derive(Default)]
+pub struct NotificationBookkeeping {
+    seen: HashSet<String>,
+    grouped_counts: HashMap<String, u32>,
+    grouped_ids: HashMap<String, u32>,
+    next_id: u32,
+}
+
+impl NotificationBookkeeping {
+    pub fn new(first_id: u32) -> Self {
+        Self {
+            next_id: first_id,
+            ..Self::default()
+        }
+    }
+
+    /// Forget a removed account's grouped count and notification id.
+    pub fn forget_account(&mut self, account_id: &str) {
+        self.grouped_counts.remove(account_id);
+        self.grouped_ids.remove(account_id);
+    }
+}
+
+/// Decide and render exactly one notification for a new envelope. Returns
+/// whether a notification was produced; physical copies of the same logical
+/// message are announced once.
+#[allow(clippy::too_many_arguments)]
+pub fn notify_new_mail(
+    bookkeeping: &mut NotificationBookkeeping,
     settings: &NotificationConfig,
+    account_name: &str,
+    account_id: &str,
+    logical_id: &str,
     folder_role: Option<MailboxRole>,
     unread: bool,
     subject: &str,
     from: &str,
-) {
+    show: &mut dyn FnMut(NotificationDraft),
+) -> bool {
     if !should_notify(settings, folder_role, unread) {
-        return;
+        return false;
     }
-    let (summary, body) = render_preview(settings.preview, subject, from);
+    if !claim_notification(&mut bookkeeping.seen, logical_id) {
+        return false;
+    }
+    if settings.grouped_per_account {
+        let count = bookkeeping
+            .grouped_counts
+            .entry(account_id.to_string())
+            .or_insert(0);
+        *count += 1;
+        let id = match bookkeeping.grouped_ids.get(account_id) {
+            Some(id) => *id,
+            None => {
+                let id = bookkeeping.next_id;
+                bookkeeping.next_id += 1;
+                bookkeeping.grouped_ids.insert(account_id.to_string(), id);
+                id
+            }
+        };
+        let (sender, subject_line) = render_preview(settings.preview, subject, from);
+        let body = match settings.preview {
+            NotificationPreview::Full => format!("{sender}: {subject_line}"),
+            NotificationPreview::SenderOnly => sender,
+            NotificationPreview::Hidden => subject_line,
+        };
+        show(NotificationDraft {
+            summary: grouped_summary(account_name, *count),
+            body,
+            id: Some(id),
+            timeout_ms: None,
+        });
+    } else {
+        let (summary, body) = render_preview(settings.preview, subject, from);
+        show(NotificationDraft {
+            summary,
+            body,
+            id: None,
+            timeout_ms: Some(8000),
+        });
+    }
+    true
+}
 
-    let _ = Notification::new()
+/// Default sink: hand the draft to the desktop notification service.
+pub fn show_notification(draft: &NotificationDraft) {
+    let mut notification = Notification::new();
+    notification
         .appname("Origami")
-        .summary(&summary)
-        .body(&body)
-        .icon("origami")
-        .timeout(notify_rust::Timeout::Milliseconds(8000))
-        .show();
+        .summary(&draft.summary)
+        .body(&draft.body)
+        .icon("origami");
+    if let Some(id) = draft.id {
+        notification.id(id);
+    }
+    if let Some(timeout_ms) = draft.timeout_ms {
+        notification.timeout(notify_rust::Timeout::Milliseconds(timeout_ms));
+    }
+    let _ = notification.show();
 }
 
 pub fn should_notify(
@@ -39,34 +131,6 @@ pub fn should_notify(
 
 pub(crate) fn claim_notification(seen: &mut HashSet<String>, key: &str) -> bool {
     seen.insert(key.to_string())
-}
-
-/// Grouped per-account notification: replaces the account's previous
-/// notification (XDG `id` reuse) and reports the running unread count.
-/// Returns the notification id so the caller can replace it next time.
-pub fn grouped_mail_notification(
-    account_name: &str,
-    count: u32,
-    settings: &NotificationConfig,
-    subject: &str,
-    from: &str,
-    notification_id: u32,
-) {
-    let mut notification = Notification::new();
-    notification.appname("Origami");
-    notification.id(notification_id);
-    let summary = grouped_summary(account_name, count);
-    let (sender, subject_line) = render_preview(settings.preview, subject, from);
-    let body = match settings.preview {
-        NotificationPreview::Full => format!("{sender}: {subject_line}"),
-        NotificationPreview::SenderOnly => sender,
-        NotificationPreview::Hidden => subject_line,
-    };
-    notification.summary(&summary).body(&body).icon("origami");
-    if !settings.grouped_per_account {
-        notification.timeout(notify_rust::Timeout::Milliseconds(8000));
-    }
-    let _ = notification.show();
 }
 
 /** Grouped summary line: one running count per account. */
@@ -163,6 +227,64 @@ mod tests {
         assert!(is_quiet_at(&settings, 6 * 60 + 59));
         assert!(!is_quiet_at(&settings, 7 * 60));
         assert!(!is_quiet_at(&settings, 12 * 60));
+    }
+
+    #[test]
+    fn one_notification_per_new_mail_in_both_modes() {
+        let mut book = NotificationBookkeeping::new(1);
+        let mut settings = NotificationConfig::default();
+        settings.grouped_per_account = true;
+        let mut sends: Vec<NotificationDraft> = Vec::new();
+
+        {
+            let mut show = |draft: NotificationDraft| sends.push(draft);
+            assert!(notify_new_mail(
+                &mut book,
+                &settings,
+                "Work",
+                "acc",
+                "logical-1",
+                Some(MailboxRole::Inbox),
+                true,
+                "Subject",
+                "Ada",
+                &mut show,
+            ));
+            assert!(!notify_new_mail(
+                &mut book,
+                &settings,
+                "Work",
+                "acc",
+                "logical-1",
+                Some(MailboxRole::Inbox),
+                true,
+                "Subject",
+                "Ada",
+                &mut show,
+            ));
+        }
+        assert_eq!(sends.len(), 1);
+        assert!(sends[0].id.is_some());
+        assert_eq!(sends[0].summary, "Work — 1 new");
+
+        settings.grouped_per_account = false;
+        {
+            let mut show = |draft: NotificationDraft| sends.push(draft);
+            assert!(notify_new_mail(
+                &mut book,
+                &settings,
+                "Work",
+                "acc",
+                "logical-2",
+                Some(MailboxRole::Inbox),
+                true,
+                "Other",
+                "Bob",
+                &mut show,
+            ));
+        }
+        assert_eq!(sends.len(), 2);
+        assert!(sends[1].id.is_none());
     }
 
     #[test]

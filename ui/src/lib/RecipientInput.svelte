@@ -30,7 +30,7 @@
   function commit(): void {
     const candidate = typed.trim();
     typed = "";
-    if (!candidate || !isAddress(candidate)) return;
+    if (!candidate) return;
     if (recipients.some((item) => item.toLowerCase() === candidate.toLowerCase())) return;
     onChange?.([...recipients, candidate].join(", "));
   }
@@ -65,8 +65,13 @@
   <span class="recipients-label">{label}</span>
   <span class="chips" role="list" aria-label={`${label} recipients`}>
     {#each recipients as recipient (recipient)}
-      <span class="chip" role="listitem">
-        <span class="chip-text">{recipient}</span>
+      {@const valid = isAddress(recipient)}
+      <span class="chip" class:invalid={!valid} role="listitem">
+        <span
+          class="chip-text"
+          aria-invalid={valid ? undefined : "true"}
+          title={valid ? undefined : "Not a valid email address"}
+        >{recipient}</span>
         <button
           type="button"
           class="chip-remove"
@@ -138,6 +143,10 @@
     font-size: 12px;
     line-height: 1;
     cursor: pointer;
+  }
+  .chip.invalid {
+    background: color-mix(in oklab, var(--danger) 16%, var(--bg-raised));
+    border: 1px solid color-mix(in oklab, var(--danger) 55%, var(--border));
   }
   .chip-remove:hover { background: var(--bg-sunken); color: var(--fg); }
   .chips input {

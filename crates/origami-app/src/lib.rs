@@ -5,7 +5,6 @@ mod oauth_flow;
 mod state;
 
 use origami_core::model::Flag;
-use std::collections::HashSet;
 use tauri::Manager;
 
 #[cfg(desktop)]
@@ -127,18 +126,12 @@ pub fn run() {
             let state = app.state::<state::AppState>();
             let mut events = state.engine.subscribe();
             let handle = app.handle().clone();
-            let next_notification_id = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(1));
             let account_errors = state.account_errors.clone();
             let syncing_accounts = state.syncing_accounts.clone();
             let badge_tray = tray_slot.clone();
             tauri::async_runtime::spawn(async move {
-                use std::collections::HashMap;
-                use std::sync::atomic::Ordering as AtomicOrdering;
                 use tauri::Emitter;
-                let mut notified_messages = HashSet::new();
-                let mut grouped_counts: HashMap<String, u32> = HashMap::new();
-                let mut grouped_ids: HashMap<String, u32> = HashMap::new();
-                let next_notification_id = next_notification_id.clone();
+                let mut bookkeeping = notifications::NotificationBookkeeping::new(1);
 
                 fn update_unread_badge(
                     handle: &tauri::AppHandle,
@@ -185,55 +178,28 @@ pub fn run() {
                                         state.store.folder_role(folder).ok().flatten();
                                     let logical_id = envelope.logical_id(account_id);
                                     let unread = !envelope.flags.contains(&Flag::Seen);
-                                    if notifications::should_notify(&settings, folder_role, unread)
-                                        && notifications::claim_notification(
-                                            &mut notified_messages,
-                                            &logical_id,
-                                        )
-                                    {
-                                        let from = envelope
-                                            .from
-                                            .first()
-                                            .map(|a| {
-                                                a.name.clone().unwrap_or_else(|| a.addr.clone())
-                                            })
-                                            .unwrap_or_default();
-                                        if settings.grouped_per_account {
-                                            let count = grouped_counts
-                                                .entry(account_id.clone())
-                                                .or_insert(0);
-                                            *count += 1;
-                                            let id = *grouped_ids
-                                                .entry(account_id.clone())
-                                                .or_insert_with(|| {
-                                                    next_notification_id
-                                                        .fetch_add(1, AtomicOrdering::Relaxed)
-                                                });
-                                            notifications::grouped_mail_notification(
-                                                &account_name(&handle, account_id),
-                                                *count,
-                                                &settings,
-                                                &envelope.subject,
-                                                &from,
-                                                id,
-                                            );
-                                        } else {
-                                            notifications::new_mail_notification(
-                                                &settings,
-                                                folder_role,
-                                                unread,
-                                                &envelope.subject,
-                                                &from,
-                                            );
-                                        }
+                                    let from = envelope
+                                        .from
+                                        .first()
+                                        .map(|a| a.name.clone().unwrap_or_else(|| a.addr.clone()))
+                                        .unwrap_or_default();
+                                    let mut show = |draft: notifications::NotificationDraft| {
+                                        notifications::show_notification(&draft);
+                                    };
+                                    let notified = notifications::notify_new_mail(
+                                        &mut bookkeeping,
+                                        &settings,
+                                        &account_name(&handle, account_id),
+                                        account_id,
+                                        &logical_id,
+                                        folder_role,
+                                        unread,
+                                        &envelope.subject,
+                                        &from,
+                                        &mut show,
+                                    );
+                                    if notified {
                                         update_unread_badge(&handle, &badge_tray);
-                                        notifications::new_mail_notification(
-                                            &settings,
-                                            folder_role,
-                                            unread,
-                                            &envelope.subject,
-                                            &from,
-                                        );
                                     }
                                 }
                                 origami_core::sync::SyncEvent::Error {
@@ -252,7 +218,7 @@ pub fn run() {
                                 } => {
                                     syncing_accounts.lock().unwrap().remove(account_id);
                                     account_errors.lock().unwrap().remove(account_id);
-                                    grouped_counts.remove(account_id);
+                                    bookkeeping.forget_account(account_id);
                                     update_unread_badge(&handle, &badge_tray);
                                 }
                                 _ => {}
@@ -305,7 +271,7 @@ pub fn run() {
             commands::list_keywords,
             commands::list_correspondents,
             commands::save_composer_draft,
-            commands::load_composer_draft,
+            commands::list_composer_drafts,
             commands::sync_composer_draft,
             commands::delete_composer_draft,
             commands::send_message,

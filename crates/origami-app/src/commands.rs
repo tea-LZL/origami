@@ -513,6 +513,25 @@ struct LoadedAttachment {
     bytes: Vec<u8>,
 }
 
+/// The message the reader is showing. That can live in the display LRU, or
+/// only on another physical copy of the same mail, without a cache row for
+/// this folder and UID.
+fn opened_parsed_message(
+    lru: &mut crate::display_lru::DisplayLru,
+    store: &origami_core::store::Store,
+    folder_id: &str,
+    server_uid: u32,
+) -> CmdResult<ParsedMessage> {
+    let key = display_key(folder_id, server_uid);
+    if let Some(parsed) = lru.get(&key) {
+        return Ok(parsed);
+    }
+    store
+        .parsed_message_for_logical_message(folder_id, server_uid)
+        .map_err(err)?
+        .ok_or_else(|| "message not opened yet".to_string())
+}
+
 async fn load_attachment(
     state: &AppState,
     folder_id: &str,
@@ -521,11 +540,10 @@ async fn load_attachment(
 ) -> CmdResult<LoadedAttachment> {
     let (account_config_id, _account_db_id, mailbox) =
         state.resolve_folder(folder_id).map_err(err)?;
-    let parsed = state
-        .store
-        .parsed_message(folder_id, server_uid)
-        .map_err(err)?
-        .ok_or("message not opened yet")?;
+    let parsed = {
+        let mut lru = state.display_lru.lock().unwrap();
+        opened_parsed_message(&mut lru, &state.store, folder_id, server_uid)?
+    };
     let attachment = parsed
         .attachments
         .iter()
@@ -1821,21 +1839,38 @@ pub fn list_correspondents(
 }
 
 #[tauri::command]
-pub fn save_composer_draft(state: State<'_, AppState>, draft: serde_json::Value) -> CmdResult<()> {
+pub fn save_composer_draft(
+    state: State<'_, AppState>,
+    id: String,
+    draft: serde_json::Value,
+) -> CmdResult<()> {
     state
         .store
-        .save_draft("composer", &serde_json::to_string(&draft).map_err(err)?)
+        .save_draft(&id, &serde_json::to_string(&draft).map_err(err)?)
         .map_err(err)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedComposerDraftDto {
+    pub id: String,
+    pub draft: serde_json::Value,
+}
+
+/// One unreadable row must not hide every other saved draft; skip it.
+fn parse_saved_composer_drafts(rows: Vec<(String, String)>) -> Vec<SavedComposerDraftDto> {
+    rows.into_iter()
+        .filter_map(|(id, json)| {
+            serde_json::from_str(&json)
+                .ok()
+                .map(|draft| SavedComposerDraftDto { id, draft })
+        })
+        .collect()
+}
+
 #[tauri::command]
-pub fn load_composer_draft(state: State<'_, AppState>) -> CmdResult<Option<serde_json::Value>> {
-    state
-        .store
-        .load_draft("composer")
-        .map_err(err)?
-        .map(|json| serde_json::from_str(&json).map_err(err))
-        .transpose()
+pub fn list_composer_drafts(state: State<'_, AppState>) -> CmdResult<Vec<SavedComposerDraftDto>> {
+    Ok(parse_saved_composer_drafts(state.store.list_drafts().map_err(err)?))
 }
 
 #[derive(Deserialize)]
@@ -1883,8 +1918,8 @@ fn draft_recipients(value: &str) -> Vec<String> {
 }
 
 #[tauri::command]
-pub async fn sync_composer_draft(state: State<'_, AppState>) -> CmdResult<()> {
-    let Some(json) = state.store.load_draft("composer").map_err(err)? else {
+pub async fn sync_composer_draft(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    let Some(json) = state.store.load_draft(&id).map_err(err)? else {
         return Ok(());
     };
     let saved: PersistedComposerDraft = serde_json::from_str(&json).map_err(err)?;
@@ -1933,7 +1968,7 @@ pub async fn sync_composer_draft(state: State<'_, AppState>) -> CmdResult<()> {
         .ok_or("Drafts server did not return APPENDUID")?;
 
     if let Some((old_account, old_mailbox, old_uid)) =
-        state.store.draft_remote("composer").map_err(err)?
+        state.store.draft_remote(&id).map_err(err)?
     {
         if let Ok(old_backend) = state.backend(&old_account).await {
             let _ = old_backend.delete_messages(&old_mailbox, &[old_uid]).await;
@@ -1941,18 +1976,18 @@ pub async fn sync_composer_draft(state: State<'_, AppState>) -> CmdResult<()> {
     }
     state
         .store
-        .set_draft_remote("composer", &account_id, &drafts.name, new_uid)
+        .set_draft_remote(&id, &account_id, &drafts.name, new_uid)
         .map_err(err)
 }
 
 #[tauri::command]
-pub async fn delete_composer_draft(state: State<'_, AppState>) -> CmdResult<()> {
-    if let Some((account_id, mailbox, uid)) = state.store.draft_remote("composer").map_err(err)? {
+pub async fn delete_composer_draft(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    if let Some((account_id, mailbox, uid)) = state.store.draft_remote(&id).map_err(err)? {
         if let Ok(backend) = state.backend(&account_id).await {
             let _ = backend.delete_messages(&mailbox, &[uid]).await;
         }
     }
-    state.store.delete_draft("composer").map_err(err)
+    state.store.delete_draft(&id).map_err(err)
 }
 
 #[derive(Serialize)]
@@ -2088,6 +2123,96 @@ mod tests {
         let path =
             write_attachment_file(root.path(), "..", "application/octet-stream", 3, b"x").unwrap();
         assert_eq!(path.file_name().unwrap(), "attachment-3");
+    }
+
+    #[test]
+    fn opened_message_uses_the_copy_the_reader_already_showed() {
+        use origami_core::message::AttachmentMeta;
+        use origami_core::model::{Address, Envelope, Flag, MailboxRole};
+        use origami_core::store::Store;
+
+        let store = Store::open_in_memory().unwrap();
+        let account = store
+            .upsert_account("test", "Test", "t@example.org")
+            .unwrap();
+        let inbox = store
+            .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
+            .unwrap();
+        let archive = store
+            .upsert_folder(&account, "Archive", MailboxRole::Archive)
+            .unwrap();
+        let mut shown = Envelope {
+            id: "shown".into(),
+            mailbox_id: String::new(),
+            subject: "report".into(),
+            from: vec![Address {
+                name: None,
+                addr: "alice@example.org".into(),
+            }],
+            to: vec![],
+            date: None,
+            received_at: None,
+            flags: vec![Flag::Seen],
+            keywords: vec![],
+            has_attachment: true,
+            size: 100,
+            server_uid: Some(31),
+            message_id: Some("same@example.org".into()),
+            thread_id: Some("same@example.org".into()),
+            sources: vec![],
+        };
+        let mut cached_copy = shown.clone();
+        cached_copy.id = "copy".into();
+        cached_copy.server_uid = Some(32);
+        store.upsert_envelope(&inbox, &shown).unwrap();
+        store.upsert_envelope(&archive, &cached_copy).unwrap();
+        shown.server_uid = Some(31);
+        store
+            .set_parsed_message(
+                &archive,
+                32,
+                &ParsedMessage {
+                    attachments: vec![AttachmentMeta {
+                        index: 0,
+                        part_path: "2".into(),
+                        name: Some("report.pdf".into()),
+                        mime: "application/pdf".into(),
+                        size: 5,
+                        inline: false,
+                        cid: None,
+                    }],
+                    ..ParsedMessage::default()
+                },
+            )
+            .unwrap();
+
+        assert!(store.parsed_message(&inbox, 31).unwrap().is_none());
+        let mut lru = crate::display_lru::DisplayLru::new(1024, 8);
+        let parsed = opened_parsed_message(&mut lru, &store, &inbox, 31).unwrap();
+        assert_eq!(parsed.attachments[0].name.as_deref(), Some("report.pdf"));
+
+        lru.insert(
+            crate::display_lru::display_key(&inbox, 31),
+            ParsedMessage {
+                text: Some("from the open view".into()),
+                ..ParsedMessage::default()
+            },
+        );
+        let from_view = opened_parsed_message(&mut lru, &store, &inbox, 31).unwrap();
+        assert_eq!(from_view.text.as_deref(), Some("from the open view"));
+    }
+
+    #[test]
+    fn saved_drafts_skip_unparsable_rows() {
+        let rows = vec![
+            ("good".to_string(), "{\"a\":1}".to_string()),
+            ("bad".to_string(), "{oops".to_string()),
+        ];
+
+        let parsed = parse_saved_composer_drafts(rows);
+
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].id, "good");
     }
 
     #[test]

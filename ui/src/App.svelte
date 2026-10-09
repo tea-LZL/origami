@@ -5,8 +5,8 @@
     app,
     applyThemePreference,
     bootstrap,
-    closeComposer,
     commitPaneWidth,
+    minimizeComposer,
     openComposer,
     updatePaneWidth,
     undoLastMessageAction,
@@ -17,6 +17,7 @@
   import Sidebar from "./lib/Sidebar.svelte";
   import ThreadList from "./lib/ThreadList.svelte";
   import MessageView from "./lib/MessageView.svelte";
+  import ComposeTabs from "./lib/ComposeTabs.svelte";
   import AddAccount from "./lib/AddAccount.svelte";
   import Preferences from "./lib/Preferences.svelte";
   import Outbox from "./lib/Outbox.svelte";
@@ -30,12 +31,16 @@
 
   let info: AppInfo | null = $state(null);
   let addAccount: { show: () => void } | null = $state(null);
-  let ComposerComponent: Component | null = $state(null);
+  let ComposePaneComponent: Component | null = $state(null);
+  const activeComposer = $derived(
+    app.value.composerSessions.find((session) => session.id === app.value.activeComposerId)
+      ?? null,
+  );
 
   $effect(() => {
-    if (app.value.composerOpen && !ComposerComponent) {
-      import("./lib/Composer.svelte").then((module) => {
-        ComposerComponent = module.default;
+    if (app.value.composerSessions.length > 0 && !ComposePaneComponent) {
+      import("./lib/ComposePane.svelte").then((module) => {
+        ComposePaneComponent = module.default;
       });
     }
   });
@@ -69,9 +74,9 @@
         app.value.outboxAccountId = null;
         return;
       }
-      if (app.value.composerOpen) {
+      if (app.value.activeComposerId !== null) {
         e.preventDefault();
-        closeComposer();
+        minimizeComposer();
       }
       return;
     }
@@ -86,7 +91,7 @@
       && !e.shiftKey
       && ["1", "2", "3"].includes(e.key)
     ) {
-      if (protectedTarget || app.value.composerOpen || app.value.preferencesOpen || app.value.outboxAccountId) return;
+      if (protectedTarget || app.value.activeComposerId !== null || app.value.preferencesOpen || app.value.outboxAccountId) return;
       e.preventDefault();
       focusNavigationTarget(e.key as NavigationShortcut, app.value.selectedEnvelope?.id ?? null);
       return;
@@ -98,7 +103,7 @@
       || e.altKey
       || target?.closest("input, textarea, select, button, [contenteditable='true'], [role='dialog'], [role='menu']")
     ) return;
-    if (e.key === "n" && !app.value.composerOpen) {
+    if (e.key === "n") {
       e.preventDefault();
       openComposer();
     }
@@ -129,6 +134,7 @@
         class:two-pane={app.value.layout === "two-pane"}
         class:reading={app.value.layout === "reading"}
         class:message-active={app.value.selectedEnvelope !== null}
+        class:composer-active={activeComposer !== null}
         style={`--sidebar-width: ${app.value.sidebarWidth}px; --thread-width: ${app.value.threadListWidth}px;`}
       >
         {#if app.value.layout === "three-pane"}
@@ -153,12 +159,20 @@
             onResizeEnd={commitPaneWidth}
           />
         {/if}
-        <MessageView />
+        <div class="read-column">
+          <div class="read-surface" class:read-hidden={activeComposer !== null}>
+            <MessageView />
+          </div>
+          {#if ComposePaneComponent && activeComposer}
+            <ComposePaneComponent />
+          {/if}
+          <ComposeTabs />
+        </div>
       </div>
     {/if}
   </main>
 
-  {#if info && app.value.ready && app.value.accounts.length > 0}
+  {#if info && app.value.ready && app.value.accounts.length > 0 && activeComposer === null}
     <button
       class="fab"
       type="button"
@@ -167,9 +181,6 @@
       aria-keyshortcuts="N"
       title="Compose new message (N)"
     >Compose</button>
-  {/if}
-  {#if ComposerComponent}
-    <ComposerComponent />
   {/if}
   <AddAccount bind:this={addAccount} />
   <Preferences />
@@ -197,6 +208,9 @@
    .shell { height: 100%; display: flex; flex-direction: column; background: transparent; }
   .content { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   .pane-row { flex: 1; display: flex; min-height: 0; animation: surface-in var(--transition-med) both; }
+  .read-column { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .read-surface { flex: 1; min-height: 0; display: flex; }
+  .read-hidden { display: none; }
    .loading, .empty {
     flex: 1; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 12px;
@@ -311,6 +325,9 @@
       display: none;
     }
     .pane-row.message-active:not(.reading) :global(.threadlist) {
+      display: none;
+    }
+    .pane-row.composer-active :global(.threadlist) {
       display: none;
     }
     .fab {

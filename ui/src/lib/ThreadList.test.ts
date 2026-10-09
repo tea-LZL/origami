@@ -29,7 +29,7 @@ const mocks = vi.hoisted(() => ({
       unreadOnly: false,
       theme: "system" as const,
       selectingAll: false,
-      composerOpen: false,
+      activeComposerId: null,
     },
   },
   clearMessageSelection: vi.fn(),
@@ -92,7 +92,7 @@ describe("ThreadList", () => {
       unreadOnly: false,
       theme: "system",
       selectingAll: false,
-      composerOpen: false,
+      activeComposerId: null,
     };
     mocks.setUnreadOnly = vi.fn();
   });
@@ -164,6 +164,34 @@ describe("ThreadList", () => {
     expect(unreadLabel).toHaveTextContent("Unread");
     expect(document.querySelector(".unread-pip")).toBeTruthy();
     expect(document.querySelectorAll(".unread-pip")).toHaveLength(1);
+  });
+
+  it("shows row dates in local time", () => {
+    mocks.app.value.envelopes = [
+      {
+        id: "unread-1",
+        mailboxId: "inbox",
+        subject: "Unread subject",
+        from: [{ name: "Alice", addr: "alice@example.org" }],
+        to: [],
+        date: "Fri, 18 Sep 2026 09:52:41 +0000 (UTC)",
+        flags: [],
+        hasAttachment: false,
+        size: 10,
+        serverUid: 1,
+        messageId: "unread@example.org",
+        threadId: "thread-unread",
+        keywords: [],
+        sources: [{ mailboxId: "inbox", serverUid: 1 }],
+      },
+    ];
+    render(ThreadList);
+    const expected = new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date("2026-09-18T09:52:41.000Z"));
+    expect(document.querySelector(".date")).toHaveTextContent(expected);
+    expect(document.querySelector(".date")?.textContent).not.toMatch(/UTC|\+0000/);
   });
 
   it("labels_search_context_and_total", () => {

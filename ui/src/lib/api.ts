@@ -117,6 +117,11 @@ export interface SavedComposerDraft {
   };
 }
 
+export interface StoredComposerDraft {
+  id: string;
+  draft: SavedComposerDraft;
+}
+
 export interface SavedSearch {
   id: string;
   name: string;
@@ -194,11 +199,11 @@ export const api = {
   deleteSavedSearch: (id: string) => invoke<void>("delete_saved_search", { id }),
   listKeywords: () => invoke<KeywordCount[]>("list_keywords"),
   listCorrespondents: (limit = 200) => invoke<Correspondent[]>("list_correspondents", { limit }),
-  saveComposerDraft: (draft: SavedComposerDraft) =>
-    invoke<void>("save_composer_draft", { draft }),
-  loadComposerDraft: () => invoke<SavedComposerDraft | null>("load_composer_draft"),
-  syncComposerDraft: () => invoke<void>("sync_composer_draft"),
-  deleteComposerDraft: () => invoke<void>("delete_composer_draft"),
+  saveComposerDraft: (id: string, draft: SavedComposerDraft) =>
+    invoke<void>("save_composer_draft", { id, draft }),
+  listComposerDrafts: () => invoke<StoredComposerDraft[]>("list_composer_drafts"),
+  syncComposerDraft: (id: string) => invoke<void>("sync_composer_draft", { id }),
+  deleteComposerDraft: (id: string) => invoke<void>("delete_composer_draft", { id }),
   sendMessage: (draft: Draft) => invoke<{ queued: boolean }>("send_message", { draft }),
   removeAccount: (accountId: string) => invoke<AccountDto[]>("remove_account", { accountId }),
   accountStatuses: () => invoke<Record<string, AccountStatusDto>>("account_statuses"),

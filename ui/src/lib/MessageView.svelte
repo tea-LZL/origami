@@ -3,6 +3,7 @@
   import {
     app,
     clearMessageView,
+    minimizeComposer,
     moveSelectedToRole,
     openReplyComposer,
     selectEnvelopeExclusive,
@@ -24,6 +25,7 @@
   import { messageBodyKeyboard } from "./navigation";
   import OrigamiArtwork from "./OrigamiArtwork.svelte";
   import ActionIcon from "./ActionIcon.svelte";
+  import { formatMessageDate } from "./formatDate";
 
   let contentMode = $state<"html" | "text">("html");
   let detailsOpen = $state(false);
@@ -218,6 +220,7 @@
   }
 
   function backToMessages() {
+    if (app.value.activeComposerId !== null) minimizeComposer();
     clearMessageView();
     if (app.value.layout === "reading") setLayout("two-pane");
   }
@@ -381,7 +384,7 @@
       <div class="meta">
         <span class="from">{fromText()}</span>
         {#if fromAddressText()}<span class="address" title="From address">{fromAddressText()}</span>{/if}
-        <span class="date">{env.date ?? ""}</span>
+        <span class="date">{formatMessageDate(env.date)}</span>
         {#if app.value.messageLoading}
           <span role="status" aria-live="polite">Fetching…</span>
         {:else}

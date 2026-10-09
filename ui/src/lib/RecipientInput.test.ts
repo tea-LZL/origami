@@ -44,19 +44,40 @@ describe("RecipientInput", () => {
     expect(onChange).toHaveBeenCalledWith("bob@example.org");
   });
 
-  it("dedupes_and_ignores_non_addresses", async () => {
+  it("commits_invalid_token_as_flagged_chip", async () => {
+    const onChange = vi.fn();
+    render(RecipientInput, {
+      props: { value: "", label: "To", correspondents, onChange },
+    });
+
+    const input = screen.getByRole("textbox", { name: "To" });
+    await fireEvent.input(input, { target: { value: "not-an-address" } });
+    await fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onChange).toHaveBeenCalledWith("not-an-address");
+  });
+
+  it("marks_invalid_chips_for_the_sender", () => {
+    render(RecipientInput, {
+      props: { value: "not-an-address", label: "To", correspondents },
+    });
+
+    const chip = screen.getByText("not-an-address");
+    expect(chip.closest(".chip")).not.toBeNull();
+    expect(chip).toHaveAttribute("aria-invalid", "true");
+    expect(chip).toHaveAttribute("title", "Not a valid email address");
+  });
+
+  it("still_dedupes_already_present_recipients", async () => {
     const onChange = vi.fn();
     render(RecipientInput, {
       props: { value: "alice@example.org", label: "To", correspondents, onChange },
     });
 
     const input = screen.getByRole("textbox", { name: "To" });
-    await fireEvent.input(input, { target: { value: "not-an-address" } });
-    await fireEvent.keyDown(input, { key: "Enter" });
-    expect(onChange).not.toHaveBeenCalled();
-
     await fireEvent.input(input, { target: { value: "alice@example.org" } });
     await fireEvent.keyDown(input, { key: "Enter" });
+
     expect(onChange).not.toHaveBeenCalled();
   });
 

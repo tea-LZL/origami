@@ -2,8 +2,12 @@
 title: UI state and rendering
 type: architecture
 status: current
-updated: 2026-10-06
+updated: 2026-10-08
 sources:
+  - ui/src/lib/ComposePane.svelte
+  - ui/src/lib/ComposeTabs.svelte
+  - ui/src/lib/stores.composer.test.ts
+  - docs/superpowers/specs/2026-10-08-compose-tabs-and-drafts-design.md
   - ui/src/lib/stores.svelte.ts
   - ui/src/lib/ThreadList.svelte
   - ui/src/lib/VirtualList.svelte
@@ -22,9 +26,10 @@ sources:
   - ui/src/lib/messageHtml.ts
   - ui/src/lib/MessageView.svelte
   - ui/src/lib/attachmentOpen.ts
+  - ui/src/lib/formatDate.ts
+  - crates/origami-app/src/commands.rs
   - ui/src/lib/remoteContent.ts
   - crates/origami-core/src/store.rs
-  - crates/origami-app/src/commands.rs
   - ui/package.json
   - docs/IMPROVEMENT_PLAN.md
 ---
@@ -45,7 +50,7 @@ Supporting modules: `threads.ts` (conversation projection), `tags.ts`, `navigati
 `remoteContent.ts`.
 
 Key components: `App.svelte`, `Sidebar.svelte`, `ThreadList.svelte`, `MessageView.svelte`,
-`Composer.svelte`, `Outbox.svelte`, `VirtualList.svelte`, `PaneSplitter.svelte`,
+`ComposePane.svelte`, `ComposeTabs.svelte`, `Outbox.svelte`, `VirtualList.svelte`, `PaneSplitter.svelte`,
 `Preferences.svelte`, `AccountSettings.svelte`, `AddAccount.svelte`,
 `ActionIcon.svelte` (inline-SVG action glyphs), `OrigamiArtwork.svelte` (empty/setup art).
 
@@ -128,16 +133,41 @@ with **DOMPurify** (a production dependency) and rendered under a restrictive CS
   preview in the reading pane from a `data:` URL built only from a MIME token
   (`attachmentOpen.ts`). Other types, and oversized previews, are written under the app
   cache and opened with the system handler (`open_attachment`). The webview download
-  attribute is not used. Filenames are reduced to one path segment before the write;
+  attribute is not used. Open and view resolve the message the reader is showing:
+  the in-memory display cache for this folder and UID, then a cached parse of
+  another physical copy of the same mail (`opened_parsed_message` in
+  `commands.rs`). Bytes still come from this copy's stored body, or an IMAP
+  section fetch of this mailbox and UID. Filenames are reduced to one path
+  segment before the write;
 - intercept links, validate external URLs, open them through the **system** handler, and
   never navigate the app webview;
 - serve `cid:` through a Tauri custom protocol scoped per message.
 
-## Composer
+## Composer sessions
 
-`Composer.svelte` uses **TipTap** (`@tiptap/core`, `@tiptap/pm`, `@tiptap/starter-kit`),
-serialized by `origami-core::compose` into a multipart message. Drafts autosave locally,
-are persisted in SQLite, and are replaced in the account Drafts mailbox via APPENDUID.
+Compose is a docked surface in the read column, not a modal: `ComposePane.svelte`
+renders the active session and `ComposeTabs.svelte` pins one tab per open session to
+the bottom of the read pane. `State.composerSessions` holds independent sessions
+(`ComposerSession`: own account, draft fields, attachments, threading, save/sync
+state); new / reply / forward each create a session. Selecting a message sets
+`activeComposerId = null`, so the strip stays while the message takes the pane.
+
+Drafts persist per session id in the SQLite `drafts` table (local source of truth)
+through `save_composer_draft(id, draft)` / `list_composer_drafts` /
+`sync_composer_draft(id)` / `delete_composer_draft(id)`
+(`crates/origami-app/src/commands.rs`). Autosave debounces 400 ms per session and
+skips blank sessions; every stored draft reopens as a minimized tab on bootstrap
+(the legacy single `"composer"` row and `origami-composer-draft` localStorage key
+are migrated once, and blank ghosts are deleted). Send and discard delete the row
+and its remote copy.
+
+`ComposePane.svelte` uses **TipTap** (`@tiptap/core`, `@tiptap/pm`,
+`@tiptap/starter-kit`; Link/Underline/UndoRedo come from StarterKit v3), serialized
+by `origami-core::compose` into a multipart message. Recipient chips flag invalid
+addresses, Cc/Bcc collapse, attachments support drag-and-drop with image thumbnails,
+and the footer reports local save and server-sync state per session. The server
+Drafts copy is replaced via APPENDUID per draft; server-side draft rows remain
+read-only messages (reopening them into a session is not built).
 
 ## Themes and the palette system
 
@@ -177,7 +207,10 @@ provider logic.
 `MessageView.svelte` paints the header (subject, sender, date, snippet) from
 `selectedEnvelope` immediately while the body loads — the skeleton is confined to the body
 region — and switches to the message DTO when it arrives. Message-dependent controls stay
-gated on the loaded message; reply clicks during load are safe no-ops.
+gated on the loaded message; reply clicks during load are safe no-ops. Envelope `date`
+headers (RFC 5322) are parsed and shown in the runtime locale and local timezone in the
+thread list, the reading pane, and reply attribution (`formatDate.ts`); a trailing zone
+comment such as `(UTC)` is not displayed.
 
 ## Motion and accessibility
 
