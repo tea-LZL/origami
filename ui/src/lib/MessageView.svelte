@@ -22,7 +22,7 @@
     REMOTE_CONTENT_POLICY_EVENT,
   } from "./remoteContent";
   import { mergeThreadMembers, threadMembers } from "./threads";
-  import { messageBodyKeyboard } from "./navigation";
+  import { handleMessageBodyKeydown, messageBodyKeyboard, scrollMessageBody } from "./navigation";
   import OrigamiArtwork from "./OrigamiArtwork.svelte";
   import ActionIcon from "./ActionIcon.svelte";
   import { formatMessageDate } from "./formatDate";
@@ -33,8 +33,8 @@
   let remoteContentAllowed = $state(false);
   let allowedRemoteOrigins = $state<string[]>([]);
   let senderRemoteContentAllowed = $state(false);
-  let frameResizeObserver: ResizeObserver | null = null;
   let emailFrame: HTMLIFrameElement | null = null;
+  let bodyEl: HTMLDivElement | null = $state(null);
   let preview = $state<{
     index: number;
     name: string;
@@ -77,6 +77,18 @@
       event.preventDefault();
       setPreferences({ messageZoom: 100 });
     }
+  }
+
+  function onPaneWheel(event: WheelEvent) {
+    if (!bodyEl) return;
+    const target = event.target as Element | null;
+    if (target?.closest(".attachment-view")) return;
+    if (showsFrame) {
+      scrollMessageBody(bodyEl, event.deltaY);
+      return;
+    }
+    if (target?.closest(".body")) return;
+    bodyEl.scrollTop += event.deltaY;
   }
 
   $effect(() => {
@@ -133,6 +145,7 @@
   });
 
   const safeText = $derived(app.value.message?.text ?? "");
+  const showsFrame = $derived(Boolean(safeHtml.html) && (contentMode === "html" || !safeText));
   const conversation = $derived(
     mergeThreadMembers(
       threadMembers(app.value.envelopes, app.value.selectedEnvelope),
@@ -166,7 +179,6 @@
   }
 
   function bindEmailFrame(event: Event) {
-    frameResizeObserver?.disconnect();
     const frame = event.currentTarget;
     if (!(frame instanceof HTMLIFrameElement)) return;
     const document = frame.contentDocument;
@@ -175,21 +187,11 @@
     document.documentElement.style.fontSize = `${app.value.messageZoom}%`;
 
     document.addEventListener("click", openExternalLink);
-    const resize = () => {
-      const height = Math.max(
-        document.documentElement.scrollHeight,
-        document.body?.scrollHeight ?? 0,
-      );
-      frame.style.height = `${Math.max(180, height)}px`;
-    };
-    frameResizeObserver = typeof ResizeObserver === "undefined"
-      ? null
-      : new ResizeObserver(resize);
-    frameResizeObserver?.observe(document.documentElement);
-    requestAnimationFrame(resize);
+    document.addEventListener("keydown", (keyEvent) => {
+      onBodyKeydown(keyEvent);
+      if (bodyEl) handleMessageBodyKeydown(keyEvent, bodyEl);
+    });
   }
-
-  $effect(() => () => frameResizeObserver?.disconnect());
 
   function headerEnvelope() {
     return app.value.message?.envelope ?? app.value.selectedEnvelope;
@@ -307,7 +309,7 @@
   }
 </script>
 
-<section class="message">
+<section class="message" onwheel={onPaneWheel}>
   {#if !app.value.message && !app.value.selectedEnvelope}
     <div class="empty">
       <OrigamiArtwork variant="empty" theme={app.value.theme} className="message-empty-art" />
@@ -463,13 +465,15 @@
       {#key env.id}
       <div
         class="body"
+        class:scrollable={!showsFrame}
         data-navigation="message-body"
         tabindex="-1"
         aria-label="Message body"
         style:font-size="{app.value.messageZoom ?? 100}%"
+        bind:this={bodyEl}
         use:messageBodyKeyboard
       >
-        {#if safeHtml.html && (contentMode === "html" || !safeText)}
+        {#if showsFrame}
           <iframe
             class="email-frame"
             title="Email HTML body"
@@ -573,8 +577,9 @@
     min-width: 0;
     min-height: 0;
     width: 100%;
-    overflow-y: auto;
-    scrollbar-gutter: stable;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     max-width: min(100%, var(--message-measure));
     margin-inline: auto;
     padding: 18px 30px 28px;
@@ -582,6 +587,10 @@
     background: var(--bg-raised);
     box-shadow: inset 0 1px var(--paper-highlight);
     animation: fade-in var(--transition-fast) both;
+  }
+  .message > .body.scrollable {
+    overflow-y: auto;
+    scrollbar-gutter: stable;
   }
   @keyframes fade-in {
     from { opacity: 0.4; }
@@ -735,8 +744,8 @@
     width: 100%;
     max-width: min(100%, var(--message-measure));
     margin-inline: auto;
-    min-height: 180px;
-    height: 180px;
+    flex: 1 1 auto;
+    min-height: 0;
     border: 1px solid color-mix(in oklab, var(--border) 70%, var(--paper-highlight));
     border-radius: 0 0 var(--radius-lg) var(--radius-lg);
     background: var(--bg-raised);

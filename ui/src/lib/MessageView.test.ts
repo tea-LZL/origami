@@ -117,6 +117,19 @@ describe("MessageView", () => {
     expect(frame.getAttribute("srcdoc")).toContain("Content-Security-Policy");
   });
 
+  it("forwards wheel over the pane chrome to the email frame", async () => {
+    const { container } = render(MessageView);
+    const frame = screen.getByTitle("Email HTML body") as HTMLIFrameElement;
+    const win = frame.contentWindow;
+    expect(win).toBeTruthy();
+    const scrollBy = vi.fn();
+    Object.defineProperty(win, "scrollBy", { value: scrollBy, configurable: true });
+
+    await fireEvent.wheel(container.querySelector(".message")!, { deltaY: 120 });
+
+    expect(scrollBy).toHaveBeenCalledWith({ top: 120, left: 0 });
+  });
+
   it("shows the sender address in the message metadata", () => {
     render(MessageView);
 

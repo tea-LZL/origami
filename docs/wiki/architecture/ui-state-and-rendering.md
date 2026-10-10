@@ -2,7 +2,7 @@
 title: UI state and rendering
 type: architecture
 status: current
-updated: 2026-10-08
+updated: 2026-10-10
 sources:
   - ui/src/lib/ComposePane.svelte
   - ui/src/lib/ComposeTabs.svelte
@@ -25,6 +25,7 @@ sources:
   - ui/src/lib/OrigamiArtwork.svelte
   - ui/src/lib/messageHtml.ts
   - ui/src/lib/MessageView.svelte
+  - ui/src/lib/navigation.ts
   - ui/src/lib/attachmentOpen.ts
   - ui/src/lib/formatDate.ts
   - crates/origami-app/src/commands.rs
@@ -142,6 +143,15 @@ with **DOMPurify** (a production dependency) and rendered under a restrictive CS
 - intercept links, validate external URLs, open them through the **system** handler, and
   never navigate the app webview;
 - serve `cid:` through a Tauri custom protocol scoped per message.
+
+The HTML body scrolls **inside** the sandboxed iframe document, not in a nested wrapper
+scroller: `MessageView.svelte` sizes the frame to the pane and the email document owns
+its scrollbar (the composited fast path on WebKitGTK), so the reading pane no longer
+paints a giant cross-document iframe on the main thread. Plain-text bodies keep the
+wrapper scroller. `navigation.ts` `scrollMessageBody` dispatches to whichever surface is
+active, and `MessageView` forwards wheel events over the header/footer plus keydown from
+the frame document so the pane behaves as one scroll surface and `J`/`K`, zoom, and
+`Alt+3` keep working after focus enters the email.
 
 ## Composer sessions
 

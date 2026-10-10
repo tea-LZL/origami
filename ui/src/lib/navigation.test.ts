@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   focusNavigationTarget,
   handleMessageBodyKeydown,
   handleSidebarKeydown,
+  scrollMessageBody,
 } from "./navigation";
 
 afterEach(() => {
@@ -77,5 +78,37 @@ describe("focusNavigationTarget", () => {
     const up = new KeyboardEvent("keydown", { key: "k", cancelable: true });
     handleMessageBodyKeydown(up, body);
     expect(body.scrollTop).toBe(100);
+  });
+
+  it("scrolls the email frame when the body hosts one", () => {
+    const scrollBy = vi.fn();
+    const frame = { contentWindow: { scrollBy } };
+    const node = {
+      clientHeight: 500,
+      scrollTop: 100,
+      querySelector: (selector: string) => (selector === "iframe" ? frame : null),
+    } as unknown as HTMLElement;
+
+    const down = new KeyboardEvent("keydown", { key: "j", cancelable: true });
+    handleMessageBodyKeydown(down, node);
+
+    expect(down.defaultPrevented).toBe(true);
+    expect(scrollBy).toHaveBeenCalledWith({ top: 400, left: 0 });
+    expect(node.scrollTop).toBe(100);
+  });
+
+  it("falls back to element scroll when no frame is present", () => {
+    const scrollBy = vi.fn();
+    const frame = { contentWindow: { scrollBy } };
+    const withFrame = {
+      querySelector: (selector: string) => (selector === "iframe" ? frame : null),
+    } as unknown as HTMLElement;
+    expect(scrollMessageBody(withFrame, 240)).toBe(true);
+    expect(scrollBy).toHaveBeenCalledWith({ top: 240, left: 0 });
+
+    const node = document.createElement("div");
+    node.scrollTop = 30;
+    expect(scrollMessageBody(node, 240)).toBe(true);
+    expect(node.scrollTop).toBe(270);
   });
 });

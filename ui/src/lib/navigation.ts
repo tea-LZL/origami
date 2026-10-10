@@ -66,6 +66,21 @@ export const handleSidebarKeydown: KeyboardAction = (event, node) => {
   buttons[nextIndex].click();
 };
 
+/**
+ * Scroll the message body by `delta` px. The HTML body lives in a sandboxed
+ * iframe that owns its own document scroll (the composited fast path); the
+ * plain-text body scrolls the wrapper element directly.
+ */
+export function scrollMessageBody(node: HTMLElement, delta: number): boolean {
+  const contentWindow = node.querySelector("iframe")?.contentWindow;
+  if (contentWindow) {
+    contentWindow.scrollBy({ top: delta, left: 0 });
+    return true;
+  }
+  node.scrollTop = Math.max(0, node.scrollTop + delta);
+  return true;
+}
+
 export const handleMessageBodyKeydown: KeyboardAction = (event, node) => {
   if (event.defaultPrevented) return;
   const direction = event.key === "j" || event.key === "ArrowDown"
@@ -77,7 +92,7 @@ export const handleMessageBodyKeydown: KeyboardAction = (event, node) => {
 
   event.preventDefault();
   const step = Math.max(120, node.clientHeight * 0.8);
-  node.scrollTop = Math.max(0, node.scrollTop + direction * step);
+  scrollMessageBody(node, direction * step);
 };
 
 export function sidebarKeyboard(node: HTMLElement) {
