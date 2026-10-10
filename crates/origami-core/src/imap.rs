@@ -77,6 +77,13 @@ impl ImapBackend {
             .any(|c| matches!(c, Capability::CondStore | Capability::QResync))
     }
 
+    /// Whether the server advertised QRESYNC at connect time. The QRESYNC/IDLE
+    /// watch stream (`io-imap`) only works on these servers; everything else
+    /// must poll (ADR-0003 §3).
+    pub fn supports_qresync(&self) -> bool {
+        capabilities_support_qresync(&self.capabilities)
+    }
+
     /// SELECT a mailbox, requesting CONDSTORE data when supported.
     pub async fn select_folder(&self, mailbox: &str, condstore: bool) -> Result<SelectInfo> {
         let mailbox = mailbox.to_string();
@@ -232,13 +239,20 @@ impl ImapBackend {
     /// watch on `mailbox`. Fully blocking — call from a blocking worker
     /// (`spawn_blocking`); the stream yields envelope/flag/expunge
     /// events until closed.
+    ///
+    /// Returns `Ok(None)` when the server does not advertise QRESYNC, so the
+    /// caller can fall back to polling without treating it as an error.
     pub fn watch_mailbox_blocking(
         config: &ImapConfig,
         mailbox: &str,
-    ) -> Result<ImapMailboxWatchStream> {
+    ) -> Result<Option<ImapMailboxWatchStream>> {
         let (client, capabilities) = connect_blocking(config)?;
+        if !capabilities_support_qresync(&capabilities) {
+            return Ok(None);
+        }
         client
             .watch_mailbox(parse_mailbox(mailbox)?, &capabilities)
+            .map(Some)
             .map_err(backend_err)
     }
 
@@ -794,6 +808,13 @@ impl MailBackend for ImapBackend {
 
 fn mailbox_is_selectable(attributes: &[FlagNameAttribute<'_>]) -> bool {
     !attributes.contains(&FlagNameAttribute::Noselect)
+}
+
+/// QRESYNC gate for the IDLE watch stream (ADR-0003 §3).
+fn capabilities_support_qresync(capabilities: &[Capability<'static>]) -> bool {
+    capabilities
+        .iter()
+        .any(|c| matches!(c, Capability::QResync))
 }
 
 // ------------------------------------------------------------------
@@ -1365,5 +1386,16 @@ mod tests {
         let original = "旅行 & プロジェクト";
         let mailbox: ImapMailbox<'static> = original.to_string().try_into().unwrap();
         assert_eq!(mailbox_name(&mailbox), original);
+    }
+
+    #[test]
+    fn qresync_capability_gates_the_watch_stream() {
+        assert!(!capabilities_support_qresync(&[]));
+        assert!(!capabilities_support_qresync(&[Capability::CondStore]));
+        assert!(capabilities_support_qresync(&[Capability::QResync]));
+        assert!(capabilities_support_qresync(&[
+            Capability::Idle,
+            Capability::QResync,
+        ]));
     }
 }

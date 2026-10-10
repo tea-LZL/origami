@@ -1,7 +1,8 @@
 //! Property tests for the pure sync planner (ADR-0003).
 
+use origami_core::imap::SelectInfo;
 use origami_core::model::SyncState;
-use origami_core::sync::{plan_sync, SyncAction};
+use origami_core::sync::{inbox_needs_sync, plan_sync, SyncAction};
 use proptest::prelude::*;
 
 fn arb_state() -> impl Strategy<Value = SyncState> {
@@ -76,4 +77,73 @@ proptest! {
             )));
         }
     }
+}
+
+fn checkpoint(uv: u32, modseq: u64) -> SyncState {
+    SyncState {
+        uid_validity: uv,
+        highest_modseq: modseq,
+        last_uid: 1,
+    }
+}
+
+fn server(uv: u32, exists: u32, modseq: Option<u64>) -> SelectInfo {
+    SelectInfo {
+        exists,
+        uid_validity: Some(uv),
+        highest_modseq: modseq,
+    }
+}
+
+/// INBOX poll decision: no checkpoint means we have never synced this box.
+#[test]
+fn inbox_poll_without_checkpoint_syncs() {
+    assert!(inbox_needs_sync(None, &server(1, 0, Some(0)), 0));
+}
+
+/// A UIDVALIDITY flip always forces a sync, whatever the counts say.
+#[test]
+fn inbox_poll_uidvalidity_flip_syncs() {
+    let stored = checkpoint(7, 100);
+    assert!(inbox_needs_sync(
+        Some(&stored),
+        &server(8, 42, Some(100)),
+        42
+    ));
+}
+
+/// With CONDSTORE, a changed modseq is the signal to sync.
+#[test]
+fn inbox_poll_modseq_change_syncs() {
+    let stored = checkpoint(7, 100);
+    assert!(inbox_needs_sync(
+        Some(&stored),
+        &server(7, 42, Some(101)),
+        42
+    ));
+}
+
+/// Unchanged modseq means nothing changed, even if EXISTS is misleading.
+#[test]
+fn inbox_poll_steady_modseq_skips() {
+    let stored = checkpoint(7, 100);
+    assert!(!inbox_needs_sync(
+        Some(&stored),
+        &server(7, 42, Some(100)),
+        42
+    ));
+    // EXISTS drift is ignored while the modseq is authoritative.
+    assert!(!inbox_needs_sync(
+        Some(&stored),
+        &server(7, 99, Some(100)),
+        42
+    ));
+}
+
+/// Without a modseq, fall back to comparing EXISTS with the local count.
+#[test]
+fn inbox_poll_no_modseq_uses_exists() {
+    let stored = checkpoint(7, 0);
+    assert!(inbox_needs_sync(Some(&stored), &server(7, 99, None), 42));
+    assert!(!inbox_needs_sync(Some(&stored), &server(7, 42, None), 42));
 }

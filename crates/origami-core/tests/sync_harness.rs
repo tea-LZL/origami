@@ -483,7 +483,8 @@ async fn idle_watch_observes_append() {
     // Start the watch on a blocking thread.
     let watch_config = config.clone();
     let watcher = tokio::task::spawn_blocking(move || {
-        let stream = ImapBackend::watch_mailbox_blocking(&watch_config, MAILBOX)?;
+        let stream = ImapBackend::watch_mailbox_blocking(&watch_config, MAILBOX)?
+            .expect("Dovecot test server must advertise QRESYNC");
         // Wait for one event (the append below should trigger EnvelopeAdded).
         let event = stream.recv_timeout(std::time::Duration::from_secs(30));
         stream.close().ok();

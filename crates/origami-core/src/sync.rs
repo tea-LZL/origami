@@ -6,7 +6,8 @@
 //!
 //! M2 implements one-shot sync (`sync_account`) plus a watcher loop
 //! (`spawn_account`) that uses io-imap's QRESYNC/IDLE watch stream when
-//! the server offers it, falling back to a 60 s poll.
+//! the server offers it, falling back to a 60 s INBOX poll otherwise (and
+//! when the watch stream itself errors, e.g. io-imap's fatal read timeout).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -18,9 +19,9 @@ use tokio_util::sync::CancellationToken;
 use crate::backend::MailBackend;
 use crate::blob::BlobStore;
 use crate::config::AccountConfig;
-use crate::imap::ImapBackend;
+use crate::imap::{ImapBackend, SelectInfo};
 use crate::message::{parse as parse_message, parse_display, DisplayMessage, ParsedMessage};
-use crate::model::{Envelope, EnvelopeSource, Flag, Mailbox, OutboxOp, SyncState};
+use crate::model::{Envelope, EnvelopeSource, Flag, MailboxRole, OutboxOp, SyncState};
 use crate::smtp::OrigamiSmtp;
 use crate::store::{PrefetchCandidate, Store};
 use crate::{Error, Result, SmtpSender};
@@ -90,6 +91,12 @@ const PREFETCH_WINDOW: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const PREFETCH_MAX_MESSAGES: u32 = 500;
 const PREFETCH_MAX_MESSAGE_SIZE: u32 = 8 * 1024 * 1024;
 
+/// Fallback poll cadence for servers without QRESYNC (ADR-0003 §3).
+const POLL_INTERVAL: Duration = Duration::from_secs(60);
+/// Full-account convergence cadence: the IDLE watch timeout, reused by poll
+/// mode so non-INBOX folders still converge periodically.
+const FULL_SYNC_INTERVAL: Duration = Duration::from_secs(25 * 60);
+
 /// Decide the sync action for a folder.
 ///
 /// - `stored`: local checkpoint (`None` = never synced)
@@ -131,7 +138,72 @@ pub fn plan_sync(
     }
 }
 
-/// The synchronization engine: one store, one blob store, one event bus.
+/// Whether an INBOX poll observed a change that needs a folder sync.
+///
+/// - no stored checkpoint → sync (first observation)
+/// - UIDVALIDITY changed → sync (resync)
+/// - server reports a modseq and it differs → sync
+/// - otherwise fall back to an `EXISTS` vs local-count comparison, which also
+///   covers new mail and expunges when the server reports no modseq.
+pub fn inbox_needs_sync(
+    stored: Option<&SyncState>,
+    selected: &SelectInfo,
+    local_total: u32,
+) -> bool {
+    let Some(state) = stored else {
+        return true;
+    };
+    if state.uid_validity != selected.uid_validity.unwrap_or(0) {
+        return true;
+    }
+    if let Some(modseq) = selected.highest_modseq {
+        return modseq != state.highest_modseq;
+    }
+    selected.exists != local_total
+}
+
+/// Result of one blocking IDLE watch attempt.
+enum WatchAttempt {
+    /// An event arrived, or the watch window elapsed with no data.
+    Woke,
+    /// Server does not advertise QRESYNC; never attempt the watch again.
+    Unsupported,
+    /// The stream errored (e.g. io-imap's fatal 5 s read timeout); poll instead.
+    Failed,
+}
+
+/// Run the blocking QRESYNC/IDLE watch until the stream yields an event, the
+/// [`FULL_SYNC_INTERVAL`] window elapses, an error occurs, or `cancel` fires.
+fn watch_once(imap: &crate::config::ImapConfig, cancel: CancellationToken) -> WatchAttempt {
+    let stream = match ImapBackend::watch_mailbox_blocking(imap, "INBOX") {
+        Ok(Some(stream)) => stream,
+        Ok(None) => return WatchAttempt::Unsupported,
+        Err(..) => return WatchAttempt::Failed,
+    };
+    let deadline = std::time::Instant::now() + FULL_SYNC_INTERVAL;
+    loop {
+        if cancel.is_cancelled() {
+            let _ = stream.close();
+            return WatchAttempt::Failed;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = stream.close();
+            return WatchAttempt::Woke;
+        }
+        match stream.recv_timeout(Duration::from_secs(5)) {
+            Ok(Ok(_)) => return WatchAttempt::Woke,
+            Ok(Err(..)) => {
+                let _ = stream.close();
+                return WatchAttempt::Failed;
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                return WatchAttempt::Failed;
+            }
+        }
+    }
+}
+
 pub struct SyncEngine {
     store: Store,
     blobs: BlobStore,
@@ -359,7 +431,7 @@ impl SyncEngine {
                 self.store
                     .upsert_folder(&account_db_id, &mailbox.name, mailbox.role)?;
             match self
-                .sync_folder(&backend, account_config_id, &folder_db_id, &mailbox)
+                .sync_folder(&backend, account_config_id, &folder_db_id, &mailbox.name)
                 .await
             {
                 Ok(stats) => results.push((mailbox.name.clone(), stats)),
@@ -389,11 +461,10 @@ impl SyncEngine {
         backend: &ImapBackend,
         account_id: &str,
         folder_db_id: &str,
-        mailbox: &Mailbox,
+        mailbox_name: &str,
     ) -> Result<FolderSyncStats> {
         let condstore = backend.supports_condstore();
-        let selected =
-            with_network_timeout(backend.select_folder(&mailbox.name, condstore)).await?;
+        let selected = with_network_timeout(backend.select_folder(mailbox_name, condstore)).await?;
         let stored = self.store.sync_state(folder_db_id)?;
         let action = plan_sync(stored, selected.uid_validity, selected.exists, condstore);
 
@@ -404,13 +475,13 @@ impl SyncEngine {
             SyncAction::FullResync => {
                 stats.removed = self.store.clear_folder_messages(folder_db_id)? as u32;
                 stats.added = self
-                    .initial_sync(backend, folder_db_id, &mailbox.name)
+                    .initial_sync(backend, folder_db_id, mailbox_name)
                     .await?;
             }
 
             SyncAction::InitialSync => {
                 stats.added = self
-                    .initial_sync(backend, folder_db_id, &mailbox.name)
+                    .initial_sync(backend, folder_db_id, mailbox_name)
                     .await?;
             }
 
@@ -420,11 +491,11 @@ impl SyncEngine {
             } => {
                 // 1. New arrivals.
                 let new_uids =
-                    with_network_timeout(backend.search_uids_after(&mailbox.name, after_uid))
+                    with_network_timeout(backend.search_uids_after(mailbox_name, after_uid))
                         .await?;
                 if !new_uids.is_empty() {
                     let envelopes = with_network_timeout(
-                        backend.fetch_envelopes_by_uids(&mailbox.name, &new_uids),
+                        backend.fetch_envelopes_by_uids(mailbox_name, &new_uids),
                     )
                     .await?;
                     for envelope in envelopes {
@@ -442,7 +513,7 @@ impl SyncEngine {
 
                 // 2. Flag changes (CONDSTORE CHANGEDSINCE, else full sweep).
                 let changes =
-                    with_network_timeout(backend.fetch_flags(&mailbox.name, changed_since)).await?;
+                    with_network_timeout(backend.fetch_flags(mailbox_name, changed_since)).await?;
                 for (uid, flags, keywords) in changes {
                     let flags_changed = self.store.update_flags(folder_db_id, uid, &flags)?;
                     let keywords_changed =
@@ -462,7 +533,7 @@ impl SyncEngine {
                 // them. A UID-only SEARCH is much cheaper than refetching
                 // envelopes and keeps the local folder convergent.
                 let remote_uids: HashSet<u32> = backend
-                    .search_all_uids(&mailbox.name)
+                    .search_all_uids(mailbox_name)
                     .await?
                     .into_iter()
                     .collect();
@@ -860,8 +931,74 @@ impl SyncEngine {
         self.emit_outbox_changed(account_db_id);
     }
 
-    /// Long-running per-account loop: sync, then watch INBOX (IDLE via
-    /// QRESYNC watch stream) or poll; any wake triggers a resync.
+    /// Cheap INBOX-only change check used when the QRESYNC/IDLE watch is
+    /// unavailable. SELECTs INBOX and compares the server's `(UIDVALIDITY,
+    /// HIGHESTMODSEQ, EXISTS)` against the local checkpoint; only runs a folder
+    /// sync when something actually changed, so an idle account costs one
+    /// SELECT per poll.
+    pub async fn poll_inbox(
+        &self,
+        account_config_id: &str,
+        config: &AccountConfig,
+    ) -> Result<bool> {
+        let imap = config
+            .imap
+            .as_ref()
+            .ok_or_else(|| Error::Config(format!("account `{account_config_id}` has no IMAP")))?;
+        let backend = with_network_timeout(ImapBackend::connect(account_config_id, imap)).await?;
+        let account_db_id =
+            self.store
+                .upsert_account(account_config_id, &config.name, &config.email)?;
+        let folder_db_id = self
+            .store
+            .upsert_folder(&account_db_id, "INBOX", MailboxRole::Inbox)?;
+        let condstore = backend.supports_condstore();
+        let selected = with_network_timeout(backend.select_folder("INBOX", condstore)).await?;
+        let stored = self.store.sync_state(&folder_db_id)?;
+        let local_total = self
+            .store
+            .logical_envelope_counts(std::slice::from_ref(&folder_db_id))?
+            .0;
+        if !inbox_needs_sync(stored.as_ref(), &selected, local_total) {
+            return Ok(false);
+        }
+        self.sync_folder(&backend, account_config_id, &folder_db_id, "INBOX")
+            .await?;
+        Ok(true)
+    }
+
+    /// Poll INBOX every [`POLL_INTERVAL`] until [`FULL_SYNC_INTERVAL`] elapses
+    /// or the loop is cancelled. A poll error returns to the outer loop, whose
+    /// full sync applies the normal reconnect backoff.
+    async fn poll_mode(
+        &self,
+        account_config_id: &str,
+        config: &AccountConfig,
+        cancel: &CancellationToken,
+    ) {
+        let started = std::time::Instant::now();
+        loop {
+            if cancel.is_cancelled() || started.elapsed() >= FULL_SYNC_INTERVAL {
+                return;
+            }
+            tokio::select! {
+                _ = cancel.cancelled() => return,
+                _ = tokio::time::sleep(POLL_INTERVAL) => {},
+            }
+            if cancel.is_cancelled() {
+                return;
+            }
+            if let Err(error) = self.poll_inbox(account_config_id, config).await {
+                tracing::debug!(account = %account_config_id, %error, "INBOX poll failed; falling back to full sync");
+                return;
+            }
+        }
+    }
+
+    /// Long-running per-account loop: full account sync, then live updates for
+    /// INBOX via the QRESYNC/IDLE watch stream, or a 60 s INBOX poll when the
+    /// server lacks QRESYNC (or the watch stream errors). Any INBOX change or
+    /// the 25 min full-sync window triggers another full convergence pass.
     /// Checks `cancel` at every yield point so the caller can stop the
     /// loop cleanly.
     pub async fn run_account_loop(
@@ -870,8 +1007,8 @@ impl SyncEngine {
         config: AccountConfig,
         cancel: CancellationToken,
     ) {
-        const WATCH_TIMEOUT: Duration = Duration::from_secs(25 * 60);
         let mut limiter = ReconnectLimiter::new();
+        let mut watch_supported = true;
 
         loop {
             if cancel.is_cancelled() {
@@ -896,36 +1033,33 @@ impl SyncEngine {
             let Some(imap) = config.imap.clone() else {
                 return;
             };
-            let cancel2 = cancel.clone();
-            let woke = tokio::task::spawn_blocking(move || {
-                let stream = ImapBackend::watch_mailbox_blocking(&imap, "INBOX")?;
-                let deadline = std::time::Instant::now() + WATCH_TIMEOUT;
-                loop {
-                    if cancel2.is_cancelled() {
-                        let _ = stream.close();
-                        return Err(Error::Backend("cancelled".into()));
-                    }
-                    let remaining = deadline - std::time::Instant::now();
-                    if remaining.is_zero() {
-                        break;
-                    }
-                    match stream.recv_timeout(Duration::from_secs(5)) {
-                        Ok(Ok(_)) => return Ok(()),
-                        Ok(Err(..)) => return Err(Error::Backend("watch error".into())),
-                        Err(..) => {} // timeout
+
+            let attempt = if watch_supported {
+                let cancel2 = cancel.clone();
+                match tokio::task::spawn_blocking(move || watch_once(&imap, cancel2)).await {
+                    Ok(outcome) => outcome,
+                    Err(..) => WatchAttempt::Failed,
+                }
+            } else {
+                WatchAttempt::Unsupported
+            };
+
+            match attempt {
+                // Event or watch-window timeout: converge again immediately.
+                WatchAttempt::Woke => {}
+                WatchAttempt::Unsupported => {
+                    // No QRESYNC ever; poll for the rest of the session.
+                    watch_supported = false;
+                    self.poll_mode(&account_config_id, &config, &cancel).await;
+                    if cancel.is_cancelled() {
+                        return;
                     }
                 }
-                Ok(())
-            })
-            .await;
-
-            match woke {
-                Ok(Ok(())) => {}
-                Ok(Err(..)) | Err(..) => {
-                    let wait = limiter.record_failure();
-                    tokio::select! {
-                        _ = cancel.cancelled() => return,
-                        _ = tokio::time::sleep(wait) => {},
+                WatchAttempt::Failed => {
+                    // Poll until the next full sync, which retries the watch.
+                    self.poll_mode(&account_config_id, &config, &cancel).await;
+                    if cancel.is_cancelled() {
+                        return;
                     }
                 }
             }

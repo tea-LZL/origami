@@ -2,11 +2,12 @@
 title: Sync engine
 type: architecture
 status: current
-updated: 2026-09-27
+updated: 2026-10-10
 sources:
   - docs/adr/0003-sync-algorithm.md
   - docs/PLAN.md
   - crates/origami-core/src/sync.rs
+  - crates/origami-core/src/imap.rs
 ---
 
 # Sync engine
@@ -21,7 +22,14 @@ converged with the server. The algorithm is CONDSTORE-first and envelope-first
    drops that folder's rows and triggers a full resync **of that folder only**.
 2. **Delta pull**: new messages via `UID FETCH <last_uid+1>:*`; flag changes via
    `UID FETCH 1:* (FLAGS) (CHANGEDSINCE <modseq>)`. Upsert into SQLite, then emit UI events.
-3. **Live updates**: IDLE on INBOX (fallback 60 s NOOP poll); on wake, run a delta pull.
+3. **Live updates**: `run_account_loop` picks a mode per cycle. QRESYNC-capable servers use
+   the IDLE watch stream on INBOX; everything else — and any watch that dies mid-stream —
+   falls back to polling INBOX. Poll mode `SELECT`s INBOX every 60 s and runs a folder sync
+   only when `(UIDVALIDITY, HIGHESTMODSEQ, EXISTS)` changed (`inbox_needs_sync`,
+   `poll_inbox`), so an idle account costs one `SELECT` per minute. Every 25 min (the watch
+   window) the loop runs a full account sync so non-INBOX folders converge; a QRESYNC watch
+   is retried after that full sync. `watch_mailbox_blocking` returns `None` when the server
+   lacks QRESYNC, so "unsupported" is distinct from "watch error".
 4. **Envelope-first, body-on-demand**: headers sync eagerly; bodies fetch on open, with
    bounded background prefetch of the newest N messages for display cache. Raw RFC 822 goes
    to the content-addressed blob store; FTS5 is indexed after body fetch.
@@ -43,7 +51,9 @@ Per-folder `(UIDVALIDITY, HIGHESTMODSEQ, last_uid)` is stored in `sync_state`.
   (`backoff_delay`, clamped at the cap). Permanent errors skip straight to a 60 s slow
   mode — **the account loop never dies and never hot-retries**, so a fixed config
   self-heals. `ReconnectLimiter` caps reconnect churn: from the 10th consecutive failure
-  the wait is a fixed 60 s, reset on success.
+  the wait is a fixed 60 s, reset on success. Watch-stream errors do **not** feed this
+  backoff; they switch the loop to poll mode, so a watch that dies (e.g. io-imap's fatal
+  5 s read timeout) no longer triggers a full resync every 2 s.
 - **Network bounds**: every long-pole IMAP/SMTP operation (connect, list, fetch, search,
   select, flag/move/delete, append, SMTP send) runs under `with_network_timeout`
   (60 s); a timeout surfaces as a transient error so the retry policy applies. Per-message
