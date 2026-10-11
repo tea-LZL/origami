@@ -88,7 +88,7 @@ describe("composer sessions", () => {
     saveDraft.mockReset().mockResolvedValue(undefined);
     syncDraft.mockReset().mockResolvedValue(undefined);
     deleteDraft.mockReset().mockResolvedValue(undefined);
-    sendMessage.mockReset().mockResolvedValue({ queued: false });
+    sendMessage.mockReset().mockResolvedValue({ accepted: true });
     localStorage.clear();
   });
 
@@ -270,9 +270,13 @@ describe("composer sessions", () => {
     expect(syncDraft).toHaveBeenCalledTimes(2);
   });
 
-  it("send_removes_session_and_draft", async () => {
+  it("send_removes_session_without_waiting_on_remote_draft_delete", async () => {
     seedAccount();
-    sendMessage.mockResolvedValue({ queued: false });
+    sendMessage.mockResolvedValue({ accepted: true });
+    let releaseDelete: (() => void) | undefined;
+    deleteDraft.mockReturnValue(new Promise<void>((resolve) => {
+      releaseDelete = resolve;
+    }));
     openComposer({ to: "a@example.org" });
     const id = app.value.composerSessions[0].id;
 
@@ -280,6 +284,8 @@ describe("composer sessions", () => {
 
     expect(deleteDraft).toHaveBeenCalledWith(id);
     expect(app.value.composerSessions).toEqual([]);
+    expect(app.value.lastNotice).toBe("Sending message…");
+    releaseDelete?.();
   });
 
   it("send_blocks_invalid_recipient", async () => {

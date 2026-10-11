@@ -55,6 +55,13 @@ pub enum SyncEvent {
     AccountSynced { account_id: String },
     #[serde(rename_all = "camelCase")]
     OutboxChanged { account_id: String },
+    /// A queued send finished (or failed) delivery.
+    #[serde(rename_all = "camelCase")]
+    SendFinished {
+        account_id: String,
+        delivered: bool,
+        error: Option<String>,
+    },
     #[serde(rename_all = "camelCase")]
     Error { account_id: String, message: String },
 }
@@ -162,6 +169,15 @@ pub fn inbox_needs_sync(
     selected.exists != local_total
 }
 
+/// The Sent folder name the store already knows, if any. Lets the append path
+/// skip a `LIST` round trip on the common case.
+fn local_sent_folder(folders: &[crate::model::Mailbox]) -> Option<String> {
+    folders
+        .iter()
+        .find(|folder| folder.role == MailboxRole::Sent)
+        .map(|folder| folder.name.clone())
+}
+
 /// Result of one blocking IDLE watch attempt.
 enum WatchAttempt {
     /// An event arrived, or the watch window elapsed with no data.
@@ -211,6 +227,9 @@ pub struct SyncEngine {
     account_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     body_locks: BodyLockMap,
     prefetch_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    /// Serializes outbox send delivery so the background flush and the sync
+    /// loop's replay can never send the same queued message twice.
+    send_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     prefetch: crate::prefetch_queue::PrefetchQueue,
 }
 
@@ -224,6 +243,7 @@ impl SyncEngine {
             account_locks: Mutex::new(HashMap::new()),
             body_locks: Mutex::new(HashMap::new()),
             prefetch_locks: Mutex::new(HashMap::new()),
+            send_locks: Mutex::new(HashMap::new()),
             prefetch: crate::prefetch_queue::PrefetchQueue::new(3),
         }
     }
@@ -254,6 +274,25 @@ impl SyncEngine {
         if let Ok(Some(account_id)) = self.store.account_config_id(account_db_id) {
             self.emit(SyncEvent::OutboxChanged { account_id });
         }
+    }
+
+    fn send_lock(&self, account_db_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        self.send_locks
+            .lock()
+            .unwrap()
+            .entry(account_db_id.to_string())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    }
+
+    /// Whether an outbox row is still queued (not yet delivered/permanently
+    /// failed). Re-checked after taking the send lock to avoid a double send
+    /// when the background flush and the sync replay race.
+    fn outbox_entry_pending(&self, account_db_id: &str, id: i64) -> bool {
+        self.store
+            .outbox_list(account_db_id)
+            .map(|entries| entries.iter().any(|entry| entry.id == id))
+            .unwrap_or(false)
     }
 
     /// One-shot full convergence of an account: folders, envelopes,
@@ -441,7 +480,8 @@ impl SyncEngine {
             }
         }
 
-        self.replay_outbox(&backend, &account_db_id, config).await;
+        self.replay_outbox(&backend, account_config_id, &account_db_id, config)
+            .await;
         if !folder_errors.is_empty() {
             return Err(Error::Backend(format!(
                 "{} folder sync failed: {}",
@@ -816,6 +856,7 @@ impl SyncEngine {
     pub async fn replay_outbox(
         &self,
         backend: &ImapBackend,
+        account_config_id: &str,
         account_db_id: &str,
         config: &AccountConfig,
     ) {
@@ -855,59 +896,35 @@ impl SyncEngine {
                     server_uids,
                 } => with_network_timeout(backend.delete_messages(mailbox, server_uids)).await,
                 OutboxOp::SendMessage { raw_base64 } => {
-                    async {
-                        let raw = base64::engine::general_purpose::STANDARD
-                            .decode(raw_base64)
-                            .map_err(|error| Error::Backend(format!("queued message: {error}")))?;
-                        let smtp = config.smtp.as_ref().ok_or_else(|| {
-                            Error::Config("account has no SMTP configuration".into())
-                        })?;
-                        let sender = with_network_timeout(OrigamiSmtp::connect(smtp)).await?;
-                        with_network_timeout(sender.send_message(&raw)).await?;
-                        let mut appended = false;
-                        if let Ok(mailboxes) = with_network_timeout(backend.list_mailboxes()).await
-                        {
-                            if let Some(sent) = mailboxes
-                                .iter()
-                                .find(|mailbox| mailbox.role == crate::model::MailboxRole::Sent)
-                            {
-                                appended = with_network_timeout(backend.append_message(
-                                    &sent.name,
-                                    &raw,
-                                    &[Flag::Seen],
-                                ))
-                                .await
-                                .is_ok();
-                            }
-                        }
-                        if !appended {
-                            self.queue_append_sent(account_db_id, &raw)?;
-                        }
+                    // The background flush may have delivered this entry
+                    // already; serialize on the send lock and re-check.
+                    let lock = self.send_lock(account_db_id);
+                    let _guard = lock.lock().await;
+                    if self.outbox_entry_pending(account_db_id, entry.id) {
+                        self.deliver_queued_send(
+                            account_config_id,
+                            entry.id,
+                            raw_base64,
+                            account_db_id,
+                            config,
+                            Some(backend),
+                        )
+                        .await
+                    } else {
                         Ok(())
                     }
-                    .await
                 }
                 OutboxOp::AppendSent { raw_base64 } => {
-                    async {
-                        let raw = base64::engine::general_purpose::STANDARD
-                            .decode(raw_base64)
-                            .map_err(|error| {
-                                Error::Backend(format!("queued Sent copy: {error}"))
-                            })?;
-                        let mailboxes = with_network_timeout(backend.list_mailboxes()).await?;
-                        let sent = mailboxes
-                            .iter()
-                            .find(|mailbox| mailbox.role == crate::model::MailboxRole::Sent)
-                            .ok_or_else(|| Error::Backend("Sent mailbox not found".into()))?;
-                        with_network_timeout(backend.append_message(
-                            &sent.name,
-                            &raw,
-                            &[Flag::Seen],
-                        ))
-                        .await?;
-                        Ok(())
+                    match base64::engine::general_purpose::STANDARD.decode(raw_base64) {
+                        Ok(raw) => {
+                            if self.append_to_sent(backend, account_db_id, &raw).await {
+                                Ok(())
+                            } else {
+                                Err(Error::Backend("Sent mailbox not found".into()))
+                            }
+                        }
+                        Err(error) => Err(Error::Backend(format!("queued Sent copy: {error}"))),
                     }
-                    .await
                 }
             };
             match result {
@@ -915,11 +932,7 @@ impl SyncEngine {
                     let _ = self.store.outbox_remove(entry.id);
                 }
                 Err(error) => {
-                    let secrets = config_secret_values(config);
-                    let message = crate::redact::redact_with(
-                        &error.to_string(),
-                        &secrets.iter().map(String::as_str).collect::<Vec<_>>(),
-                    );
+                    let message = self.redacted_error(&error, config);
                     if outbox_failure_is_terminal(&error, entry.attempts + 1) {
                         let _ = self.store.outbox_fail_permanent(entry.id, &message);
                     } else {
@@ -929,6 +942,192 @@ impl SyncEngine {
             }
         }
         self.emit_outbox_changed(account_db_id);
+    }
+
+    /// Deliver one queued send: SMTP first, then copy to Sent. On success the
+    /// outbox row is removed and a `SendFinished { delivered: true }` event is
+    /// emitted; a send failure emits `SendFinished { delivered: false, .. }`
+    /// and returns `Err` so the caller's retry/terminal classification applies.
+    async fn deliver_queued_send(
+        &self,
+        account_config_id: &str,
+        entry_id: i64,
+        raw_base64: &str,
+        account_db_id: &str,
+        config: &AccountConfig,
+        backend: Option<&ImapBackend>,
+    ) -> Result<()> {
+        let raw = base64::engine::general_purpose::STANDARD
+            .decode(raw_base64)
+            .map_err(|error| Error::Backend(format!("queued message: {error}")))?;
+        let smtp = config
+            .smtp
+            .as_ref()
+            .ok_or_else(|| Error::Config("account has no SMTP configuration".into()))?;
+        let send = async {
+            let sender = with_network_timeout(OrigamiSmtp::connect(smtp)).await?;
+            with_network_timeout(sender.send_message(&raw)).await
+        }
+        .await;
+        if let Err(error) = send {
+            self.emit(SyncEvent::SendFinished {
+                account_id: account_config_id.to_string(),
+                delivered: false,
+                error: Some(self.redacted_error(&error, config)),
+            });
+            return Err(error);
+        }
+
+        let _ = self.store.outbox_remove(entry_id);
+        let mut appended = false;
+        if let Some(backend) = backend {
+            appended = self.append_to_sent(backend, account_db_id, &raw).await;
+        }
+        if !appended {
+            self.queue_append_sent(account_db_id, &raw)?;
+        }
+        self.emit(SyncEvent::SendFinished {
+            account_id: account_config_id.to_string(),
+            delivered: true,
+            error: None,
+        });
+        Ok(())
+    }
+
+    /// Append to Sent, preferring the folder name the store already knows so
+    /// the common path costs no extra LIST round trip.
+    async fn append_to_sent(&self, backend: &ImapBackend, account_db_id: &str, raw: &[u8]) -> bool {
+        let local = self
+            .store
+            .list_folders(account_db_id)
+            .ok()
+            .and_then(|folders| local_sent_folder(&folders));
+        let name = match local {
+            Some(name) => name,
+            None => match with_network_timeout(backend.list_mailboxes()).await {
+                Ok(mailboxes) => match mailboxes
+                    .iter()
+                    .find(|mailbox| mailbox.role == MailboxRole::Sent)
+                {
+                    Some(mailbox) => mailbox.name.clone(),
+                    None => return false,
+                },
+                Err(_) => return false,
+            },
+        };
+        with_network_timeout(backend.append_message(&name, raw, &[Flag::Seen]))
+            .await
+            .is_ok()
+    }
+
+    fn redacted_error(&self, error: &Error, config: &AccountConfig) -> String {
+        let secrets = config_secret_values(config);
+        crate::redact::redact_with(
+            &error.to_string(),
+            &secrets.iter().map(String::as_str).collect::<Vec<_>>(),
+        )
+    }
+
+    /// Deliver queued sends in the background so the UI never waits on SMTP.
+    pub fn spawn_send_flush(self: &Arc<Self>, account_config_id: String, account: AccountConfig) {
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            tracing::debug!("send flush skipped: no Tokio runtime on this thread");
+            return;
+        };
+        let engine = Arc::clone(self);
+        runtime.spawn(async move {
+            engine.flush_send_outbox(&account_config_id, &account).await;
+        });
+    }
+
+    /// Send every queued message for an account now, then copy them to Sent.
+    /// Serialized on the per-account send lock against the sync loop's replay.
+    async fn flush_send_outbox(&self, account_config_id: &str, config: &AccountConfig) {
+        let account_db_id =
+            match self
+                .store
+                .upsert_account(account_config_id, &config.name, &config.email)
+            {
+                Ok(id) => id,
+                Err(error) => {
+                    tracing::debug!(account = %account_config_id, %error, "send flush skipped");
+                    return;
+                }
+            };
+
+        {
+            let lock = self.send_lock(&account_db_id);
+            let _guard = lock.lock().await;
+            for entry in self.store.outbox_list(&account_db_id).unwrap_or_default() {
+                if entry.failed_at.is_some() {
+                    continue;
+                }
+                let OutboxOp::SendMessage { raw_base64 } = &entry.op else {
+                    continue;
+                };
+                if !self.outbox_entry_pending(&account_db_id, entry.id) {
+                    continue;
+                }
+                if let Err(error) = self
+                    .deliver_queued_send(
+                        account_config_id,
+                        entry.id,
+                        raw_base64,
+                        &account_db_id,
+                        config,
+                        None,
+                    )
+                    .await
+                {
+                    let message = self.redacted_error(&error, config);
+                    if outbox_failure_is_terminal(&error, entry.attempts + 1) {
+                        let _ = self.store.outbox_fail_permanent(entry.id, &message);
+                    } else {
+                        let _ = self.store.outbox_mark_failed(entry.id, &message);
+                    }
+                }
+            }
+        }
+
+        self.flush_append_sent(account_config_id, config, &account_db_id)
+            .await;
+        self.emit_outbox_changed(&account_db_id);
+    }
+
+    /// Best-effort Sent-copy pass after a background send.
+    async fn flush_append_sent(
+        &self,
+        account_config_id: &str,
+        config: &AccountConfig,
+        account_db_id: &str,
+    ) {
+        let Some(imap) = config.imap.as_ref() else {
+            return;
+        };
+        let Ok(backend) = with_network_timeout(ImapBackend::connect(account_config_id, imap)).await
+        else {
+            return;
+        };
+        for entry in self.store.outbox_list(account_db_id).unwrap_or_default() {
+            if entry.failed_at.is_some() {
+                continue;
+            }
+            let OutboxOp::AppendSent { raw_base64 } = &entry.op else {
+                continue;
+            };
+            let raw = match base64::engine::general_purpose::STANDARD.decode(raw_base64) {
+                Ok(raw) => raw,
+                Err(error) => {
+                    let _ = self
+                        .store
+                        .outbox_fail_permanent(entry.id, &format!("queued Sent copy: {error}"));
+                    continue;
+                }
+            };
+            if self.append_to_sent(&backend, account_db_id, &raw).await {
+                let _ = self.store.outbox_remove(entry.id);
+            }
+        }
     }
 
     /// Cheap INBOX-only change check used when the QRESYNC/IDLE watch is
@@ -1445,5 +1644,27 @@ mod tests {
         // Success resets the streak.
         limiter.record_success();
         assert_eq!(limiter.consecutive(), 0);
+    }
+
+    #[test]
+    fn local_sent_folder_prefers_the_sent_role() {
+        let mailbox = |name: &str, role: MailboxRole| crate::model::Mailbox {
+            id: name.to_string(),
+            account_id: "account".into(),
+            name: name.into(),
+            role,
+            subscribed: true,
+            total: 0,
+            unread: 0,
+        };
+        let folders = vec![
+            mailbox("Drafts", MailboxRole::Drafts),
+            mailbox("Sent Mail", MailboxRole::Sent),
+        ];
+        assert_eq!(local_sent_folder(&folders).as_deref(), Some("Sent Mail"));
+        assert_eq!(
+            local_sent_folder(&[mailbox("Drafts", MailboxRole::Drafts)]),
+            None
+        );
     }
 }

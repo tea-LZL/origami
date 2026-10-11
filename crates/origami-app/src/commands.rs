@@ -12,8 +12,7 @@ use origami_core::message::{AttachmentMeta, MessageHeaders, MimePart, ParsedMess
 use origami_core::model::{Envelope, Flag, Mailbox, MailboxRole, OutboxEntry, OutboxOp};
 use origami_core::oauth::{OAuthProvider, OAuthTokens};
 use origami_core::provider_hints;
-use origami_core::smtp::OrigamiSmtp;
-use origami_core::{MailBackend, SmtpSender};
+use origami_core::MailBackend;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Write;
@@ -1981,23 +1980,35 @@ pub async fn sync_composer_draft(state: State<'_, AppState>, id: String) -> CmdR
 }
 
 #[tauri::command]
-pub async fn delete_composer_draft(state: State<'_, AppState>, id: String) -> CmdResult<()> {
-    if let Some((account_id, mailbox, uid)) = state.store.draft_remote(&id).map_err(err)? {
-        if let Ok(backend) = state.backend(&account_id).await {
-            let _ = backend.delete_messages(&mailbox, &[uid]).await;
-        }
+pub async fn delete_composer_draft(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> CmdResult<()> {
+    let remote = state.store.draft_remote(&id).map_err(err)?;
+    // Local delete commits immediately; the remote copy is best-effort and
+    // must not block the send-click path.
+    state.store.delete_draft(&id).map_err(err)?;
+    if let Some((account_id, mailbox, uid)) = remote {
+        tauri::async_runtime::spawn(async move {
+            let state = app.state::<AppState>();
+            if let Ok(backend) = state.backend(&account_id).await {
+                let _ = backend.delete_messages(&mailbox, &[uid]).await;
+            }
+        });
     }
-    state.store.delete_draft(&id).map_err(err)
+    Ok(())
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendResultDto {
-    queued: bool,
+    pub accepted: bool,
 }
 
-/// Build and send a draft; appends a copy to the Sent folder. Retryable
-/// SMTP failures are persisted in the account outbox.
+/// Build a draft and hand it to the background send queue. Returns as soon as
+/// the message is durably queued, so the composer can close immediately;
+/// delivery outcome arrives via the `sendFinished` sync event.
 #[tauri::command]
 pub async fn send_message(state: State<'_, AppState>, draft: Draft) -> CmdResult<SendResultDto> {
     let raw = origami_core::compose::build_message(&draft).map_err(err)?;
@@ -2016,7 +2027,7 @@ pub async fn send_message(state: State<'_, AppState>, draft: Draft) -> CmdResult
         })
         .ok_or("no account configured for sending")?;
 
-    let smtp = account
+    account
         .smtp
         .as_ref()
         .ok_or_else(|| format!("account `{account_id}` has no SMTP configured"))?;
@@ -2024,44 +2035,12 @@ pub async fn send_message(state: State<'_, AppState>, draft: Draft) -> CmdResult
         .store
         .upsert_account(&account_id, &account.name, &account.email)
         .map_err(err)?;
-    let sent = match OrigamiSmtp::connect(smtp).await {
-        Ok(sender) => sender.send_message(&raw).await.is_ok(),
-        Err(_) => false,
-    };
-    if !sent {
-        state
-            .engine
-            .queue_send_message(&account_db_id, &raw)
-            .map_err(err)?;
-        return Ok(SendResultDto { queued: true });
-    }
-
-    // Delivery and Sent-copy retry are independent so a failed append
-    // can never cause the SMTP message to be sent twice.
-    let mut appended = false;
-    if account.imap.is_some() {
-        if let Ok(backend) = state.backend(&account_id).await {
-            if let Ok(mailboxes) = backend.list_mailboxes().await {
-                if let Some(sent) = mailboxes
-                    .iter()
-                    .find(|m| m.role == MailboxRole::Sent)
-                    .or_else(|| mailboxes.iter().find(|m| m.name == "Sent"))
-                {
-                    appended = backend
-                        .append_message(&sent.name, &raw, &[Flag::Seen])
-                        .await
-                        .is_ok();
-                }
-            }
-        }
-    }
-    if !appended {
-        state
-            .engine
-            .queue_append_sent(&account_db_id, &raw)
-            .map_err(err)?;
-    }
-    Ok(SendResultDto { queued: false })
+    state
+        .engine
+        .queue_send_message(&account_db_id, &raw)
+        .map_err(err)?;
+    state.engine.spawn_send_flush(account_id, account);
+    Ok(SendResultDto { accepted: true })
 }
 
 #[cfg(test)]

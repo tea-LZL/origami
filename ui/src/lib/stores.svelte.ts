@@ -25,6 +25,7 @@ import {
 } from "./unreadList";
 import type { Envelope, EnvelopeSource, Flag, Mailbox, MailboxRole } from "./types";
 import { formatMessageDate } from "./formatDate";
+import { buildForward, type ForwardAttachment } from "./forward";
 
 /// Shared display-prefetch scheduler (hover/keyboard predicted, viewport later).
 export const prefetcher = createPrefetcher();
@@ -437,6 +438,16 @@ export async function bootstrap() {
 
   await onSyncEvent((event) => {
     const e = event as { type: string; folder?: string; accountId?: string };
+    if (e.type === "sendFinished") {
+      const finished = event as { delivered?: boolean; error?: string | null };
+      if (finished.delivered) {
+        patch({ lastNotice: "Message sent" });
+      } else if (finished.error) {
+        patch({ lastError: `Message not sent: ${finished.error}` });
+      }
+      pollAccountErrors();
+      return;
+    }
     if (e.type === "folderSynced") {
       if (
         app.value.unifiedInbox
@@ -1402,6 +1413,7 @@ export async function restoreComposerSessions(): Promise<void> {
 export function openComposer(
   draft?: Partial<ComposerSession["draft"]>,
   threading?: Partial<ComposerSession["threading"]>,
+  attachments: ComposerAttachment[] = [],
 ) {
   if (app.value.accounts.length === 0) {
     patch({ lastNotice: "Add an account before composing a message." });
@@ -1422,7 +1434,7 @@ export function openComposer(
     id: newComposerId(),
     accountId: account?.id ?? null,
     draft: restored,
-    attachments: [],
+    attachments,
     threading: { ...blankThreading(), ...(threading ?? {}) },
     saveState: "idle",
     syncState: "local",
@@ -1509,7 +1521,7 @@ function htmlEscape(text: string): string {
     .replaceAll('"', "&quot;");
 }
 
-export function openReplyComposer(mode: "reply" | "replyAll" | "forward") {
+export function openReplyComposer(mode: "reply" | "replyAll") {
   const message = app.value.message;
   if (!message) return;
   const accountEmails = new Set(app.value.accounts.map((account) => account.email.toLowerCase()));
@@ -1520,11 +1532,10 @@ export function openReplyComposer(mode: "reply" | "replyAll" | "forward") {
         .filter((address, index, all) =>
           address && !accountEmails.has(address.toLowerCase()) && all.indexOf(address) === index
         )
-    : mode === "reply" ? [replyTarget].filter(Boolean) : [];
-  const prefix = mode === "forward" ? "Fwd:" : "Re:";
-  const subject = new RegExp(`^${prefix.replace(":", "")}:`, "i").test(message.envelope.subject)
+    : [replyTarget].filter(Boolean);
+  const subject = /^Re:/i.test(message.envelope.subject)
     ? message.envelope.subject
-    : `${prefix} ${message.envelope.subject}`;
+    : `Re: ${message.envelope.subject}`;
   const quoted = htmlEscape(message.text ?? message.envelope.subject);
   const author = htmlEscape((message.envelope.from[0]?.name ?? sender) || "the sender");
   const when = formatMessageDate(message.envelope.date) || "an earlier date";
@@ -1533,10 +1544,40 @@ export function openReplyComposer(mode: "reply" | "replyAll" | "forward") {
     to: recipients.join(", "),
     subject,
     html: `<p></p><p>${attribution}</p><blockquote><p>${quoted.replaceAll("\n", "<br>")}</p></blockquote>`,
-  }, mode === "forward" ? undefined : {
+  }, {
     inReplyTo: message.headers.messageId,
     references: [...message.headers.references, ...(message.headers.messageId ? [message.headers.messageId] : [])],
   });
+}
+
+/**
+ * Build a proper forward: original headers, sanitized HTML (with inline
+ * images fetched and inlined), and copied attachments. Runs before the
+ * composer opens, so the reading-pane button shows a busy state.
+ */
+export async function forwardMessage(): Promise<void> {
+  const message = app.value.message;
+  if (!message) return;
+  const subject = /^Fwd:/i.test(message.envelope.subject)
+    ? message.envelope.subject
+    : `Fwd: ${message.envelope.subject}`;
+  const folderId = message.envelope.mailboxId;
+  const serverUid = message.envelope.serverUid;
+  const fetchAttachment = (index: number) => {
+    if (serverUid == null) return Promise.reject(new Error("message has no server copy"));
+    return api.getAttachment(folderId, serverUid, index);
+  };
+  try {
+    const { html, attachments, skipped } = await buildForward(message, fetchAttachment);
+    openComposer({ subject, html }, undefined, attachments as ForwardAttachment[]);
+    if (skipped > 0) {
+      patch({
+        lastNotice: `${skipped} part${skipped === 1 ? "" : "s"} could not be included in the forward`,
+      });
+    }
+  } catch (error) {
+    patch({ lastError: `Could not forward: ${String(error)}` });
+  }
 }
 
 /** Persist one session locally now. No-op for blank sessions. */
@@ -1626,7 +1667,7 @@ export async function syncComposerNow(id: string) {
 
 export async function sendComposer(id: string) {
   const session = findComposerSession(id);
-  if (!session || app.value.sendingComposerId !== null) return;
+  if (!session || app.value.sendingComposerId === id) return;
   const account = app.value.accounts.find((item) => item.id === session.accountId)
     ?? app.value.accounts[0];
   if (!account) {
@@ -1650,7 +1691,7 @@ export async function sendComposer(id: string) {
   patch({ sendingComposerId: id });
   try {
     const plain = session.draft.composeMode === "plain";
-    const result = await api.sendMessage({
+    await api.sendMessage({
       fromName: account.name,
       fromAddr: account.email,
       to,
@@ -1667,16 +1708,13 @@ export async function sendComposer(id: string) {
         dataBase64,
       })),
     });
-    try {
-      await api.deleteComposerDraft(id);
-    } catch {
-      patch({ lastNotice: "Draft removed locally; server copy may remain" });
-    }
+    // Delivery now runs in the background; close the composer immediately and
+    // let SendFinished report the outcome.
     const index = app.value.composerSessions.findIndex((item) => item.id === id);
     removeComposerSession(id, Math.max(index, 0));
-    patch({
-      lastError: null,
-      lastNotice: result.queued ? "Message queued and will send when the account reconnects" : "Message sent",
+    patch({ lastError: null, lastNotice: "Sending message…" });
+    api.deleteComposerDraft(id).catch(() => {
+      patch({ lastNotice: "Draft removed locally; server copy may remain" });
     });
   } catch (e) {
     patch({ lastError: String(e) });

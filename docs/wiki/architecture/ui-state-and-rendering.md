@@ -2,7 +2,7 @@
 title: UI state and rendering
 type: architecture
 status: current
-updated: 2026-10-10
+updated: 2026-10-11
 sources:
   - ui/src/lib/ComposePane.svelte
   - ui/src/lib/ComposeTabs.svelte
@@ -26,6 +26,7 @@ sources:
   - ui/src/lib/messageHtml.ts
   - ui/src/lib/MessageView.svelte
   - ui/src/lib/navigation.ts
+  - ui/src/lib/forward.ts
   - ui/src/lib/attachmentOpen.ts
   - ui/src/lib/formatDate.ts
   - crates/origami-app/src/commands.rs
@@ -170,6 +171,21 @@ skips blank sessions; every stored draft reopens as a minimized tab on bootstrap
 (the legacy single `"composer"` row and `origami-composer-draft` localStorage key
 are migrated once, and blank ghosts are deleted). Send and discard delete the row
 and its remote copy.
+
+**Forward** (`ui/src/lib/forward.ts`, `stores.svelte.ts forwardMessage`) builds a real
+forwarded message before opening the composer: original `From`/`Date`/`Subject`/`To`/`Cc`
+header block, sanitized original HTML (remote `http(s)` images preserved, inline `cid:`
+images fetched and inlined as `data:` URLs up to 5 MB), and copied non-inline attachments.
+Parts that cannot be fetched are reported and skipped.
+
+**Send is backgrounded.** `send_message` builds the raw message, durably queues it
+(`queue_send_message`), and returns immediately (`SendResultDto { accepted }`); the
+composer closes at once. `SyncEngine::spawn_send_flush` delivers it in the background
+(SMTP first, then a Sent copy — local Sent lookup before any `LIST`), serialized on a
+per-account send lock against the sync loop's `replay_outbox` so a message can never be
+sent twice. A `sendFinished` sync event carries the outcome (toast / Outbox). Deleting a
+draft now commits locally first and removes the remote copy best-effort in the background,
+so the send-click path never waits on IMAP.
 
 `ComposePane.svelte` uses **TipTap** (`@tiptap/core`, `@tiptap/pm`,
 `@tiptap/starter-kit`; Link/Underline/UndoRedo come from StarterKit v3), serialized

@@ -3,6 +3,7 @@
   import {
     app,
     clearMessageView,
+    forwardMessage,
     minimizeComposer,
     moveSelectedToRole,
     openReplyComposer,
@@ -33,6 +34,7 @@
   let remoteContentAllowed = $state(false);
   let allowedRemoteOrigins = $state<string[]>([]);
   let senderRemoteContentAllowed = $state(false);
+  let forwarding = $state(false);
   let emailFrame: HTMLIFrameElement | null = null;
   let bodyEl: HTMLDivElement | null = $state(null);
   let preview = $state<{
@@ -227,6 +229,16 @@
     if (app.value.layout === "reading") setLayout("two-pane");
   }
 
+  async function startForward() {
+    if (forwarding) return;
+    forwarding = true;
+    try {
+      await forwardMessage();
+    } finally {
+      forwarding = false;
+    }
+  }
+
   function loadRemoteContentOnce() {
     remoteContentAllowed = true;
   }
@@ -356,7 +368,14 @@
           <button type="button" class="icon" aria-label="Reply all" title="Reply all" onclick={() => openReplyComposer("replyAll")}>
             <ActionIcon name="reply-all" />
           </button>
-          <button type="button" class="icon" aria-label="Forward" title="Forward" onclick={() => openReplyComposer("forward")}>
+          <button
+            type="button"
+            class="icon"
+            aria-label="Forward"
+            title={forwarding ? "Preparing forward…" : "Forward"}
+            disabled={forwarding}
+            onclick={() => void startForward()}
+          >
             <ActionIcon name="forward" />
           </button>
           <span class="sep" aria-hidden="true"></span>

@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   clearMessageView: vi.fn(),
   moveSelectedToRole: vi.fn(),
   openReplyComposer: vi.fn(),
+  forwardMessage: vi.fn(),
   selectEnvelopeExclusive: vi.fn(),
   setLayout: vi.fn(),
   setSelectedFlag: vi.fn(),
@@ -202,7 +203,7 @@ describe("MessageView", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Reply all" }));
     expect(mocks.openReplyComposer).toHaveBeenCalledWith("replyAll");
     await fireEvent.click(screen.getByRole("button", { name: "Forward" }));
-    expect(mocks.openReplyComposer).toHaveBeenCalledWith("forward");
+    expect(mocks.forwardMessage).toHaveBeenCalled();
 
     await fireEvent.click(screen.getByRole("button", { name: "Archive" }));
     expect(mocks.moveSelectedToRole).toHaveBeenCalledWith("Archive");
