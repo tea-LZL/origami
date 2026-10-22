@@ -441,22 +441,34 @@ pub async fn get_message(
     if let Some(parsed) = state.display_lru.lock().unwrap().get(&key) {
         return message_dto(&state, &folder_id, server_uid, parsed);
     }
-    let (account_config_id, _account_db_id, mailbox) =
-        state.resolve_folder(&folder_id).map_err(err)?;
-    let parsed: ParsedMessage = match state
-        .store
-        .parsed_message_for_logical_message(&folder_id, server_uid)
-        .map_err(err)?
-    {
-        Some(parsed) => parsed,
-        None => {
-            if let Some(hash) = state.store.blob_hash(&folder_id, server_uid).map_err(err)? {
+
+    // Join an in-flight prefetch for the same physical source. The second
+    // waiter re-checks the caches after the gate opens.
+    let gate = state.display_fetch_gates.acquire(&key);
+    let guard = gate.lock().await;
+    let loaded: CmdResult<ParsedMessage> = async {
+        if let Some(parsed) = state.display_lru.lock().unwrap().get(&key) {
+            return Ok(parsed);
+        }
+        if let Some(parsed) = state
+            .store
+            .parsed_message_for_logical_message(&folder_id, server_uid)
+            .map_err(err)?
+        {
+            return Ok(parsed);
+        }
+
+        let (account_config_id, _account_db_id, mailbox) =
+            state.resolve_folder(&folder_id).map_err(err)?;
+        match state.store.blob_hash(&folder_id, server_uid).map_err(err)? {
+            Some(hash) => {
                 let raw = state.engine.blobs().get(&hash).map_err(err)?;
                 state
                     .engine
                     .cache_parsed_message(&folder_id, server_uid, &hash, &raw)
-                    .map_err(err)?
-            } else {
+                    .map_err(err)
+            }
+            None => {
                 let backend = state.backend(&account_config_id).await.map_err(err)?;
                 match origami_core::sync::with_network_timeout(
                     backend.fetch_display_message(&mailbox, server_uid),
@@ -467,7 +479,7 @@ pub async fn get_message(
                         .engine
                         .cache_display_message(&folder_id, server_uid, &display)
                     {
-                        Ok(parsed) => parsed,
+                        Ok(parsed) => Ok(parsed),
                         Err(_) => {
                             let hash = state
                                 .engine
@@ -478,7 +490,7 @@ pub async fn get_message(
                             state
                                 .engine
                                 .cache_parsed_message(&folder_id, server_uid, &hash, &raw)
-                                .map_err(err)?
+                                .map_err(err)
                         }
                     },
                     Err(_) => {
@@ -491,13 +503,17 @@ pub async fn get_message(
                         state
                             .engine
                             .cache_parsed_message(&folder_id, server_uid, &hash, &raw)
-                            .map_err(err)?
+                            .map_err(err)
                     }
                 }
             }
         }
-    };
+    }
+    .await;
+    drop(guard);
+    state.display_fetch_gates.release(&key, &gate);
 
+    let parsed = loaded?;
     state
         .display_lru
         .lock()

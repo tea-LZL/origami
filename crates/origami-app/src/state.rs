@@ -23,7 +23,34 @@ pub struct AppState {
     cancel_tokens: Arc<Mutex<HashMap<String, CancellationToken>>>,
     pub(crate) account_errors: Arc<Mutex<HashMap<String, String>>>,
     pub(crate) syncing_accounts: Arc<Mutex<HashSet<String>>>,
+    pub(crate) display_fetch_gates: DisplayFetchGates,
     prefetch_started: std::sync::Once,
+}
+
+/// One async gate per display key. An open click and a hover prefetch for the
+/// same physical message share the gate, so only one IMAP fetch runs; the
+/// loser waits, then finds the freshly cached body.
+#[derive(Clone, Default)]
+pub struct DisplayFetchGates {
+    gates: Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
+}
+
+impl DisplayFetchGates {
+    pub fn acquire(&self, key: &str) -> Arc<tokio::sync::Mutex<()>> {
+        self.gates
+            .lock()
+            .unwrap()
+            .entry(key.to_string())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    }
+
+    /// Drop the map entry once no fetch holds or waits on it.
+    pub fn release(&self, key: &str, gate: &Arc<tokio::sync::Mutex<()>>) {
+        if Arc::strong_count(gate) <= 2 {
+            self.gates.lock().unwrap().remove(key);
+        }
+    }
 }
 
 impl AppState {
@@ -41,6 +68,7 @@ impl AppState {
             cancel_tokens: Arc::new(Mutex::new(HashMap::new())),
             account_errors: Arc::new(Mutex::new(HashMap::new())),
             syncing_accounts: Arc::new(Mutex::new(HashSet::new())),
+            display_fetch_gates: DisplayFetchGates::default(),
             prefetch_started: std::sync::Once::new(),
         })
     }
@@ -237,6 +265,7 @@ impl AppState {
         let store = self.store.clone();
         let config = self.config.clone();
         let account_errors = self.account_errors.clone();
+        let gates = self.display_fetch_gates.clone();
         self.prefetch_started.call_once(|| {
             let fetch_engine = engine.clone();
             engine.prefetch_queue().run(move |key: String| {
@@ -245,6 +274,7 @@ impl AppState {
                     store.clone(),
                     config.clone(),
                     account_errors.clone(),
+                    gates.clone(),
                     key,
                 )
             });
@@ -261,6 +291,7 @@ async fn prefetch_display_key(
     store: Store,
     config: Arc<RwLock<Config>>,
     account_errors: Arc<Mutex<HashMap<String, String>>>,
+    gates: DisplayFetchGates,
     key: String,
 ) -> std::result::Result<(), String> {
     let Some((folder_id, uid)) = key.rsplit_once(':') else {
@@ -310,31 +341,50 @@ async fn prefetch_display_key(
     let Some(imap) = account.imap else {
         return Ok(());
     };
-    let generation = engine.prefetch_queue().generation();
-    let backend =
-        origami_core::sync::with_network_timeout(ImapBackend::connect(&account_config_id, &imap))
-            .await
-            .map_err(|error| error.to_string())?;
-    let display = origami_core::sync::with_network_timeout(
-        backend.fetch_display_message(&mailbox, server_uid),
-    )
-    .await
-    .map_err(|error| error.to_string())?;
-    if engine.prefetch_queue().generation() != generation {
-        return Ok(());
-    }
-    let envelope = store
-        .get_envelope(&folder_id, server_uid)
+
+    // Share one fetch with an open click for the same physical message.
+    let gate = gates.acquire(&key);
+    let guard = gate.lock().await;
+    let result = async {
+        if store
+            .parsed_message_for_logical_message(&folder_id, server_uid)
+            .map_err(|error| error.to_string())?
+            .is_some()
+        {
+            return Ok(());
+        }
+        let generation = engine.prefetch_queue().generation();
+        let backend = origami_core::sync::with_network_timeout(ImapBackend::connect(
+            &account_config_id,
+            &imap,
+        ))
+        .await
         .map_err(|error| error.to_string())?;
-    let Some(envelope) = envelope else {
-        // Message deleted since the UI enqueued the request.
-        return Ok(());
-    };
-    let fallback = format!("display:{folder_id}:{server_uid}");
-    engine
-        .cache_display_message_sources(&envelope.sources, &display, &fallback)
-        .map(|_| ())
-        .map_err(|error| error.to_string())
+        let display = origami_core::sync::with_network_timeout(
+            backend.fetch_display_message(&mailbox, server_uid),
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+        if engine.prefetch_queue().generation() != generation {
+            return Ok(());
+        }
+        let envelope = store
+            .get_envelope(&folder_id, server_uid)
+            .map_err(|error| error.to_string())?;
+        let Some(envelope) = envelope else {
+            // Message deleted since the UI enqueued the request.
+            return Ok(());
+        };
+        let fallback = format!("display:{folder_id}:{server_uid}");
+        engine
+            .cache_display_message_sources(&envelope.sources, &display, &fallback)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+    .await;
+    drop(guard);
+    gates.release(&key, &gate);
+    result
 }
 
 async fn refresh_oauth_token(
@@ -411,6 +461,18 @@ mod tests {
     use super::*;
     use origami_core::model::MailboxRole;
 
+    #[test]
+    fn display_fetch_gates_share_one_gate_and_release_it() {
+        let gates = DisplayFetchGates::default();
+        let first = gates.acquire("folder:7");
+        let second = gates.acquire("folder:7");
+        assert!(Arc::ptr_eq(&first, &second));
+
+        drop(second);
+        gates.release("folder:7", &first);
+        assert!(gates.gates.lock().unwrap().get("folder:7").is_none());
+    }
+
     #[tokio::test]
     async fn benign_prefetch_misses_do_not_disable_queue() {
         let dir = tempfile::tempdir().unwrap();
@@ -437,6 +499,7 @@ mod tests {
                 store.clone(),
                 config.clone(),
                 Arc::new(Mutex::new(HashMap::new())),
+                DisplayFetchGates::default(),
                 key.clone(),
             )
             .await;
@@ -530,6 +593,7 @@ mod tests {
                 store.clone(),
                 config.clone(),
                 account_errors.clone(),
+                DisplayFetchGates::default(),
                 format!("{folder}:7"),
             )
             .await;

@@ -754,6 +754,205 @@ fn label_copies_are_one_logical_envelope_with_one_unread_state() {
 }
 
 #[test]
+fn page_keeps_label_copy_far_beyond_the_scan_window() {
+    let store = Store::open_in_memory().unwrap();
+    let account = store
+        .upsert_account("test", "Test", "t@example.org")
+        .unwrap();
+    let inbox = store
+        .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
+        .unwrap();
+    let archive = store
+        .upsert_folder(&account, "[Gmail]/All Mail", MailboxRole::Archive)
+        .unwrap();
+
+    let mut newest = envelope(1, "same message");
+    newest.message_id = Some("<same-far@example.org>".into());
+    newest.received_at = Some(10_000);
+    newest.flags = vec![Flag::Seen];
+    let mut oldest_copy = newest.clone();
+    oldest_copy.server_uid = Some(2);
+    oldest_copy.received_at = Some(1);
+    oldest_copy.flags = Vec::new();
+    store.upsert_envelope(&inbox, &newest).unwrap();
+    store.upsert_envelope(&archive, &oldest_copy).unwrap();
+
+    for uid in 100..600 {
+        let mut filler = envelope(uid, &format!("filler {uid}"));
+        filler.received_at = Some(i64::from(uid));
+        store.upsert_envelope(&inbox, &filler).unwrap();
+    }
+
+    let page = store
+        .list_envelopes_in_folders(&[inbox, archive], 1, 10, false)
+        .unwrap();
+    assert_eq!(page.len(), 10);
+    let target = page
+        .iter()
+        .find(|message| message.subject == "same message")
+        .expect("newest copy belongs on page one");
+    assert_eq!(target.sources.len(), 2);
+    assert!(!target.flags.contains(&Flag::Seen));
+}
+
+#[test]
+fn unread_page_uses_late_copy_state_beyond_the_scan_window() {
+    let store = Store::open_in_memory().unwrap();
+    let account = store
+        .upsert_account("test", "Test", "t@example.org")
+        .unwrap();
+    let inbox = store
+        .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
+        .unwrap();
+    let archive = store
+        .upsert_folder(&account, "[Gmail]/All Mail", MailboxRole::Archive)
+        .unwrap();
+
+    let mut read_copy = envelope(1, "late unread copy");
+    read_copy.message_id = Some("<late-unread@example.org>".into());
+    read_copy.received_at = Some(10_000);
+    read_copy.flags = vec![Flag::Seen];
+    let mut unread_copy = read_copy.clone();
+    unread_copy.server_uid = Some(2);
+    unread_copy.received_at = Some(1);
+    unread_copy.flags = Vec::new();
+    store.upsert_envelope(&inbox, &read_copy).unwrap();
+    store.upsert_envelope(&archive, &unread_copy).unwrap();
+
+    for uid in 100..600 {
+        let mut filler = envelope(uid, &format!("read filler {uid}"));
+        filler.received_at = Some(i64::from(uid));
+        filler.flags = vec![Flag::Seen];
+        store.upsert_envelope(&inbox, &filler).unwrap();
+    }
+
+    let page = store
+        .list_envelopes_in_folders(&[inbox, archive], 1, 1, true)
+        .unwrap();
+    assert_eq!(page.len(), 1);
+    assert_eq!(page[0].subject, "late unread copy");
+    assert_eq!(page[0].sources.len(), 2);
+}
+
+#[test]
+fn late_same_mailbox_duplicate_stays_a_separate_envelope() {
+    let store = Store::open_in_memory().unwrap();
+    let account = store
+        .upsert_account("test", "Test", "t@example.org")
+        .unwrap();
+    let inbox = store
+        .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
+        .unwrap();
+
+    let mut first = envelope(1, "duplicated id");
+    first.message_id = Some("<late-duplicate@example.org>".into());
+    first.received_at = Some(10_000);
+    let mut duplicate = first.clone();
+    duplicate.server_uid = Some(2);
+    duplicate.received_at = Some(1);
+    store.upsert_envelope(&inbox, &first).unwrap();
+    store.upsert_envelope(&inbox, &duplicate).unwrap();
+
+    for uid in 100..300 {
+        let mut filler = envelope(uid, &format!("filler {uid}"));
+        filler.received_at = Some(i64::from(uid));
+        store.upsert_envelope(&inbox, &filler).unwrap();
+    }
+
+    let page = store
+        .list_envelopes_in_folders(std::slice::from_ref(&inbox), 1, 400, false)
+        .unwrap();
+    let duplicates = page
+        .iter()
+        .filter(|message| message.subject == "duplicated id")
+        .count();
+    assert_eq!(duplicates, 2);
+}
+
+#[test]
+fn page_keeps_copy_with_normalized_message_id_difference() {
+    let store = Store::open_in_memory().unwrap();
+    let account = store
+        .upsert_account("test", "Test", "t@example.org")
+        .unwrap();
+    let inbox = store
+        .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
+        .unwrap();
+    let archive = store
+        .upsert_folder(&account, "[Gmail]/All Mail", MailboxRole::Archive)
+        .unwrap();
+
+    let mut newest = envelope(1, "normalized id");
+    newest.message_id = Some("<same-normalized@example.org>".into());
+    newest.received_at = Some(10_000);
+    newest.flags = vec![Flag::Seen];
+    let mut oldest_copy = newest.clone();
+    oldest_copy.server_uid = Some(2);
+    oldest_copy.message_id = Some("  <SAME-NORMALIZED@example.org>  ".into());
+    oldest_copy.received_at = Some(1);
+    oldest_copy.flags = Vec::new();
+    store.upsert_envelope(&inbox, &newest).unwrap();
+    store.upsert_envelope(&archive, &oldest_copy).unwrap();
+
+    for uid in 100..600 {
+        let mut filler = envelope(uid, &format!("normalized filler {uid}"));
+        filler.received_at = Some(i64::from(uid));
+        store.upsert_envelope(&inbox, &filler).unwrap();
+    }
+
+    let page = store
+        .list_envelopes_in_folders(&[inbox, archive], 1, 10, false)
+        .unwrap();
+    let target = page
+        .iter()
+        .find(|message| message.subject == "normalized id")
+        .expect("newest copy belongs on page one");
+    assert_eq!(target.sources.len(), 2);
+    assert!(!target.flags.contains(&Flag::Seen));
+}
+
+#[test]
+fn page_keeps_metadata_copy_without_a_message_id() {
+    let store = Store::open_in_memory().unwrap();
+    let account = store
+        .upsert_account("test", "Test", "t@example.org")
+        .unwrap();
+    let inbox = store
+        .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
+        .unwrap();
+    let archive = store
+        .upsert_folder(&account, "[Gmail]/All Mail", MailboxRole::Archive)
+        .unwrap();
+
+    let mut newest = envelope(1, "no message id");
+    newest.message_id = None;
+    newest.received_at = Some(10_000);
+    newest.flags = vec![Flag::Seen];
+    let mut oldest_copy = newest.clone();
+    oldest_copy.server_uid = Some(2);
+    oldest_copy.received_at = Some(1);
+    oldest_copy.flags = Vec::new();
+    store.upsert_envelope(&inbox, &newest).unwrap();
+    store.upsert_envelope(&archive, &oldest_copy).unwrap();
+
+    for uid in 100..600 {
+        let mut filler = envelope(uid, &format!("metadata filler {uid}"));
+        filler.received_at = Some(i64::from(uid));
+        store.upsert_envelope(&inbox, &filler).unwrap();
+    }
+
+    let page = store
+        .list_envelopes_in_folders(&[inbox, archive], 1, 10, false)
+        .unwrap();
+    let target = page
+        .iter()
+        .find(|message| message.subject == "no message id")
+        .expect("newest copy belongs on page one");
+    assert_eq!(target.sources.len(), 2);
+    assert!(!target.flags.contains(&Flag::Seen));
+}
+
+#[test]
 fn duplicate_message_ids_in_one_folder_are_not_merged() {
     let (store, _account, folder) = setup();
     let mut first = envelope(40, "same metadata");

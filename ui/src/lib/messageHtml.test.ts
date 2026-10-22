@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import DOMPurify from "dompurify";
 import { allowedLinkHref, sanitizeMessageHtml } from "./messageHtml";
+
+afterEach(() => vi.restoreAllMocks());
 
 describe("sanitizeMessageHtml", () => {
   it("removes active content and blocks remote image requests", () => {
@@ -104,6 +107,45 @@ describe("sanitizeMessageHtml", () => {
     expect(result.html).toContain('src="http://cdn.example/pixel"');
     expect(result.blockedResources).toBe(0);
     expect(result.srcdoc).toContain("img-src data: cid: http: https:");
+  });
+
+  it("reuses sanitized html for the same message and policy", () => {
+    const sanitize = vi.spyOn(DOMPurify, "sanitize");
+    const html = '<style>body{color:#fff}</style><p>Reopen me</p><img src="https://tracker.example/p.gif">';
+
+    const first = sanitizeMessageHtml(html, {}, "message-reopen");
+    const second = sanitizeMessageHtml(html, {}, "message-reopen");
+
+    expect(sanitize).toHaveBeenCalledTimes(1);
+    expect(second).toBe(first);
+    expect(second.blockedResources).toBe(1);
+    sanitize.mockRestore();
+  });
+
+  it("keeps a separate cache entry per remote-content policy", () => {
+    const sanitize = vi.spyOn(DOMPurify, "sanitize");
+    const html = '<img src="https://images.example/photo.png">';
+
+    sanitizeMessageHtml(html, {}, "message-policy");
+    const allowed = sanitizeMessageHtml(
+      html,
+      { allowRemoteImages: true },
+      "message-policy",
+    );
+
+    expect(sanitize).toHaveBeenCalledTimes(2);
+    expect(allowed.blockedResources).toBe(0);
+    sanitize.mockRestore();
+  });
+
+  it("does not cache when no message key is supplied", () => {
+    const sanitize = vi.spyOn(DOMPurify, "sanitize");
+
+    sanitizeMessageHtml("<p>uncached</p>");
+    sanitizeMessageHtml("<p>uncached</p>");
+
+    expect(sanitize).toHaveBeenCalledTimes(2);
+    sanitize.mockRestore();
   });
 });
 

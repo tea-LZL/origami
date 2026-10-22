@@ -2,10 +2,13 @@
 title: UI state and rendering
 type: architecture
 status: current
-updated: 2026-10-11
+updated: 2026-10-22
 sources:
   - ui/src/lib/ComposePane.svelte
   - ui/src/lib/ComposeTabs.svelte
+  - ui/src/lib/ActionIcon.svelte
+  - ui/src/lib/messageHtml.ts
+  - ui/src/lib/messageHtml.test.ts
   - ui/src/lib/stores.composer.test.ts
   - docs/superpowers/specs/2026-10-08-compose-tabs-and-drafts-design.md
   - ui/src/lib/stores.svelte.ts
@@ -23,7 +26,6 @@ sources:
   - ui/src/lib/trapFocus.ts
   - ui/src/lib/AddAccount.svelte
   - ui/src/lib/OrigamiArtwork.svelte
-  - ui/src/lib/messageHtml.ts
   - ui/src/lib/MessageView.svelte
   - ui/src/lib/navigation.ts
   - ui/src/lib/forward.ts
@@ -73,8 +75,9 @@ The flag is restored in `loadPreferences` before the first folder fetch and writ
 
 Folder and unified-Inbox paging pass `unreadOnly` into
 `list_envelopes` / `list_unified_inbox` (`unread_only: Option<bool>` at the command edge,
-default false). The store filters **after** `deduplicate_envelopes` and **before** skip/take
-in `list_envelopes_in_folders` (`crates/origami-core/src/store.rs`). A logical envelope is
+default false). The store stops scanning once enough logical envelopes are collected,
+hydrates label copies that sort outside the page window, then filters unread **after**
+dedupe and **before** skip/take (`crates/origami-core/src/store.rs`). A logical envelope is
 unread when the merged flags lack `Seen` — any retained physical copy unseen, via
 `merge_envelope_sources`. Filtering on SQL `flags_json` before dedupe would drop label
 copies from `sources` ([[logical-vs-physical-message]]). Search does not use that argument:
@@ -145,6 +148,10 @@ with **DOMPurify** (a production dependency) and rendered under a restrictive CS
   never navigate the app webview;
 - serve `cid:` through a Tauri custom protocol scoped per message.
 
+Sanitized output is cached per message id and remote-content policy (bounded entry and
+byte budget), so reopening a message or toggling HTML/Text does not re-run DOMPurify.
+The sanitizer extracts style blocks first, then sanitizes the body in one DOM pass.
+
 The HTML body scrolls **inside** the sandboxed iframe document, not in a nested wrapper
 scroller: `MessageView.svelte` sizes the frame to the pane and the email document owns
 its scrollbar (the composited fast path on WebKitGTK), so the reading pane no longer
@@ -169,8 +176,9 @@ through `save_composer_draft(id, draft)` / `list_composer_drafts` /
 (`crates/origami-app/src/commands.rs`). Autosave debounces 400 ms per session and
 skips blank sessions; every stored draft reopens as a minimized tab on bootstrap
 (the legacy single `"composer"` row and `origami-composer-draft` localStorage key
-are migrated once, and blank ghosts are deleted). Send and discard delete the row
-and its remote copy.
+are migrated once, and blank ghosts are deleted). Restore runs beside the first
+folder load and merges into the current session list, so a composer opened while
+drafts are still loading survives. Send and discard delete the row and its remote copy.
 
 **Forward** (`ui/src/lib/forward.ts`, `stores.svelte.ts forwardMessage`) builds a real
 forwarded message before opening the composer: original `From`/`Date`/`Subject`/`To`/`Cc`
@@ -189,10 +197,14 @@ so the send-click path never waits on IMAP.
 
 `ComposePane.svelte` uses **TipTap** (`@tiptap/core`, `@tiptap/pm`,
 `@tiptap/starter-kit`; Link/Underline/UndoRedo come from StarterKit v3), serialized
-by `origami-core::compose` into a multipart message. Recipient chips flag invalid
-addresses, Cc/Bcc collapse, attachments support drag-and-drop with image thumbnails,
-and the footer reports local save and server-sync state per session. The server
-Drafts copy is replaced via APPENDUID per draft; server-side draft rows remain
+by `origami-core::compose` into a multipart message. Its surface is styled as stationery:
+serif compose heading, a quiet sender capsule, ruled recipient/subject rows, an inset
+paper editor with a margin rule, and folded-corner attachment chips. Formatting verbs are
+`ActionIcon` SVG buttons (bold, italic, underline, heading, lists, quote, code, link,
+undo/redo, image) with constant accessible names; Rich/Plain remains text mode chrome.
+Recipient chips flag invalid addresses, Cc/Bcc collapse, attachments support drag-and-drop
+with image thumbnails, and the footer reports local save and server-sync state per session.
+The server Drafts copy is replaced via APPENDUID per draft; server-side draft rows remain
 read-only messages (reopening them into a session is not built).
 
 ## Themes and the palette system

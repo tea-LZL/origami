@@ -137,7 +137,7 @@
     return html ? sanitizeMessageHtml(html, {
       allowRemoteImages: remoteContentAllowed || senderRemoteContentAllowed,
       allowedOrigins: new Set(allowedRemoteOrigins),
-    }) : {
+    }, app.value.message?.envelope.id) : {
       html: "",
       srcdoc: "",
       blockedResources: 0,

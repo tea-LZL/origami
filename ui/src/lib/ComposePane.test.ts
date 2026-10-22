@@ -73,6 +73,20 @@ describe("ComposePane", () => {
     render(ComposePane);
 
     expect(screen.getByLabelText("Subject")).toHaveValue("Draft subject");
+    expect(screen.getByRole("heading", { name: "New message" })).toBeInTheDocument();
+  });
+
+  it("exposes_labelled_formatting_controls", () => {
+    render(ComposePane);
+
+    expect(screen.getByRole("button", { name: "Bold" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Bulleted list" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Link" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByLabelText("Attach files")).toBeInTheDocument();
+    expect(screen.getByLabelText("Insert image file")).toBeInTheDocument();
   });
 
   it("minimizes from the header button", async () => {

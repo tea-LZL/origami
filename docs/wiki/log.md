@@ -2,7 +2,7 @@
 title: Log
 type: log
 status: current
-updated: 2026-10-06
+updated: 2026-10-22
 ---
 
 # Log
@@ -303,3 +303,17 @@ grouped/single branch, so every inbox mail produced two notifications. The
 per-envelope decision now lives in `notifications::notify_new_mail` (single
 call site, grouped or single exactly once, logical-id dedupe retained) with
 regression test `one_notification_per_new_mail_in_both_modes`.
+
+## [2026-10-22] change | Faster page loads, cached sanitization, stationery composer
+`list_envelopes_in_folders` now merges indexed per-folder scans and stops at the page,
+hydrating label copies by normalized Message-ID (or batched metadata for no-ID mail)
+instead of reading every physical row; the 40k-row label-copy benchmark fell from ~771 ms
+to ~45 ms debug (~8 ms release), and a 2k no-Message-ID page runs in ~16 ms release with
+deeper pages staying under 25 ms. Counts keep their own one-pass path after the chunked
+list scan proved slower for whole-folder aggregation.
+Sanitized HTML is cached per message and remote-content policy, and the sanitizer uses one
+body pass. `get_message` and prefetch share a per-message fetch gate, and `selectEnvelope`
+probes physical sources in parallel. Startup no longer waits for draft restore before the
+first folder load, and restored drafts merge around any composer opened meanwhile. The
+composer was restyled as Origami stationery with icon formatting controls. Recorded in
+[[store-and-search]], [[display-cache-and-prefetch]], and [[ui-state-and-rendering]].

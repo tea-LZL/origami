@@ -2,7 +2,7 @@
 title: Display cache and prefetch
 type: architecture
 status: current
-updated: 2026-09-27
+updated: 2026-10-22
 sources:
   - docs/superpowers/specs/2026-09-26-hardening-caching-palette-design.md
   - crates/origami-app/src/display_lru.rs
@@ -12,8 +12,10 @@ sources:
   - crates/origami-core/src/store.rs
   - crates/origami-core/src/sync.rs
   - ui/src/lib/prefetch.ts
+  - ui/src/lib/stores.svelte.ts
   - ui/src/lib/MessageView.svelte
   - crates/origami-app/tests/open_latency.rs
+  - crates/origami-core/tests/perf_budget.rs
 ---
 
 # Display cache and prefetch
@@ -41,6 +43,12 @@ order:
 Invalidation: message delete/move removes per-source entries; account removal clears the
 whole LRU. Stale responses after navigation are rejected via the existing request
 generation in `stores.svelte.ts`.
+
+`AppState.display_fetch_gates` gives each display key one async gate shared by
+`get_message` and the prefetch worker. A click that lands while hover prefetch is already
+fetching waits on the gate, re-checks the LRU/SQLite cache, and returns the cached body
+instead of opening a second IMAP connection. `selectEnvelope` probes all physical sources'
+local caches in parallel; only the network fallback stays sequential.
 
 ## Prefetch queue
 
@@ -92,6 +100,8 @@ clicks during load are safe no-ops via the composer's null guard.
 | Display LRU | 32 MiB / 300 entries |
 | SQLite display cache | 2,000 rows or 30 days received-age (`evict_display_cache`, run after each warm batch) |
 | Cached-open latency | mean LRU hit < 50 ms — `crates/origami-app/tests/open_latency.rs` (`--ignored`) |
+| 40k-row label-copy page | < 250 ms debug, measured ~8 ms release — `perf_budget` (`--ignored`) |
+| 2k no-Message-ID pages 1–5 | < 250 ms debug each, measured ~16–24 ms release — `perf_budget` (`--ignored`) |
 | Background warm | existing 7-day / 500-message / 8 MiB `PREFETCH_MAX_MESSAGE_SIZE` window stays ([[sync-engine]]) |
 
 `message_cache` eviction touches only that table — blobs, FTS rows, and envelopes are

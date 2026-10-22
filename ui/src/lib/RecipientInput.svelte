@@ -102,32 +102,37 @@
 
 <style>
   .recipients {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
     font-size: 11px;
     color: var(--fg-muted);
   }
-  .recipients-label { font-size: 11px; }
+  .recipients-label {
+    color: var(--fg-subtle);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
   .chips {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
-    min-height: 30px;
-    padding: 4px 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--bg-raised);
+    min-height: 38px;
+    padding: 5px 0;
   }
-  .chips:focus-within { border-color: var(--accent); }
+  .chips:focus-within { box-shadow: inset 0 -2px var(--accent); }
   .chip {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 2px 6px;
+    padding: 2px 7px;
     border-radius: 999px;
-    background: color-mix(in oklab, var(--accent) 18%, var(--bg-raised));
+    background: color-mix(in oklab, var(--accent) 14%, var(--bg-raised));
     color: var(--fg);
     font-size: 11px;
   }
@@ -152,6 +157,7 @@
   .chips input {
     flex: 1;
     min-width: 140px;
+    padding: 4px 0;
     border: none;
     background: transparent;
     color: var(--fg);

@@ -2,13 +2,14 @@
 title: Store and search
 type: architecture
 status: current
-updated: 2026-09-27
+updated: 2026-10-22
 sources:
   - docs/PLAN.md
   - crates/origami-core/src/store.rs
   - crates/origami-core/src/blob.rs
   - crates/origami-core/src/private_fs.rs
   - crates/origami-core/tests/store.rs
+  - crates/origami-core/tests/perf_budget.rs
 ---
 
 # Store and search
@@ -31,10 +32,15 @@ Schema and migrations live in `crates/origami-core/src/store.rs`.
 
 ## Envelope listing and unread-only
 
-`list_envelopes_in_folders` reads all matching physical rows, then
-`deduplicate_envelopes`, then optional unread filtering, then skip/take. Pagination
-cannot run first: provider labels are separate IMAP rows, and paging before dedupe would
-let one logical message occupy several page slots.
+`list_envelopes_in_folders` scans each folder newest-first through its received-time
+index and merges the per-folder cursors, stopping once the requested page is covered.
+One chunk-wide lookup hydrates label copies that sort outside that window: Message-IDs
+are matched after normalization (`lower(trim(...))`, indexed expression) and
+no-Message-ID messages are batched by size, then every row is confirmed by logical
+identity in Rust. Then optional unread filtering and skip/take run. Pagination cannot
+run before dedupe: provider labels are separate IMAP rows, and paging first would let one
+logical message occupy several page slots. Copies found by hydration keep their `sources`
+and merged flags; later same-mailbox duplicates remain separate logical envelopes.
 
 When `unread_only` is true, the store retains logical envelopes whose merged flags lack
 `Seen`. Unread is defined by `merge_envelope_sources`: Seen is on the logical envelope

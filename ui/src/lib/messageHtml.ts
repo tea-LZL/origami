@@ -15,6 +15,9 @@ export interface MessageHtmlPolicy {
 
 const sanitizationOptions = {
   USE_PROFILES: { html: true },
+  // Style blocks are preserved for newsletter layout. Their text is escaped
+  // below before it reaches the sandboxed document; CSS resources remain
+  // bound by the generated CSP.
   FORBID_TAGS: [
     "audio",
     "base",
@@ -28,7 +31,6 @@ const sanitizationOptions = {
     "object",
     "script",
     "select",
-    "style",
     "textarea",
     "video",
   ],
@@ -43,21 +45,97 @@ const sanitizationOptions = {
   ALLOW_UNKNOWN_PROTOCOLS: false,
 };
 
+const SANITIZED_CACHE_ENTRIES = 12;
+const SANITIZED_CACHE_BYTES = 16 * 1024 * 1024;
+const sanitizedCache = new Map<string, { value: SanitizedMessageHtml; bytes: number }>();
+let sanitizedCacheBytes = 0;
+
+function policyFingerprint(policy: MessageHtmlPolicy): string {
+  const origins = [...(policy.allowedOrigins ?? [])].sort();
+  return `${policy.allowRemoteImages ? "remote" : "blocked"}|${origins.join("\u0000")}`;
+}
+
+function sanitizedCacheKey(
+  key: string,
+  policy: MessageHtmlPolicy,
+  rawLength: number,
+): string {
+  return `${key}\u0000${policyFingerprint(policy)}\u0000${rawLength}`;
+}
+
+function cachedSanitized(
+  key: string | undefined,
+  policy: MessageHtmlPolicy,
+  rawLength: number,
+): SanitizedMessageHtml | null {
+  if (!key) return null;
+  const cacheKey = sanitizedCacheKey(key, policy, rawLength);
+  const entry = sanitizedCache.get(cacheKey);
+  if (!entry) return null;
+  // Refresh recency.
+  sanitizedCache.delete(cacheKey);
+  sanitizedCache.set(cacheKey, entry);
+  return entry.value;
+}
+
+function storeSanitized(
+  key: string | undefined,
+  policy: MessageHtmlPolicy,
+  rawLength: number,
+  value: SanitizedMessageHtml,
+): void {
+  if (!key) return;
+  const cacheKey = sanitizedCacheKey(key, policy, rawLength);
+  const bytes = value.html.length + value.srcdoc.length;
+  const previous = sanitizedCache.get(cacheKey);
+  if (previous) sanitizedCacheBytes -= previous.bytes;
+  sanitizedCache.set(cacheKey, { value, bytes });
+  sanitizedCacheBytes += bytes;
+  while (
+    sanitizedCache.size > 1
+    && (sanitizedCache.size > SANITIZED_CACHE_ENTRIES || sanitizedCacheBytes > SANITIZED_CACHE_BYTES)
+  ) {
+    const oldest = sanitizedCache.keys().next().value;
+    if (oldest === undefined) break;
+    const removed = sanitizedCache.get(oldest);
+    sanitizedCache.delete(oldest);
+    sanitizedCacheBytes -= removed?.bytes ?? 0;
+  }
+}
+
 /** Sanitize mail HTML and remove network-backed image resources by default. */
-export function sanitizeMessageHtml(raw: string, policy: MessageHtmlPolicy = {}): SanitizedMessageHtml {
-  const sourceDocument = new DOMParser().parseFromString(raw, "text/html");
-  const styleBlocks = [...sourceDocument.querySelectorAll("style")].map((style) => ({
+export function sanitizeMessageHtml(
+  raw: string,
+  policy: MessageHtmlPolicy = {},
+  cacheKey?: string,
+): SanitizedMessageHtml {
+  const cached = cachedSanitized(cacheKey, policy, raw.length);
+  if (cached) return cached;
+
+  // Extract style blocks before sanitizing; they are re-inserted at the top
+  // with escaped closing tags. Everything else is sanitized in one DOM pass.
+  const source = new DOMParser().parseFromString(raw, "text/html");
+  const styleBlocks = [...source.querySelectorAll("style")].map((style) => ({
     css: protectStyleText(style.textContent ?? ""),
     media: style.getAttribute("media"),
   }));
-  const clean = DOMPurify.sanitize(raw, sanitizationOptions);
-  const document = new DOMParser().parseFromString(clean, "text/html");
+  for (const style of source.querySelectorAll("style")) style.remove();
+
+  const fragment = DOMPurify.sanitize(source.body.innerHTML, {
+    ...sanitizationOptions,
+    RETURN_DOM: true,
+  });
+  const document = window.document.implementation.createHTMLDocument("");
+  const container = document.createElement("div");
+  container.appendChild(fragment);
+
   for (const styleBlock of styleBlocks.reverse()) {
     const style = document.createElement("style");
     if (styleBlock.media) style.setAttribute("media", styleBlock.media);
     style.textContent = styleBlock.css;
-    document.body.prepend(style);
+    container.prepend(style);
   }
+
   const blockedHosts = new Set<string>();
   const blockedOrigins = new Set<string>();
   const imageSources = new Set(["data:", "cid:"]);
@@ -67,7 +145,7 @@ export function sanitizeMessageHtml(raw: string, policy: MessageHtmlPolicy = {})
   }
   let blockedResources = 0;
 
-  for (const image of document.querySelectorAll<HTMLImageElement>("img[src]")) {
+  for (const image of container.querySelectorAll<HTMLImageElement>("img[src]")) {
     const source = image.getAttribute("src");
     if (!source) continue;
     let url: URL;
@@ -108,15 +186,16 @@ export function sanitizeMessageHtml(raw: string, policy: MessageHtmlPolicy = {})
     }
   }
 
-  const html = document.body.innerHTML;
-
-  return {
+  const html = container.innerHTML;
+  const result: SanitizedMessageHtml = {
     html,
     srcdoc: emailDocument(html, imageSources),
     blockedResources,
     blockedHosts: [...blockedHosts].sort(),
     blockedOrigins: [...blockedOrigins].sort(),
   };
+  storeSanitized(cacheKey, policy, raw.length, result);
+  return result;
 }
 
 function emailDocument(html: string, imageSources: ReadonlySet<string>): string {

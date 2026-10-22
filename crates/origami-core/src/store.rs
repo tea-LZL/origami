@@ -288,6 +288,28 @@ impl Store {
             }
             conn.pragma_update(None, "user_version", 10)?;
         }
+        if version < 11 {
+            // Paged envelope scans order each folder by received time and
+            // hydrate label copies by Message-ID; both need an index.
+            conn.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_messages_folder_received
+                   ON messages(folder_id, received_at DESC);
+                 CREATE INDEX IF NOT EXISTS idx_messages_message_id
+                   ON messages(message_id);",
+            )?;
+            conn.pragma_update(None, "user_version", 11)?;
+        }
+        if version < 12 {
+            // Copy hydration matches normalized Message-IDs and batches
+            // no-Message-ID candidates by size.
+            conn.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_messages_message_id_normalized
+                   ON messages(lower(trim(trim(message_id), '<>')));
+                 CREATE INDEX IF NOT EXISTS idx_messages_size
+                   ON messages(size);",
+            )?;
+            conn.pragma_update(None, "user_version", 12)?;
+        }
         Ok(())
     }
 
@@ -468,12 +490,35 @@ impl Store {
     }
 
     /// Count logical messages across physical folders without counting a
-    /// provider label copy more than once.
+    /// provider label copy more than once. Uses one full scan rather than the
+    /// paged open path, which would otherwise hydrate copies chunk by chunk.
     pub fn logical_envelope_counts(&self, folder_ids: &[String]) -> Result<(u32, u32)> {
         if folder_ids.is_empty() {
             return Ok((0, 0));
         }
-        let logical = self.list_envelopes_in_folders(folder_ids, 1, u32::MAX, false)?;
+        let conn = self.conn()?;
+        let placeholders = vec!["?"; folder_ids.len()].join(", ");
+        let statement = format!(
+            "SELECT m.id, m.folder_id, m.server_uid, m.message_id, m.thread_id, m.subject,
+                    m.from_json, m.to_json, m.date, m.received_at, m.size, m.flags_json,
+                    m.keywords_json, m.has_attachment, f.account_id, m.rowid
+               FROM messages m
+               JOIN folders f ON f.id = m.folder_id
+              WHERE m.folder_id IN ({placeholders})
+              ORDER BY m.received_at DESC, m.rowid DESC"
+        );
+        let binds = folder_ids
+            .iter()
+            .map(|folder_id| Value::Text(folder_id.clone()))
+            .collect::<Vec<_>>();
+        let mut stmt = conn.prepare_cached(&statement)?;
+        let rows = stmt.query_map(params_from_iter(binds), read_envelope_row)?;
+        let mut physical = Vec::new();
+        for row in rows {
+            let row = row?;
+            physical.push((row.account_id, row.envelope));
+        }
+        let logical = deduplicate_envelopes(physical);
         let unread = logical
             .iter()
             .filter(|envelope| !envelope.flags.contains(&Flag::Seen))
@@ -1008,9 +1053,10 @@ impl Store {
 
     /// Page envelopes from multiple physical folders as one logical view.
     ///
-    /// The query deliberately reads all matching physical rows before applying
-    /// pagination. Provider labels are separate IMAP rows, so paginating first
-    /// would allow one logical message to occupy several page slots.
+    /// The scan stops once the requested page is covered. Provider labels are
+    /// separate IMAP rows, so copies that sort outside the window are hydrated
+    /// by logical identity before the page is sliced; one logical message
+    /// never occupies several page slots.
     ///
     /// When `unread_only` is true, filter after logical dedupe (unread if any
     /// retained copy lacks Seen) and before skip/take, so label copies keep
@@ -1027,94 +1073,140 @@ impl Store {
         }
 
         let conn = self.conn()?;
-        let placeholders = vec!["?"; folder_ids.len()].join(", ");
-        let statement = format!(
-            "SELECT m.id, m.folder_id, m.server_uid, m.message_id, m.thread_id, m.subject,
-                    m.from_json, m.to_json, m.date, m.received_at, m.size, m.flags_json,
-                    m.keywords_json, m.has_attachment, f.account_id
-               FROM messages m
-               JOIN folders f ON f.id = m.folder_id
-              WHERE m.folder_id IN ({placeholders})
-             ORDER BY m.received_at DESC, m.rowid DESC"
+        // Every chunk of one page must see the same snapshot; otherwise a
+        // cross-process write between chunks could shift LIMIT/OFFSET.
+        let tx = conn.unchecked_transaction()?;
+        let page = page.max(1) as usize;
+        let page_size = page_size as usize;
+        let start = (page - 1).saturating_mul(page_size);
+        let target = start.saturating_add(page_size);
+
+        // Scan only far enough to fill the requested page. Copies that sort
+        // after the window (provider labels can carry different timestamps)
+        // are hydrated by logical identity below, so sources and the merged
+        // Seen state stay complete without reading the whole folder.
+        let mut candidates: Vec<(String, Envelope)> = Vec::new();
+        let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut claimed_mailboxes: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut consumed_sources: HashSet<(String, u32)> = HashSet::new();
+        let mut scanner = EnvelopeScanner::new(
+            &tx,
+            folder_ids,
+            (target / folder_ids.len()).saturating_add(1),
         );
-        let bind_values = folder_ids
-            .iter()
-            .map(|folder_id| Value::Text(folder_id.clone()))
-            .collect::<Vec<_>>();
-        let mut stmt = conn.prepare(&statement)?;
-        let rows = stmt.query_map(params_from_iter(bind_values), |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, i64>(2)?,
-                r.get::<_, Option<String>>(3)?,
-                r.get::<_, Option<String>>(4)?,
-                r.get::<_, String>(5)?,
-                r.get::<_, String>(6)?,
-                r.get::<_, String>(7)?,
-                r.get::<_, Option<String>>(8)?,
-                r.get::<_, Option<i64>>(9)?,
-                r.get::<_, i64>(10)?,
-                r.get::<_, String>(11)?,
-                r.get::<_, String>(12)?,
-                r.get::<_, i64>(13)?,
-                r.get::<_, String>(14)?,
-            ))
-        })?;
-        let mut physical = Vec::new();
-        for row in rows {
-            let (
-                id,
-                mailbox_id,
-                uid,
-                message_id,
-                thread_id,
-                subject,
-                from_json,
-                to_json,
-                date,
-                received_at,
-                size,
-                flags_json,
-                keywords_json,
-                has_att,
-                account_id,
-            ) = row?;
-            physical.push((
-                account_id,
-                Envelope {
-                    id,
-                    mailbox_id: mailbox_id.clone(),
-                    subject,
-                    from: serde_json::from_str(&from_json).unwrap_or_default(),
-                    to: serde_json::from_str(&to_json).unwrap_or_default(),
-                    date,
-                    received_at,
-                    flags: serde_json::from_str(&flags_json).unwrap_or_default(),
-                    keywords: serde_json::from_str(&keywords_json).unwrap_or_default(),
-                    has_attachment: has_att != 0,
-                    size: size as u32,
-                    server_uid: Some(uid as u32),
-                    message_id,
-                    thread_id,
-                    sources: vec![EnvelopeSource {
-                        mailbox_id,
-                        server_uid: uid as u32,
-                    }],
-                },
-            ));
+        // Copy hydration accumulates across chunks so deep pages never repeat
+        // the same folder-wide lookups.
+        let mut copies_by_key: HashMap<String, Vec<(String, Envelope)>> = HashMap::new();
+        let mut loaded_message_ids: HashSet<String> = HashSet::new();
+        let mut loaded_sizes: HashSet<u32> = HashSet::new();
+
+        loop {
+            // Read only what the page still needs; when an unread filter
+            // consumed the window, keep scanning in small batches.
+            let limit = if candidates.len() >= target {
+                64
+            } else {
+                target
+                    .saturating_sub(candidates.len())
+                    .clamp(1, ENVELOPE_SCAN_CHUNK)
+            };
+            let mut chunk = Vec::with_capacity(limit);
+            for _ in 0..limit {
+                match scanner.next()? {
+                    Some(row) => chunk.push(row),
+                    None => break,
+                }
+            }
+            if chunk.is_empty() {
+                break;
+            }
+
+            // One indexed lookup covers every candidate in this chunk; label
+            // copies outside the window arrive with it.
+            let chunk_ids = chunk
+                .iter()
+                .filter_map(|row| normalized_message_id(&row.envelope))
+                .collect::<Vec<_>>();
+            let chunk_sizes = chunk
+                .iter()
+                .filter(|row| normalized_message_id(&row.envelope).is_none())
+                .map(|row| row.envelope.size)
+                .collect::<Vec<_>>();
+            load_copies_into(
+                &tx,
+                &chunk_ids,
+                &chunk_sizes,
+                &mut loaded_message_ids,
+                &mut loaded_sizes,
+                &mut copies_by_key,
+            )?;
+
+            for row in chunk {
+                let account_id = row.account_id;
+                let envelope = row.envelope;
+                let Some(uid) = envelope.server_uid else {
+                    continue;
+                };
+                let source = (envelope.mailbox_id.clone(), uid);
+                if consumed_sources.contains(&source) {
+                    continue;
+                }
+                let mailbox_id = envelope.mailbox_id.clone();
+                let key = envelope.logical_id(&account_id);
+                let existing = groups.get(&key).and_then(|indices| {
+                    indices.iter().copied().find(|index| {
+                        !candidates[*index]
+                            .1
+                            .sources
+                            .iter()
+                            .any(|source| source.mailbox_id == mailbox_id)
+                    })
+                });
+                if let Some(index) = existing {
+                    merge_envelope_sources(&mut candidates[index].1, envelope);
+                    claimed_mailboxes.entry(key).or_default().insert(mailbox_id);
+                    consumed_sources.insert(source);
+                    continue;
+                }
+
+                let mut candidate = envelope;
+                let mut claimed = claimed_mailboxes.remove(&key).unwrap_or_default();
+                let copies = copies_by_key.get(&key).map(Vec::as_slice);
+                hydrate_logical_candidate(folder_ids, &key, &mut candidate, &mut claimed, copies)?;
+                for source in &candidate.sources {
+                    consumed_sources.insert((source.mailbox_id.clone(), source.server_uid));
+                }
+                claimed_mailboxes.insert(key.clone(), claimed);
+                let index = candidates.len();
+                candidates.push((account_id, candidate));
+                groups.entry(key).or_default().push(index);
+            }
+
+            let ready = if unread_only {
+                candidates
+                    .iter()
+                    .filter(|(_, envelope)| !envelope.flags.contains(&Flag::Seen))
+                    .count()
+            } else {
+                candidates.len()
+            };
+            if ready >= target {
+                break;
+            }
         }
 
-        let mut logical = deduplicate_envelopes(physical);
-        if unread_only {
-            logical.retain(|envelope| !envelope.flags.contains(&Flag::Seen));
-        }
-        let offset = page.max(1).saturating_sub(1).saturating_mul(page_size) as usize;
-        Ok(logical
-            .into_iter()
-            .skip(offset)
-            .take(page_size as usize)
-            .collect())
+        let mut logical = candidates.into_iter().map(|(_, envelope)| envelope);
+        let page = if unread_only {
+            logical
+                .filter(|envelope| !envelope.flags.contains(&Flag::Seen))
+                .skip(start)
+                .take(page_size)
+                .collect()
+        } else {
+            logical.by_ref().skip(start).take(page_size).collect()
+        };
+        tx.commit()?;
+        Ok(page)
     }
 
     /// Bound the parsed-display cache: drop rows older than `max_age_days`
@@ -2011,8 +2103,8 @@ impl Store {
 
     pub fn list_drafts(&self) -> Result<Vec<(String, String)>> {
         let conn = self.conn()?;
-        let mut stmt = conn
-            .prepare("SELECT id, draft_json FROM drafts ORDER BY updated_at DESC, rowid DESC")?;
+        let mut stmt =
+            conn.prepare("SELECT id, draft_json FROM drafts ORDER BY updated_at DESC, rowid DESC")?;
         let rows = stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -2163,6 +2255,289 @@ impl Store {
         )?;
         Ok(())
     }
+}
+
+const ENVELOPE_SCAN_CHUNK: usize = 512;
+
+struct ScannedEnvelope {
+    rowid: i64,
+    account_id: String,
+    envelope: Envelope,
+}
+
+impl ScannedEnvelope {
+    fn order_key(&self) -> (i64, i64) {
+        (self.envelope.received_at.unwrap_or(i64::MIN), self.rowid)
+    }
+}
+
+fn read_envelope_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ScannedEnvelope> {
+    let id: String = row.get(0)?;
+    let mailbox_id: String = row.get(1)?;
+    let uid: i64 = row.get(2)?;
+    let from_json: String = row.get(6)?;
+    let to_json: String = row.get(7)?;
+    let flags_json: String = row.get(11)?;
+    let keywords_json: String = row.get(12)?;
+    let has_att: i64 = row.get(13)?;
+    let account_id: String = row.get(14)?;
+    Ok(ScannedEnvelope {
+        rowid: row.get(15)?,
+        account_id,
+        envelope: Envelope {
+            id,
+            mailbox_id: mailbox_id.clone(),
+            subject: row.get(5)?,
+            from: serde_json::from_str(&from_json).unwrap_or_default(),
+            to: serde_json::from_str(&to_json).unwrap_or_default(),
+            date: row.get(8)?,
+            received_at: row.get(9)?,
+            flags: serde_json::from_str(&flags_json).unwrap_or_default(),
+            keywords: serde_json::from_str(&keywords_json).unwrap_or_default(),
+            has_attachment: has_att != 0,
+            size: row.get::<_, i64>(10)? as u32,
+            server_uid: Some(uid as u32),
+            message_id: row.get(3)?,
+            thread_id: row.get(4)?,
+            sources: vec![EnvelopeSource {
+                mailbox_id,
+                server_uid: uid as u32,
+            }],
+        },
+    })
+}
+
+struct FolderCursor {
+    folder_id: String,
+    row_offset: usize,
+    buffer: std::collections::VecDeque<ScannedEnvelope>,
+    exhausted: bool,
+}
+
+/// Merge per-folder indexed scans into one global newest-first stream. This
+/// keeps the LIMIT local to each folder so SQLite never sorts the whole table.
+struct EnvelopeScanner<'a> {
+    conn: &'a Connection,
+    cursors: Vec<FolderCursor>,
+    batch: usize,
+}
+
+impl<'a> EnvelopeScanner<'a> {
+    fn new(conn: &'a Connection, folder_ids: &[String], batch: usize) -> Self {
+        Self {
+            conn,
+            cursors: folder_ids
+                .iter()
+                .map(|folder_id| FolderCursor {
+                    folder_id: folder_id.clone(),
+                    row_offset: 0,
+                    buffer: std::collections::VecDeque::new(),
+                    exhausted: false,
+                })
+                .collect(),
+            batch: batch.clamp(1, ENVELOPE_SCAN_CHUNK),
+        }
+    }
+
+    fn next(&mut self) -> Result<Option<ScannedEnvelope>> {
+        let mut refilled = false;
+        for cursor in &mut self.cursors {
+            if cursor.buffer.is_empty() && !cursor.exhausted {
+                let rows =
+                    scan_folder_chunk(self.conn, &cursor.folder_id, self.batch, cursor.row_offset)?;
+                cursor.row_offset = cursor.row_offset.saturating_add(rows.len());
+                if rows.is_empty() {
+                    cursor.exhausted = true;
+                } else {
+                    cursor.buffer.extend(rows);
+                    refilled = true;
+                }
+            }
+        }
+        if refilled {
+            // Sparse unread pages refill repeatedly; grow the stride instead
+            // of issuing many tiny folder scans.
+            self.batch = self.batch.saturating_mul(2).min(ENVELOPE_SCAN_CHUNK);
+        }
+
+        let next = self
+            .cursors
+            .iter()
+            .enumerate()
+            .filter_map(|(index, cursor)| cursor.buffer.front().map(|row| (index, row.order_key())))
+            .max_by_key(|(_, key)| *key)
+            .map(|(index, _)| index);
+        let Some(index) = next else {
+            return Ok(None);
+        };
+        Ok(self.cursors[index].buffer.pop_front())
+    }
+}
+
+fn scan_folder_chunk(
+    conn: &Connection,
+    folder_id: &str,
+    limit: usize,
+    offset: usize,
+) -> Result<Vec<ScannedEnvelope>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT m.id, m.folder_id, m.server_uid, m.message_id, m.thread_id, m.subject,
+                m.from_json, m.to_json, m.date, m.received_at, m.size, m.flags_json,
+                m.keywords_json, m.has_attachment, f.account_id, m.rowid
+           FROM messages m
+           JOIN folders f ON f.id = m.folder_id
+          WHERE m.folder_id = ?
+          ORDER BY m.received_at DESC, m.rowid DESC
+          LIMIT ? OFFSET ?",
+    )?;
+    let rows = stmt.query_map(
+        params![folder_id, limit as i64, offset as i64],
+        read_envelope_row,
+    )?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+fn normalized_message_id(envelope: &Envelope) -> Option<String> {
+    envelope
+        .message_id
+        .as_deref()
+        .map(crate::model::normalize_message_id)
+        .filter(|value| !value.is_empty())
+}
+
+/// Load every physical copy needed by one scan chunk, keyed by logical
+/// identity. Message-ID lookups are folder-scoped and normalized; no-ID
+/// messages are fetched once per size and cached across chunks.
+fn load_copies_into(
+    conn: &Connection,
+    message_ids: &[String],
+    sizes: &[u32],
+    loaded_message_ids: &mut HashSet<String>,
+    loaded_sizes: &mut HashSet<u32>,
+    copies: &mut HashMap<String, Vec<(String, Envelope)>>,
+) -> Result<()> {
+    let missing_ids = message_ids
+        .iter()
+        .filter(|message_id| !loaded_message_ids.contains(*message_id))
+        .cloned()
+        .collect::<HashSet<_>>();
+    if !missing_ids.is_empty() {
+        let id_placeholders = vec!["?"; missing_ids.len()].join(", ");
+        let statement = format!(
+            "SELECT m.id, m.folder_id, m.server_uid, m.message_id, m.thread_id, m.subject,
+                    m.from_json, m.to_json, m.date, m.received_at, m.size, m.flags_json,
+                    m.keywords_json, m.has_attachment, f.account_id, m.rowid
+               FROM messages m
+               JOIN folders f ON f.id = m.folder_id
+              WHERE lower(trim(trim(m.message_id), '<>')) IN ({id_placeholders})
+              ORDER BY m.received_at DESC, m.rowid DESC"
+        );
+        let binds = missing_ids
+            .iter()
+            .map(|id| Value::Text(id.clone()))
+            .collect::<Vec<_>>();
+        let mut stmt = conn.prepare_cached(&statement)?;
+        let rows = stmt.query_map(params_from_iter(binds), read_envelope_row)?;
+        for row in rows {
+            push_copy(copies, row?);
+        }
+        loaded_message_ids.extend(missing_ids);
+    }
+
+    let missing_sizes = sizes
+        .iter()
+        .copied()
+        .filter(|size| !loaded_sizes.contains(size))
+        .collect::<HashSet<_>>();
+    if !missing_sizes.is_empty() {
+        let size_placeholders = vec!["?"; missing_sizes.len()].join(", ");
+        let statement = format!(
+            "SELECT m.id, m.folder_id, m.server_uid, m.message_id, m.thread_id, m.subject,
+                    m.from_json, m.to_json, m.date, m.received_at, m.size, m.flags_json,
+                    m.keywords_json, m.has_attachment, f.account_id, m.rowid
+               FROM messages m
+               JOIN folders f ON f.id = m.folder_id
+              WHERE (m.message_id IS NULL
+                     OR lower(trim(trim(m.message_id), '<>')) = '')
+                AND m.size IN ({size_placeholders})
+              ORDER BY m.received_at DESC, m.rowid DESC"
+        );
+        let binds = missing_sizes
+            .iter()
+            .map(|size| Value::Integer(i64::from(*size)))
+            .collect::<Vec<_>>();
+        let mut stmt = conn.prepare_cached(&statement)?;
+        let rows = stmt.query_map(params_from_iter(binds), read_envelope_row)?;
+        for row in rows {
+            push_copy(copies, row?);
+        }
+        loaded_sizes.extend(missing_sizes);
+    }
+
+    Ok(())
+}
+
+fn push_copy(copies: &mut HashMap<String, Vec<(String, Envelope)>>, row: ScannedEnvelope) {
+    let key = row.envelope.logical_id(&row.account_id);
+    copies
+        .entry(key)
+        .or_default()
+        .push((row.account_id, row.envelope));
+}
+
+/// Pull copies of one logical message that sorted outside the page window.
+/// Only the first copy from each other mailbox is merged, matching the
+/// one-source-per-mailbox rule used by `deduplicate_envelopes`; later
+/// same-mailbox duplicates remain separate logical envelopes.
+fn hydrate_logical_candidate(
+    folder_ids: &[String],
+    key: &str,
+    candidate: &mut Envelope,
+    claimed_mailboxes: &mut HashSet<String>,
+    copies: Option<&[(String, Envelope)]>,
+) -> Result<()> {
+    if let Some(copies) = copies {
+        for (row_account, incoming) in copies {
+            merge_hydrated_copy(
+                candidate,
+                key,
+                folder_ids,
+                claimed_mailboxes,
+                row_account,
+                incoming.clone(),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn merge_hydrated_copy(
+    candidate: &mut Envelope,
+    key: &str,
+    folder_ids: &[String],
+    claimed_mailboxes: &mut HashSet<String>,
+    row_account: &str,
+    incoming: Envelope,
+) {
+    if !folder_ids.iter().any(|id| id == &incoming.mailbox_id) {
+        return;
+    }
+    if incoming.logical_id(row_account) != key {
+        return;
+    }
+    let mailbox_id = incoming.mailbox_id.clone();
+    if candidate
+        .sources
+        .iter()
+        .any(|source| source.mailbox_id == mailbox_id)
+    {
+        return;
+    }
+    if claimed_mailboxes.contains(&mailbox_id) {
+        return;
+    }
+    merge_envelope_sources(candidate, incoming);
+    claimed_mailboxes.insert(mailbox_id);
 }
 
 fn deduplicate_envelopes(physical: Vec<(String, Envelope)>) -> Vec<Envelope> {

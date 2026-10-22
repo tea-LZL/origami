@@ -418,7 +418,9 @@ export async function bootstrap() {
       ),
       ready: true,
     });
-    await restoreComposerSessions();
+    const draftsRestored = restoreComposerSessions().catch((error) => {
+      patch({ lastError: `Could not restore drafts: ${String(error)}` });
+    });
     const lastViewed = localStorage.getItem("origami-last-folder");
     if (lastViewed === "unified") {
       await selectUnifiedInbox();
@@ -428,6 +430,7 @@ export async function bootstrap() {
         ?? folders[0];
       if (initialFolder) await selectFolder(initialFolder.id);
     }
+    await draftsRestored;
   } catch (e) {
     patch({ ready: true, lastError: String(e) });
   }
@@ -683,16 +686,14 @@ export async function selectEnvelope(envelope: Envelope) {
     let loadedSource: EnvelopeSource | null = null;
     let lastError: unknown = null;
     const orderedSources = [primary, ...sources.filter((item) => item !== primary)];
-    for (const source of orderedSources) {
-      try {
-        const cached = await api.getCachedMessage(source.mailboxId, source.serverUid);
-        if (cached) {
-          message = cached;
-          loadedSource = source;
-          break;
-        }
-      } catch {
-        // Cache misses stay local; get_message handles IMAP.
+    const cacheResults = await Promise.allSettled(
+      orderedSources.map((source) => api.getCachedMessage(source.mailboxId, source.serverUid)),
+    );
+    for (const [index, result] of cacheResults.entries()) {
+      if (result.status === "fulfilled" && result.value) {
+        message = result.value;
+        loadedSource = orderedSources[index];
+        break;
       }
     }
     if (!message) {
@@ -1407,7 +1408,13 @@ export async function restoreComposerSessions(): Promise<void> {
       // A corrupt legacy draft is dropped; the key is already gone.
     }
   }
-  patch({ composerSessions: sessions, activeComposerId: null });
+  const existing = new Set(app.value.composerSessions.map((session) => session.id));
+  patch({
+    composerSessions: [
+      ...app.value.composerSessions,
+      ...sessions.filter((session) => !existing.has(session.id)),
+    ],
+  });
 }
 
 export function openComposer(

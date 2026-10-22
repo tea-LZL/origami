@@ -170,7 +170,7 @@ impl Envelope {
     }
 }
 
-fn normalize_message_id(value: &str) -> String {
+pub(crate) fn normalize_message_id(value: &str) -> String {
     value.trim().trim_matches(['<', '>']).to_ascii_lowercase()
 }
 

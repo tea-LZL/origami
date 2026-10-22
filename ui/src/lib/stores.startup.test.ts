@@ -8,22 +8,27 @@ vi.mock("./api", () => ({
     listCorrespondents: vi.fn().mockResolvedValue([]),
     listKeywords: vi.fn().mockResolvedValue([]),
     accountStatuses: vi.fn().mockResolvedValue({}),
+    listComposerDrafts: vi.fn().mockResolvedValue([]),
+    deleteComposerDraft: vi.fn().mockResolvedValue(undefined),
     listEnvelopes: vi.fn().mockResolvedValue([]),
     listUnifiedInbox: vi.fn().mockResolvedValue([]),
     listFoldersForAccount: vi.fn(),
     searchPage: vi.fn().mockResolvedValue([]),
     searchCount: vi.fn().mockResolvedValue(0),
     prefetchDisplay: vi.fn().mockResolvedValue(undefined),
+    prefetchSelectedFolder: vi.fn().mockResolvedValue(undefined),
   },
   onSyncEvent: vi.fn().mockResolvedValue(() => {}),
 }));
 
 import { api } from "./api";
-import { app, bootstrap } from "./stores.svelte";
+import { app, bootstrap, openComposer } from "./stores.svelte";
 import type { Mailbox } from "./types";
 
 const listFolders = vi.mocked(api.listFolders);
 const listEnvelopes = vi.mocked(api.listEnvelopes);
+const listAccounts = vi.mocked(api.listAccounts);
+const listComposerDrafts = vi.mocked(api.listComposerDrafts);
 
 function mailbox(id: string, role: Mailbox["role"]): Mailbox {
   return {
@@ -92,5 +97,76 @@ describe("startup folder restoration", () => {
     await bootstrap();
 
     expect(app.value.selectedFolderId).toBe("inbox-1");
+  });
+
+  it("loads_the_folder_before_draft_restore_finishes", async () => {
+    listAccounts.mockResolvedValue([{
+      id: "account-1",
+      dbId: "db-1",
+      name: "Work",
+      email: "me@example.org",
+      hasImap: true,
+      hasSmtp: true,
+    }]);
+    let finishDrafts: (rows: unknown[]) => void = () => {};
+    listComposerDrafts.mockReturnValue(new Promise((resolve) => {
+      finishDrafts = resolve;
+    }) as never);
+
+    const booting = bootstrap();
+    await vi.waitFor(() => {
+      expect(listEnvelopes).toHaveBeenCalledWith("inbox-1", 1, 200, false);
+    });
+    expect(app.value.selectedFolderId).toBe("inbox-1");
+
+    finishDrafts([]);
+    await booting;
+  });
+
+  it("keeps_a_composer_opened_while_drafts_restore", async () => {
+    listAccounts.mockResolvedValue([{
+      id: "account-1",
+      dbId: "db-1",
+      name: "Work",
+      email: "me@example.org",
+      hasImap: true,
+      hasSmtp: true,
+    }]);
+    let finishDrafts: (rows: unknown[]) => void = () => {};
+    listComposerDrafts.mockReturnValue(new Promise((resolve) => {
+      finishDrafts = resolve;
+    }) as never);
+
+    const booting = bootstrap();
+    await vi.waitFor(() => {
+      expect(listEnvelopes).toHaveBeenCalledWith("inbox-1", 1, 200, false);
+    });
+    expect(listComposerDrafts).toHaveBeenCalledTimes(1);
+
+    openComposer({ to: "someone@example.org" });
+    const openedId = app.value.activeComposerId;
+    expect(openedId).not.toBeNull();
+
+    finishDrafts([{
+      id: "restored-draft",
+      draft: {
+        accountId: "account-1",
+        draft: {
+          to: "restored@example.org",
+          cc: "",
+          bcc: "",
+          subject: "Restored draft",
+          html: "<p>restored</p>",
+          composeMode: "rich",
+        },
+        attachments: [],
+        threading: { inReplyTo: null, references: [] },
+      },
+    }]);
+    await booting;
+
+    expect(app.value.composerSessions.some((session) => session.id === openedId)).toBe(true);
+    expect(app.value.composerSessions.some((session) => session.id === "restored-draft")).toBe(true);
+    expect(app.value.activeComposerId).toBe(openedId);
   });
 });
