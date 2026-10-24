@@ -17,6 +17,7 @@ import {
 import { withUnreadToken } from "./searchHighlight";
 import { mergeThreadMembers } from "./threads";
 import { createPrefetcher } from "./prefetch";
+import { insertIncomingEnvelope } from "./incoming";
 import {
   applyUnreadListReload,
   folderViewKey as unreadFolderViewKey,
@@ -197,6 +198,7 @@ let envelopeRequest = 0;
 let messageRequest = 0;
 let markReadTimer: ReturnType<typeof setTimeout> | null = null;
 let folderRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+let catalogRefreshPending = false;
 let undoToken = 0;
 let pendingUndo: {
   token: number;
@@ -231,6 +233,53 @@ function folderViewKey(folderId: string): string {
 
 function unreadOnly(): boolean {
   return app.value.unreadOnly;
+}
+
+// New mail is pushed per message while the folder sync is still running.
+// Coalesce a burst into one state patch: the row appears without waiting for
+// `folderSynced`, which stays the authoritative reconciliation.
+let incomingQueue: Array<{ folderId: string; envelope: Envelope }> = [];
+let incomingTimer: ReturnType<typeof setTimeout> | null = null;
+
+function enqueueIncoming(folderId: string, envelope: Envelope) {
+  incomingQueue.push({ folderId, envelope });
+  if (incomingTimer === null) {
+    incomingTimer = setTimeout(flushIncoming, 100);
+  }
+}
+
+function flushIncoming() {
+  incomingTimer = null;
+  const queued = incomingQueue;
+  incomingQueue = [];
+  if (queued.length === 0) return;
+
+  const selected = app.value.folders.find(
+    (folder) => folder.id === app.value.selectedFolderId,
+  );
+  const selectedSources = new Set(selected?.sourceIds ?? []);
+  const inboxFolders = new Set(
+    app.value.folders
+      .filter((folder) => folder.role === "Inbox")
+      .map((folder) => folder.id),
+  );
+  const view = {
+    unreadOnly: unreadOnly(),
+    searchActive: app.value.searchQuery.trim() !== "",
+    page: app.value.envelopePage,
+    unifiedInbox: app.value.unifiedInbox,
+  };
+  let envelopes = app.value.envelopes;
+  let inserted = false;
+  for (const item of queued) {
+    const relevant = app.value.unifiedInbox
+      ? inboxFolders.has(item.folderId)
+      : selectedSources.has(item.folderId);
+    const result = insertIncomingEnvelope({ ...view, envelopes, relevant }, item.envelope);
+    envelopes = result.envelopes;
+    inserted = inserted || result.inserted;
+  }
+  if (inserted) patch({ envelopes });
 }
 
 export function recordFolderScroll(scrollTop: number) {
@@ -360,13 +409,19 @@ export function selectKeyword(name: string) {
   void searchMessages(`tag:${name}`);
 }
 
-function refreshFoldersSoon() {
+function refreshFoldersSoon(refreshCatalog = false) {
+  if (refreshCatalog) catalogRefreshPending = true;
   if (folderRefreshTimer) clearTimeout(folderRefreshTimer);
   folderRefreshTimer = setTimeout(async () => {
     folderRefreshTimer = null;
+    const refreshCatalogNow = catalogRefreshPending;
+    catalogRefreshPending = false;
     try {
-      const [folders, keywords] = await Promise.all([api.listFolders(), api.listKeywords()]);
-      patch({ folders, keywords });
+      const folders = await api.listFolders();
+      patch({ folders });
+      // The tag catalog is a full-table JSON scan; refresh it on account
+      // convergence, not on every folder sync event.
+      if (refreshCatalogNow) void refreshKeywords();
       if (app.value.unifiedInbox) return;
 
       const selectedFolderStillExists = app.value.selectedFolderId
@@ -393,23 +448,31 @@ function refreshFoldersSoon() {
   }, 100);
 }
 
-export async function bootstrap() {
-  loadPreferences();
+async function loadSecondaryData() {
   try {
-    const [accounts, folders, savedSearches, correspondents, keywords, accountStatuses] = await Promise.all([
-      api.listAccounts(),
-      api.listFolders(),
+    const [savedSearches, correspondents, keywords] = await Promise.all([
       api.listSavedSearches(),
       api.listCorrespondents(),
       api.listKeywords(),
+    ]);
+    patch({ savedSearches, correspondents, keywords });
+  } catch (error) {
+    // Best-effort: compose autocomplete and the tag catalog can load later.
+    patch({ lastError: `Could not load saved searches, contacts, and labels: ${String(error)}` });
+  }
+}
+
+export async function bootstrap() {
+  loadPreferences();
+  try {
+    const [accounts, folders, accountStatuses] = await Promise.all([
+      api.listAccounts(),
+      api.listFolders(),
       api.accountStatuses(),
     ]);
     patch({
       accounts,
       folders,
-      savedSearches,
-      correspondents,
-      keywords,
       accountStatuses,
       accountErrors: Object.fromEntries(
         Object.entries(accountStatuses)
@@ -418,6 +481,10 @@ export async function bootstrap() {
       ),
       ready: true,
     });
+    // Saved searches, correspondents, and the tag catalog are not needed for
+    // the first mail page. Run them alongside the first folder load so their
+    // full-table scans never hold up the list.
+    const secondary = loadSecondaryData();
     const draftsRestored = restoreComposerSessions().catch((error) => {
       patch({ lastError: `Could not restore drafts: ${String(error)}` });
     });
@@ -430,7 +497,7 @@ export async function bootstrap() {
         ?? folders[0];
       if (initialFolder) await selectFolder(initialFolder.id);
     }
-    await draftsRestored;
+    await Promise.all([draftsRestored, secondary]);
   } catch (e) {
     patch({ ready: true, lastError: String(e) });
   }
@@ -441,6 +508,18 @@ export async function bootstrap() {
 
   await onSyncEvent((event) => {
     const e = event as { type: string; folder?: string; accountId?: string };
+    if (e.type === "newEnvelope" || e.type === "folderSynced") {
+      api.reportTiming(`${e.type}.received`, Date.now()).catch(() => {});
+      requestAnimationFrame(() => {
+        api.reportTiming(`${e.type}.paint`, Date.now()).catch(() => {});
+      });
+    }
+    if (e.type === "newEnvelope") {
+      const pushed = event as { folder?: string; envelope?: Envelope };
+      if (pushed.folder && pushed.envelope) {
+        enqueueIncoming(pushed.folder, pushed.envelope);
+      }
+    }
     if (e.type === "sendFinished") {
       const finished = event as { delivered?: boolean; error?: string | null };
       if (finished.delivered) {
@@ -478,7 +557,8 @@ export async function bootstrap() {
     ) {
       pollAccountErrors();
     }
-    if (e.type === "accountSynced" || e.type === "error") refreshFoldersSoon();
+    if (e.type === "accountSynced") refreshFoldersSoon(true);
+    else if (e.type === "error") refreshFoldersSoon();
   });
 }
 

@@ -23,6 +23,14 @@ fn is_navigation_allowed(url: &url::Url) -> bool {
         || url.as_str() == "about:srcdoc"
 }
 
+/// Minimum gap between tray badge refreshes during a new-mail burst. The
+/// unread count is a full-table scan; bursts must not run one per message.
+const BADGE_MIN_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+
+fn badge_update_due(last: Option<std::time::Instant>, now: std::time::Instant) -> bool {
+    last.is_none_or(|at| now.saturating_duration_since(at) >= BADGE_MIN_INTERVAL)
+}
+
 #[cfg(desktop)]
 fn show_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     let Some(window) = app.get_webview_window("main") else {
@@ -132,6 +140,7 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 use tauri::Emitter;
                 let mut bookkeeping = notifications::NotificationBookkeeping::new(1);
+                let mut last_badge_at: Option<std::time::Instant> = None;
 
                 fn update_unread_badge(
                     handle: &tauri::AppHandle,
@@ -158,49 +167,39 @@ pub fn run() {
                         .map(|account| account.name.clone())
                         .unwrap_or_else(|| account_id.to_string())
                 }
+
+                // Trailing badge refresh: a burst that lands inside the debounce
+                // window still ends with an accurate count.
+                let badge_dirty = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                {
+                    let handle = handle.clone();
+                    let tray = badge_tray.clone();
+                    let dirty = badge_dirty.clone();
+                    tauri::async_runtime::spawn(async move {
+                        loop {
+                            tokio::time::sleep(BADGE_MIN_INTERVAL).await;
+                            if dirty.swap(false, std::sync::atomic::Ordering::Relaxed) {
+                                update_unread_badge(&handle, &tray);
+                            }
+                        }
+                    });
+                }
                 loop {
                     match events.recv().await {
                         Ok(event) => {
+                            let received = std::time::Instant::now();
+                            tracing::debug!(
+                                target: "origami::timing",
+                                phase = "event_received",
+                                "timing"
+                            );
+                            // Status bookkeeping lands before the UI is told:
+                            // the event makes the UI poll these maps.
                             match &event {
                                 origami_core::sync::SyncEvent::AccountSyncStarted {
                                     account_id,
                                 } => {
                                     syncing_accounts.lock().unwrap().insert(account_id.clone());
-                                }
-                                origami_core::sync::SyncEvent::NewEnvelope {
-                                    account_id,
-                                    folder,
-                                    envelope,
-                                } => {
-                                    let state = handle.state::<state::AppState>();
-                                    let settings = state.read_config().notifications;
-                                    let folder_role =
-                                        state.store.folder_role(folder).ok().flatten();
-                                    let logical_id = envelope.logical_id(account_id);
-                                    let unread = !envelope.flags.contains(&Flag::Seen);
-                                    let from = envelope
-                                        .from
-                                        .first()
-                                        .map(|a| a.name.clone().unwrap_or_else(|| a.addr.clone()))
-                                        .unwrap_or_default();
-                                    let mut show = |draft: notifications::NotificationDraft| {
-                                        notifications::show_notification(&draft);
-                                    };
-                                    let notified = notifications::notify_new_mail(
-                                        &mut bookkeeping,
-                                        &settings,
-                                        &account_name(&handle, account_id),
-                                        account_id,
-                                        &logical_id,
-                                        folder_role,
-                                        unread,
-                                        &envelope.subject,
-                                        &from,
-                                        &mut show,
-                                    );
-                                    if notified {
-                                        update_unread_badge(&handle, &badge_tray);
-                                    }
                                 }
                                 origami_core::sync::SyncEvent::Error {
                                     account_id,
@@ -219,12 +218,83 @@ pub fn run() {
                                     syncing_accounts.lock().unwrap().remove(account_id);
                                     account_errors.lock().unwrap().remove(account_id);
                                     bookkeeping.forget_account(account_id);
-                                    update_unread_badge(&handle, &badge_tray);
+                                }
+                                // An INBOX-only wake emits FolderSynced but no
+                                // AccountSynced; a successful folder sync is
+                                // proof the account is reachable again.
+                                origami_core::sync::SyncEvent::FolderSynced {
+                                    account_id, ..
+                                } => {
+                                    account_errors.lock().unwrap().remove(account_id);
                                 }
                                 _ => {}
                             }
                             if let Err(e) = handle.emit("sync-event", &event) {
                                 tracing::warn!("cannot emit sync event: {e}");
+                            }
+                            tracing::debug!(
+                                target: "origami::timing",
+                                phase = "event_forwarded",
+                                forward_ms = received.elapsed().as_millis() as u64,
+                                "timing"
+                            );
+                            // Notifications and the badge are advisory. Never
+                            // let DBus or the unread count delay the list.
+                            if let origami_core::sync::SyncEvent::NewEnvelope {
+                                account_id,
+                                folder,
+                                envelope,
+                            } = &event
+                            {
+                                let state = handle.state::<state::AppState>();
+                                let settings = state.read_config().notifications;
+                                let folder_role = state.store.folder_role(folder).ok().flatten();
+                                let logical_id = envelope.logical_id(account_id);
+                                let unread = !envelope.flags.contains(&Flag::Seen);
+                                let from = envelope
+                                    .from
+                                    .first()
+                                    .map(|a| a.name.clone().unwrap_or_else(|| a.addr.clone()))
+                                    .unwrap_or_default();
+                                let mut show = |draft: notifications::NotificationDraft| {
+                                    // notify_rust blocks on DBus; keep it off
+                                    // the event loop.
+                                    std::mem::drop(tauri::async_runtime::spawn_blocking(
+                                        move || {
+                                            notifications::show_notification(&draft);
+                                        },
+                                    ));
+                                };
+                                let notified = notifications::notify_new_mail(
+                                    &mut bookkeeping,
+                                    &settings,
+                                    &account_name(&handle, account_id),
+                                    account_id,
+                                    &logical_id,
+                                    folder_role,
+                                    unread,
+                                    &envelope.subject,
+                                    &from,
+                                    &mut show,
+                                );
+                                let now = std::time::Instant::now();
+                                if notified {
+                                    if badge_update_due(last_badge_at, now) {
+                                        update_unread_badge(&handle, &badge_tray);
+                                        last_badge_at = Some(now);
+                                        badge_dirty
+                                            .store(false, std::sync::atomic::Ordering::Relaxed);
+                                    } else {
+                                        // Suppressed by the debounce: let the
+                                        // ticker correct the count.
+                                        badge_dirty
+                                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                                    }
+                                }
+                            }
+                            if let origami_core::sync::SyncEvent::AccountSynced { .. } = &event {
+                                update_unread_badge(&handle, &badge_tray);
+                                last_badge_at = Some(std::time::Instant::now());
                             }
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
@@ -241,6 +311,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
+            commands::report_timing,
             commands::list_accounts,
             commands::list_folders,
             commands::create_folder,
@@ -295,7 +366,24 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::is_navigation_allowed;
+    use super::{badge_update_due, is_navigation_allowed, BADGE_MIN_INTERVAL};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn first_badge_update_is_due() {
+        assert!(badge_update_due(None, Instant::now()));
+    }
+
+    #[test]
+    fn badge_update_is_debounced_between_burst_messages() {
+        let now = Instant::now();
+        assert!(!badge_update_due(Some(now), now));
+        assert!(!badge_update_due(
+            Some(now),
+            now + BADGE_MIN_INTERVAL - Duration::from_millis(1)
+        ));
+        assert!(badge_update_due(Some(now), now + BADGE_MIN_INTERVAL));
+    }
 
     #[test]
     fn allows_sandboxed_email_srcdoc_navigation() {

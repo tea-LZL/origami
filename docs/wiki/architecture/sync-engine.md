@@ -2,7 +2,7 @@
 title: Sync engine
 type: architecture
 status: current
-updated: 2026-10-10
+updated: 2026-10-24
 sources:
   - docs/adr/0003-sync-algorithm.md
   - docs/PLAN.md
@@ -26,10 +26,15 @@ converged with the server. The algorithm is CONDSTORE-first and envelope-first
    the IDLE watch stream on INBOX; everything else — and any watch that dies mid-stream —
    falls back to polling INBOX. Poll mode `SELECT`s INBOX every 60 s and runs a folder sync
    only when `(UIDVALIDITY, HIGHESTMODSEQ, EXISTS)` changed (`inbox_needs_sync`,
-   `poll_inbox`), so an idle account costs one `SELECT` per minute. Every 25 min (the watch
-   window) the loop runs a full account sync so non-INBOX folders converge; a QRESYNC watch
-   is retried after that full sync. `watch_mailbox_blocking` returns `None` when the server
-   lacks QRESYNC, so "unsupported" is distinct from "watch error".
+   `poll_inbox`), so an idle account costs one `SELECT` per minute; CONDSTORE servers skip
+   the whole-folder logical count and compare modseqs directly.
+   **An IDLE event converges INBOX only** (`sync_inbox`: connect, `SELECT`, delta, outbox
+   replay — no `LIST`). The full account pass runs at startup and when
+   `wake_action` sees the last full pass older than the 25-minute window, so a busy INBOX
+   that re-arms the watch every few seconds cannot starve non-INBOX folders. INBOX sorts
+   first inside a full pass. A failed **or unsupported** watch resets the full-sync marker so
+   reconnect backoff and `Error` events still apply. `watch_mailbox_blocking` returns `None`
+   when the server lacks QRESYNC, so "unsupported" is distinct from "watch error".
 4. **Envelope-first, body-on-demand**: headers sync eagerly; bodies fetch on open, with
    bounded background prefetch of the newest N messages for display cache. Raw RFC 822 goes
    to the content-addressed blob store; FTS5 is indexed after body fetch.
@@ -53,7 +58,9 @@ Per-folder `(UIDVALIDITY, HIGHESTMODSEQ, last_uid)` is stored in `sync_state`.
   self-heals. `ReconnectLimiter` caps reconnect churn: from the 10th consecutive failure
   the wait is a fixed 60 s, reset on success. Watch-stream errors do **not** feed this
   backoff; they switch the loop to poll mode, so a watch that dies (e.g. io-imap's fatal
-  5 s read timeout) no longer triggers a full resync every 2 s.
+  5 s read timeout) no longer triggers a full resync every 2 s. When poll mode ends, the
+  loop forces the next pass to be a full sync, so reconnect backoff and `Error` events
+  resume.
 - **Network bounds**: every long-pole IMAP/SMTP operation (connect, list, fetch, search,
   select, flag/move/delete, append, SMTP send) runs under `with_network_timeout`
   (60 s); a timeout surfaces as a transient error so the retry policy applies. Per-message
@@ -85,10 +92,12 @@ the store; the second sync is a cheap delta (0 added, 0 changed); `ensure_body` 
 blobs, and FTS-indexes a message; outbox flag ops replay to the server; and the QRESYNC/IDLE
 watch stream observes an APPEND from a second session. `sync_plan.rs` and `sync_status.rs`
 cover planning and status; `prefetch_runtime.rs` guards the runtime-less prefetch path and
-the queued-display write path. Retry primitives (`is_transient`, `backoff_delay`,
-`ReconnectLimiter`, `retry_wait_for`, `acquire_bounded`) have in-module unit tests. The
-failure-isolation and poison-replay **end-to-end** runs against Docker are still owed —
-see [[release-readiness]]. See also [[test-suite-md]].
+the queued-display write path. Wake-scope decisions are unit-tested in `sync.rs`
+(`wake_action` for recent/window/none, `sort_inbox_first`); the end-to-end wake path against
+Dovecot is covered by the harness only when Docker is available. Retry primitives
+(`is_transient`, `backoff_delay`, `ReconnectLimiter`, `retry_wait_for`, `acquire_bounded`)
+have in-module unit tests. The failure-isolation and poison-replay **end-to-end** runs
+against Docker are still owed — see [[release-readiness]]. See also [[test-suite-md]].
 
 ## Related
 

@@ -317,3 +317,19 @@ probes physical sources in parallel. Startup no longer waits for draft restore b
 first folder load, and restored drafts merge around any composer opened meanwhile. The
 composer was restyled as Origami stationery with icon formatting controls. Recorded in
 [[store-and-search]], [[display-cache-and-prefetch]], and [[ui-state-and-rendering]].
+
+## [2026-10-24] change | New-mail fast path: INBOX-only wake, pushed list row, deferred startup scans
+An IDLE wake no longer runs a whole-account sync. `sync_inbox` converges INBOX only
+(connect, SELECT, delta, outbox replay — no LIST); the full account pass runs at startup and
+when `wake_action` sees the previous full pass older than the 25-minute window, so a busy
+INBOX cannot starve non-INBOX folders, and INBOX sorts first in a full pass. A failed watch
+resets the full-sync marker so reconnect backoff and Error events still apply, and
+`poll_inbox` skips the whole-folder logical count on CONDSTORE servers. Debug-level
+`origami::timing` spans record watch wait, per-folder phases, event forwarding, and UI
+receipt/paint (new `report_timing` command) for the baseline gate.
+The UI now inserts a pushed `newEnvelope` directly into page 1 (`incoming.ts`, 100 ms burst
+coalescing) instead of waiting for `folderSynced`; the sync event is forwarded before
+notification work, notify_rust runs on `spawn_blocking`, and the tray badge is debounced.
+`bootstrap()` paints from accounts/folders/statuses before the saved-search, correspondent,
+and keyword scans, and the tag catalog no longer rescans on every folder sync. Recorded in
+[[sync-engine]] and [[ui-state-and-rendering]].

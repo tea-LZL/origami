@@ -70,6 +70,19 @@ pub fn app_info() -> AppInfo {
     }
 }
 
+/// Timing probe: lets the UI stamp receipt/paint timestamps into the same
+/// `origami::timing` log stream as the Rust sync path. Debug-level only.
+#[tauri::command]
+pub fn report_timing(label: String, epoch_ms: f64) {
+    tracing::debug!(
+        target: "origami::timing",
+        phase = "ui",
+        label = %label,
+        epoch_ms,
+        "timing"
+    );
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountDto {
@@ -1885,7 +1898,9 @@ fn parse_saved_composer_drafts(rows: Vec<(String, String)>) -> Vec<SavedComposer
 
 #[tauri::command]
 pub fn list_composer_drafts(state: State<'_, AppState>) -> CmdResult<Vec<SavedComposerDraftDto>> {
-    Ok(parse_saved_composer_drafts(state.store.list_drafts().map_err(err)?))
+    Ok(parse_saved_composer_drafts(
+        state.store.list_drafts().map_err(err)?,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -1982,9 +1997,7 @@ pub async fn sync_composer_draft(state: State<'_, AppState>, id: String) -> CmdR
         .map_err(err)?
         .ok_or("Drafts server did not return APPENDUID")?;
 
-    if let Some((old_account, old_mailbox, old_uid)) =
-        state.store.draft_remote(&id).map_err(err)?
-    {
+    if let Some((old_account, old_mailbox, old_uid)) = state.store.draft_remote(&id).map_err(err)? {
         if let Ok(old_backend) = state.backend(&old_account).await {
             let _ = old_backend.delete_messages(&old_mailbox, &[old_uid]).await;
         }

@@ -29,6 +29,9 @@ const listFolders = vi.mocked(api.listFolders);
 const listEnvelopes = vi.mocked(api.listEnvelopes);
 const listAccounts = vi.mocked(api.listAccounts);
 const listComposerDrafts = vi.mocked(api.listComposerDrafts);
+const listKeywords = vi.mocked(api.listKeywords);
+const listCorrespondents = vi.mocked(api.listCorrespondents);
+const listSavedSearches = vi.mocked(api.listSavedSearches);
 
 function mailbox(id: string, role: Mailbox["role"]): Mailbox {
   return {
@@ -58,6 +61,9 @@ describe("startup folder restoration", () => {
       configurable: true,
     });
     vi.clearAllMocks();
+    listKeywords.mockReset().mockResolvedValue([]);
+    listCorrespondents.mockReset().mockResolvedValue([]);
+    listSavedSearches.mockReset().mockResolvedValue([]);
     app.value.ready = false;
     app.value.selectedFolderId = null;
     listFolders.mockReset().mockResolvedValue([
@@ -120,6 +126,32 @@ describe("startup folder restoration", () => {
     expect(app.value.selectedFolderId).toBe("inbox-1");
 
     finishDrafts([]);
+    await booting;
+  });
+
+  it("paints_the_first_folder_without_waiting_for_the_catalog_scans", async () => {
+    let finishKeywords: (rows: unknown[]) => void = () => {};
+    let finishCorrespondents: (rows: unknown[]) => void = () => {};
+    let finishSaved: (rows: unknown[]) => void = () => {};
+    listKeywords.mockReturnValue(new Promise((resolve) => {
+      finishKeywords = resolve;
+    }) as never);
+    listCorrespondents.mockReturnValue(new Promise((resolve) => {
+      finishCorrespondents = resolve;
+    }) as never);
+    listSavedSearches.mockReturnValue(new Promise((resolve) => {
+      finishSaved = resolve;
+    }) as never);
+
+    const booting = bootstrap();
+    await vi.waitFor(() => {
+      expect(listEnvelopes).toHaveBeenCalledWith("inbox-1", 1, 200, false);
+    });
+    expect(app.value.ready).toBe(true);
+
+    finishKeywords([]);
+    finishCorrespondents([]);
+    finishSaved([]);
     await booting;
   });
 

@@ -232,8 +232,10 @@ mod tests {
     #[test]
     fn one_notification_per_new_mail_in_both_modes() {
         let mut book = NotificationBookkeeping::new(1);
-        let mut settings = NotificationConfig::default();
-        settings.grouped_per_account = true;
+        let mut settings = NotificationConfig {
+            grouped_per_account: true,
+            ..NotificationConfig::default()
+        };
         let mut sends: Vec<NotificationDraft> = Vec::new();
 
         {

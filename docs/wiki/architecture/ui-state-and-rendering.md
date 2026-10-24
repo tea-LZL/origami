@@ -2,7 +2,7 @@
 title: UI state and rendering
 type: architecture
 status: current
-updated: 2026-10-22
+updated: 2026-10-24
 sources:
   - ui/src/lib/ComposePane.svelte
   - ui/src/lib/ComposeTabs.svelte
@@ -16,6 +16,7 @@ sources:
   - ui/src/lib/VirtualList.svelte
   - ui/src/lib/searchHighlight.ts
   - ui/src/lib/unreadList.ts
+  - ui/src/lib/incoming.ts
   - ui/src/lib/folderNav.ts
   - ui/src/lib/Sidebar.svelte
   - ui/src/lib/tags.ts
@@ -93,6 +94,17 @@ After a folder sync while that row is still selected, `mergeSelectedIntoUnreadPa
 overwrite a patched Seen extra with a stale unseen `selectedEnvelope`. The open row may
 then keep looking unread and remain in the unread-only list after leaving it. See
 [[known-drift]].
+
+New mail is inserted without a refetch. `onSyncEvent` handles `newEnvelope`, coalesces
+bursts for 100 ms, and `incoming.ts` (`insertIncomingEnvelope`) splices the row into page 1
+only when the event's folder belongs to the view, the row is unseen under the unread-only
+filter, and neither its row id nor a physical `(mailbox, UID)` source is already present;
+received-time order matches the store and a new row wins a tie. The push carries the stored
+row identity (`id`, `mailbox_id`, `sources`), so the row opens without a refetch.
+`folderSynced` stays the authoritative reconciliation. `bootstrap()` paints from
+accounts/folders/statuses first; saved searches, correspondents, and the tag catalog load
+beside the first folder load, so their full-table scans never gate the first page. The
+keyword catalog refreshes on account convergence, not on every folder sync event.
 
 Empty folders render `OrigamiArtwork` (`variant="empty"`) plus
 `No unread messages` / `No messages here`. `.list-body` is a row flex container;

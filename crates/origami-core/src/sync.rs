@@ -145,6 +145,33 @@ pub fn plan_sync(
     }
 }
 
+/// Whether a folder sync needs a change check before running.
+///
+/// The cheap path only receives a wake on a recent full sync, so it keeps
+/// sweeping INBOX; the 25-minute timer still forces a whole-account pass even
+/// when a busy INBOX keeps re-arming the watch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WakeAction {
+    /// Converge INBOX only, then re-arm the watch.
+    InboxOnly,
+    /// Converge the whole account (cold start or the 25-minute window).
+    FullSync,
+}
+
+/// Choose the convergence scope after a watch wake.
+fn wake_action(last_full_sync: Option<std::time::Instant>, now: std::time::Instant) -> WakeAction {
+    match last_full_sync {
+        Some(at) if now.saturating_duration_since(at) < FULL_SYNC_INTERVAL => WakeAction::InboxOnly,
+        _ => WakeAction::FullSync,
+    }
+}
+
+/// INBOX first so the folder the UI shows converges before the rest. A stable
+/// sort keeps the server's order for everything else.
+fn sort_inbox_first(mailboxes: &mut [crate::model::Mailbox]) {
+    mailboxes.sort_by_key(|mailbox| (mailbox.role != MailboxRole::Inbox) as u8);
+}
+
 /// Whether an INBOX poll observed a change that needs a folder sync.
 ///
 /// - no stored checkpoint → sync (first observation)
@@ -180,8 +207,10 @@ fn local_sent_folder(folders: &[crate::model::Mailbox]) -> Option<String> {
 
 /// Result of one blocking IDLE watch attempt.
 enum WatchAttempt {
-    /// An event arrived, or the watch window elapsed with no data.
-    Woke,
+    /// The server pushed at least one event after `waited`.
+    Event { waited: Duration },
+    /// The watch window elapsed with no data.
+    WindowElapsed { waited: Duration },
     /// Server does not advertise QRESYNC; never attempt the watch again.
     Unsupported,
     /// The stream errored (e.g. io-imap's fatal 5 s read timeout); poll instead.
@@ -191,11 +220,19 @@ enum WatchAttempt {
 /// Run the blocking QRESYNC/IDLE watch until the stream yields an event, the
 /// [`FULL_SYNC_INTERVAL`] window elapses, an error occurs, or `cancel` fires.
 fn watch_once(imap: &crate::config::ImapConfig, cancel: CancellationToken) -> WatchAttempt {
+    let started = std::time::Instant::now();
     let stream = match ImapBackend::watch_mailbox_blocking(imap, "INBOX") {
         Ok(Some(stream)) => stream,
         Ok(None) => return WatchAttempt::Unsupported,
         Err(..) => return WatchAttempt::Failed,
     };
+    let armed = std::time::Instant::now();
+    tracing::debug!(
+        target: "origami::timing",
+        phase = "watch_armed",
+        connect_ms = started.elapsed().as_millis() as u64,
+        "timing"
+    );
     let deadline = std::time::Instant::now() + FULL_SYNC_INTERVAL;
     loop {
         if cancel.is_cancelled() {
@@ -204,10 +241,26 @@ fn watch_once(imap: &crate::config::ImapConfig, cancel: CancellationToken) -> Wa
         }
         if std::time::Instant::now() >= deadline {
             let _ = stream.close();
-            return WatchAttempt::Woke;
+            let waited = armed.elapsed();
+            tracing::debug!(
+                target: "origami::timing",
+                phase = "watch_window",
+                waited_ms = waited.as_millis() as u64,
+                "timing"
+            );
+            return WatchAttempt::WindowElapsed { waited };
         }
         match stream.recv_timeout(Duration::from_secs(5)) {
-            Ok(Ok(_)) => return WatchAttempt::Woke,
+            Ok(Ok(_)) => {
+                let waited = armed.elapsed();
+                tracing::debug!(
+                    target: "origami::timing",
+                    phase = "watch_event",
+                    waited_ms = waited.as_millis() as u64,
+                    "timing"
+                );
+                return WatchAttempt::Event { waited };
+            }
             Ok(Err(..)) => {
                 let _ = stream.close();
                 return WatchAttempt::Failed;
@@ -453,7 +506,17 @@ impl SyncEngine {
             self.store
                 .upsert_account(account_config_id, &config.name, &config.email)?;
 
-        let mailboxes = with_network_timeout(backend.list_mailboxes()).await?;
+        let list_started = std::time::Instant::now();
+        let mut mailboxes = with_network_timeout(backend.list_mailboxes()).await?;
+        sort_inbox_first(&mut mailboxes);
+        tracing::debug!(
+            target: "origami::timing",
+            account = %account_config_id,
+            phase = "list_mailboxes",
+            folders = mailboxes.len(),
+            elapsed_ms = list_started.elapsed().as_millis() as u64,
+            "timing"
+        );
         let remote_names: Vec<String> = mailboxes
             .iter()
             .map(|mailbox| mailbox.name.clone())
@@ -466,13 +529,23 @@ impl SyncEngine {
         let mut results = Vec::new();
         let mut folder_errors = Vec::new();
         for mailbox in mailboxes {
+            let folder_started = std::time::Instant::now();
             let folder_db_id =
                 self.store
                     .upsert_folder(&account_db_id, &mailbox.name, mailbox.role)?;
-            match self
+            let outcome = self
                 .sync_folder(&backend, account_config_id, &folder_db_id, &mailbox.name)
-                .await
-            {
+                .await;
+            tracing::debug!(
+                target: "origami::timing",
+                account = %account_config_id,
+                folder = %mailbox.name,
+                phase = "account_folder",
+                elapsed_ms = folder_started.elapsed().as_millis() as u64,
+                ok = outcome.is_ok(),
+                "timing"
+            );
+            match outcome {
                 Ok(stats) => results.push((mailbox.name.clone(), stats)),
                 Err(error) => {
                     folder_errors.push(format!("{}: {error}", mailbox.name));
@@ -495,6 +568,45 @@ impl SyncEngine {
         Ok(results)
     }
 
+    /// Converge INBOX only: the fast path after an IDLE wake.
+    ///
+    /// Skips `LIST` and the folder reconciliation so one new message costs
+    /// connect + SELECT + SEARCH + FETCH instead of a whole-account sweep.
+    /// Replays queued outbox ops so a wake still flushes an offline action.
+    pub async fn sync_inbox(
+        &self,
+        account_config_id: &str,
+        config: &AccountConfig,
+    ) -> Result<FolderSyncStats> {
+        let imap = config
+            .imap
+            .as_ref()
+            .ok_or_else(|| Error::Config(format!("account `{account_config_id}` has no IMAP")))?;
+        let backend = with_network_timeout(ImapBackend::connect(account_config_id, imap)).await?;
+        let account_db_id =
+            self.store
+                .upsert_account(account_config_id, &config.name, &config.email)?;
+        let folder_db_id = self
+            .store
+            .upsert_folder(&account_db_id, "INBOX", MailboxRole::Inbox)?;
+        let stats = self
+            .sync_folder(&backend, account_config_id, &folder_db_id, "INBOX")
+            .await?;
+        // Avoid an outbox event per wake when nothing is queued.
+        if !self.store.outbox_list(&account_db_id)?.is_empty() {
+            self.replay_outbox(&backend, account_config_id, &account_db_id, config)
+                .await;
+        }
+        Ok(stats)
+    }
+
+    /// The authoritative row to push after an insert. The envelope built by the
+    /// IMAP adapter carries a placeholder id and an empty mailbox, so emitting it
+    /// directly hands the UI a row it cannot open or dedupe.
+    fn pushed_envelope(store: &Store, folder_db_id: &str, server_uid: u32) -> Option<Envelope> {
+        store.get_envelope(folder_db_id, server_uid).ok().flatten()
+    }
+
     /// Converge one folder.
     pub async fn sync_folder(
         &self,
@@ -504,10 +616,16 @@ impl SyncEngine {
         mailbox_name: &str,
     ) -> Result<FolderSyncStats> {
         let condstore = backend.supports_condstore();
+        let folder_started = std::time::Instant::now();
         let selected = with_network_timeout(backend.select_folder(mailbox_name, condstore)).await?;
+        let select_ms = folder_started.elapsed().as_millis() as u64;
         let stored = self.store.sync_state(folder_db_id)?;
         let action = plan_sync(stored, selected.uid_validity, selected.exists, condstore);
 
+        let mut search_ms = 0u64;
+        let mut fetch_ms = 0u64;
+        let mut flags_ms = 0u64;
+        let mut vanished_ms = 0u64;
         let mut stats = FolderSyncStats::default();
         match action {
             SyncAction::Noop => {}
@@ -530,21 +648,40 @@ impl SyncEngine {
                 changed_since,
             } => {
                 // 1. New arrivals.
+                let search_started = std::time::Instant::now();
                 let new_uids =
                     with_network_timeout(backend.search_uids_after(mailbox_name, after_uid))
                         .await?;
+                search_ms = search_started.elapsed().as_millis() as u64;
                 if !new_uids.is_empty() {
+                    let fetch_started = std::time::Instant::now();
                     let envelopes = with_network_timeout(
                         backend.fetch_envelopes_by_uids(mailbox_name, &new_uids),
                     )
                     .await?;
+                    fetch_ms = fetch_started.elapsed().as_millis() as u64;
                     for envelope in envelopes {
+                        let server_uid = envelope.server_uid;
                         let (_, inserted) = self.store.upsert_envelope(folder_db_id, &envelope)?;
                         if inserted {
+                            let Some(uid) = server_uid else { continue };
+                            let Some(pushed) =
+                                Self::pushed_envelope(&self.store, folder_db_id, uid)
+                            else {
+                                continue;
+                            };
+                            tracing::debug!(
+                                target: "origami::timing",
+                                account = %account_id,
+                                folder = %mailbox_name,
+                                uid,
+                                phase = "new_envelope",
+                                "timing"
+                            );
                             self.emit(SyncEvent::NewEnvelope {
                                 account_id: account_id.to_string(),
                                 folder: folder_db_id.to_string(),
-                                envelope: Box::new(envelope),
+                                envelope: Box::new(pushed),
                             });
                             stats.added += 1;
                         }
@@ -552,8 +689,10 @@ impl SyncEngine {
                 }
 
                 // 2. Flag changes (CONDSTORE CHANGEDSINCE, else full sweep).
+                let flags_started = std::time::Instant::now();
                 let changes =
                     with_network_timeout(backend.fetch_flags(mailbox_name, changed_since)).await?;
+                flags_ms = flags_started.elapsed().as_millis() as u64;
                 for (uid, flags, keywords) in changes {
                     let flags_changed = self.store.update_flags(folder_db_id, uid, &flags)?;
                     let keywords_changed =
@@ -572,6 +711,7 @@ impl SyncEngine {
                 // expunge or a move, so new-mail searches alone cannot detect
                 // them. A UID-only SEARCH is much cheaper than refetching
                 // envelopes and keeps the local folder convergent.
+                let vanished_started = std::time::Instant::now();
                 let remote_uids: HashSet<u32> = backend
                     .search_all_uids(mailbox_name)
                     .await?
@@ -584,6 +724,7 @@ impl SyncEngine {
                         stats.removed += 1;
                     }
                 }
+                vanished_ms = vanished_started.elapsed().as_millis() as u64;
             }
         }
 
@@ -598,6 +739,24 @@ impl SyncEngine {
                 last_uid,
             },
         )?;
+
+        let total_ms = folder_started.elapsed().as_millis() as u64;
+        tracing::debug!(
+            target: "origami::timing",
+            account = %account_id,
+            folder = %mailbox_name,
+            phase = "folder_sync",
+            select_ms,
+            search_ms,
+            fetch_ms,
+            flags_ms,
+            vanished_ms,
+            total_ms,
+            added = stats.added,
+            changed = stats.changed,
+            removed = stats.removed,
+            "timing"
+        );
 
         self.emit(SyncEvent::FolderSynced {
             account_id: account_id.to_string(),
@@ -1154,11 +1313,25 @@ impl SyncEngine {
         let condstore = backend.supports_condstore();
         let selected = with_network_timeout(backend.select_folder("INBOX", condstore)).await?;
         let stored = self.store.sync_state(&folder_db_id)?;
-        let local_total = self
-            .store
-            .logical_envelope_counts(std::slice::from_ref(&folder_db_id))?
-            .0;
-        if !inbox_needs_sync(stored.as_ref(), &selected, local_total) {
+        // CONDSTORE answers the change check without scanning the folder; the
+        // logical unread/count dedupe is only needed when the server reports no
+        // modseq (non-CONDSTORE fallback).
+        let needs_sync = match stored.as_ref() {
+            Some(state)
+                if state.uid_validity == selected.uid_validity.unwrap_or(0)
+                    && selected.highest_modseq.is_some() =>
+            {
+                selected.highest_modseq != Some(state.highest_modseq)
+            }
+            _ => {
+                let local_total = self
+                    .store
+                    .logical_envelope_counts(std::slice::from_ref(&folder_db_id))?
+                    .0;
+                inbox_needs_sync(stored.as_ref(), &selected, local_total)
+            }
+        };
+        if !needs_sync {
             return Ok(false);
         }
         self.sync_folder(&backend, account_config_id, &folder_db_id, "INBOX")
@@ -1196,10 +1369,10 @@ impl SyncEngine {
 
     /// Long-running per-account loop: full account sync, then live updates for
     /// INBOX via the QRESYNC/IDLE watch stream, or a 60 s INBOX poll when the
-    /// server lacks QRESYNC (or the watch stream errors). Any INBOX change or
-    /// the 25 min full-sync window triggers another full convergence pass.
-    /// Checks `cancel` at every yield point so the caller can stop the
-    /// loop cleanly.
+    /// server lacks QRESYNC (or the watch stream errors). An IDLE wake
+    /// converges INBOX only; the whole account converges on the 25 min window
+    /// (and at startup). Checks `cancel` at every yield point so the caller
+    /// can stop the loop cleanly.
     pub async fn run_account_loop(
         self: Arc<Self>,
         account_config_id: String,
@@ -1207,27 +1380,42 @@ impl SyncEngine {
         cancel: CancellationToken,
     ) {
         let mut limiter = ReconnectLimiter::new();
+        let mut inbox_limiter = ReconnectLimiter::new();
         let mut watch_supported = true;
+        let mut last_full_sync: Option<std::time::Instant> = None;
 
         loop {
             if cancel.is_cancelled() {
                 return;
             }
 
-            match self.sync_account(&account_config_id, &config).await {
-                Err(error) => {
-                    // Permanent errors (auth/config) go to the 60s slow mode;
-                    // the loop stays alive so a fixed config self-heals.
-                    let wait = retry_wait_for(&error, &mut limiter);
-                    tokio::select! {
-                        _ = cancel.cancelled() => return,
-                        _ = tokio::time::sleep(wait) => {},
+            if wake_action(last_full_sync, std::time::Instant::now()) == WakeAction::FullSync {
+                let sync_started = std::time::Instant::now();
+                let sync_result = self.sync_account(&account_config_id, &config).await;
+                tracing::debug!(
+                    target: "origami::timing",
+                    account = %account_config_id,
+                    phase = "full_sync",
+                    elapsed_ms = sync_started.elapsed().as_millis() as u64,
+                    ok = sync_result.is_ok(),
+                    "timing"
+                );
+                match sync_result {
+                    Err(error) => {
+                        // Permanent errors (auth/config) go to the 60s slow mode;
+                        // the loop stays alive so a fixed config self-heals.
+                        let wait = retry_wait_for(&error, &mut limiter);
+                        tokio::select! {
+                            _ = cancel.cancelled() => return,
+                            _ = tokio::time::sleep(wait) => {},
+                        }
+                        continue;
                     }
-                    continue;
+                    Ok(_) => limiter.record_success(),
                 }
-                Ok(_) => limiter.record_success(),
+                last_full_sync = Some(std::time::Instant::now());
+                self.spawn_recent_prefetch(account_config_id.clone(), config.clone(), None);
             }
-            self.spawn_recent_prefetch(account_config_id.clone(), config.clone(), None);
 
             let Some(imap) = config.imap.clone() else {
                 return;
@@ -1244,8 +1432,59 @@ impl SyncEngine {
             };
 
             match attempt {
-                // Event or watch-window timeout: converge again immediately.
-                WatchAttempt::Woke => {}
+                WatchAttempt::Event { waited } => {
+                    tracing::debug!(
+                        target: "origami::timing",
+                        account = %account_config_id,
+                        phase = "wake_event",
+                        waited_ms = waited.as_millis() as u64,
+                        "timing"
+                    );
+                    // A busy INBOX re-arms the watch every few seconds, so the
+                    // watch deadline alone cannot schedule the full pass; the
+                    // full-sync age decides. Re-check before the fast path.
+                    if wake_action(last_full_sync, std::time::Instant::now())
+                        == WakeAction::FullSync
+                    {
+                        continue;
+                    }
+                    let inbox_started = std::time::Instant::now();
+                    let inbox_result = self.sync_inbox(&account_config_id, &config).await;
+                    tracing::debug!(
+                        target: "origami::timing",
+                        account = %account_config_id,
+                        phase = "inbox_sync",
+                        elapsed_ms = inbox_started.elapsed().as_millis() as u64,
+                        ok = inbox_result.is_ok(),
+                        "timing"
+                    );
+                    if let Err(error) = inbox_result {
+                        self.emit(SyncEvent::Error {
+                            account_id: account_config_id.clone(),
+                            message: self.redacted_error(&error, &config),
+                        });
+                        // The full-pass limiter stays untouched: a LIST/config
+                        // failure must keep its slow mode while INBOX wakes
+                        // keep succeeding.
+                        let wait = retry_wait_for(&error, &mut inbox_limiter);
+                        tokio::select! {
+                            _ = cancel.cancelled() => return,
+                            _ = tokio::time::sleep(wait) => {},
+                        }
+                    } else {
+                        inbox_limiter.record_success();
+                    }
+                }
+                WatchAttempt::WindowElapsed { waited } => {
+                    tracing::debug!(
+                        target: "origami::timing",
+                        account = %account_config_id,
+                        phase = "wake_window",
+                        waited_ms = waited.as_millis() as u64,
+                        "timing"
+                    );
+                    // Loop top runs the full account pass.
+                }
                 WatchAttempt::Unsupported => {
                     // No QRESYNC ever; poll for the rest of the session.
                     watch_supported = false;
@@ -1253,6 +1492,9 @@ impl SyncEngine {
                     if cancel.is_cancelled() {
                         return;
                     }
+                    // Force the next pass to be a full sync so a poll error
+                    // still reaches backoff and the Error event.
+                    last_full_sync = None;
                 }
                 WatchAttempt::Failed => {
                     // Poll until the next full sync, which retries the watch.
@@ -1260,6 +1502,9 @@ impl SyncEngine {
                     if cancel.is_cancelled() {
                         return;
                     }
+                    // Force the next pass to be a full sync so reconnect
+                    // backoff and error reporting apply, as before the fast path.
+                    last_full_sync = None;
                 }
             }
         }
@@ -1517,6 +1762,95 @@ pub fn parse_references(raw: &[u8]) -> (Option<String>, Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wake_after_recent_full_sync_stays_inbox_only() {
+        let now = std::time::Instant::now();
+        assert_eq!(
+            wake_action(Some(now), now),
+            WakeAction::InboxOnly,
+            "an IDLE event just after a full pass must not sweep every folder"
+        );
+    }
+
+    #[test]
+    fn wake_when_full_sync_window_elapsed_runs_full_sync() {
+        let now = std::time::Instant::now();
+        let long_ago = now - FULL_SYNC_INTERVAL;
+        assert_eq!(wake_action(Some(long_ago), now), WakeAction::FullSync);
+    }
+
+    #[test]
+    fn first_wake_without_a_full_sync_runs_full_sync() {
+        let now = std::time::Instant::now();
+        assert_eq!(wake_action(None, now), WakeAction::FullSync);
+    }
+
+    #[test]
+    fn full_sync_visits_inbox_first() {
+        let mut mailboxes = vec![
+            test_mailbox("Archive", MailboxRole::Archive),
+            test_mailbox("INBOX", MailboxRole::Inbox),
+            test_mailbox("Sent", MailboxRole::Sent),
+        ];
+        sort_inbox_first(&mut mailboxes);
+        let names: Vec<&str> = mailboxes.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, ["INBOX", "Archive", "Sent"]);
+    }
+
+    fn test_mailbox(name: &str, role: MailboxRole) -> crate::model::Mailbox {
+        crate::model::Mailbox {
+            id: name.to_string(),
+            account_id: "account".into(),
+            name: name.into(),
+            role,
+            subscribed: true,
+            total: 0,
+            unread: 0,
+        }
+    }
+
+    #[test]
+    fn pushed_envelope_matches_the_stored_row() {
+        let store = Store::open_in_memory().unwrap();
+        let account = store
+            .upsert_account("acct", "Account", "a@example.org")
+            .unwrap();
+        let folder = store
+            .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
+            .unwrap();
+        let incoming = Envelope {
+            id: "placeholder".into(),
+            mailbox_id: String::new(),
+            subject: "fresh mail".into(),
+            from: vec![],
+            to: vec![],
+            date: None,
+            received_at: Some(1),
+            flags: vec![],
+            keywords: vec![],
+            has_attachment: false,
+            size: 10,
+            server_uid: Some(7),
+            message_id: Some("<fresh@example.org>".into()),
+            thread_id: Some("<fresh@example.org>".into()),
+            sources: Vec::new(),
+        };
+        let (stored_id, inserted) = store.upsert_envelope(&folder, &incoming).unwrap();
+        assert!(inserted);
+
+        let pushed = SyncEngine::pushed_envelope(&store, &folder, 7).expect("stored row");
+        assert_eq!(pushed.id, stored_id, "UI row id must match the database");
+        assert_eq!(pushed.mailbox_id, folder);
+        assert_eq!(
+            pushed.sources,
+            vec![EnvelopeSource {
+                mailbox_id: folder.clone(),
+                server_uid: 7,
+            }],
+            "a pushed row must be openable without a refetch"
+        );
+    }
 
     #[test]
     fn timeout_is_transient() {

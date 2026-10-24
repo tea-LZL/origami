@@ -148,6 +148,8 @@ export interface NotificationSettings {
 
 export const api = {
   appInfo: () => invoke<{ name: string; coreVersion: string; shellVersion: string }>("app_info"),
+  reportTiming: (label: string, epochMs: number) =>
+    invoke<void>("report_timing", { label, epochMs }),
   listAccounts: () => invoke<AccountDto[]>("list_accounts"),
   listFolders: (accountDbId?: string) => invoke<Mailbox[]>("list_folders", { accountDbId: accountDbId ?? null }),
   createFolder: (accountId: string, name: string) =>
