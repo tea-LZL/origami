@@ -76,6 +76,50 @@ async fn initial_sync_populates_store() {
     assert_eq!(inbox.unread, 1, "the message in new/ is unread");
 }
 
+/// The background freshness pass must converge non-INBOX folders without
+/// touching INBOX; INBOX has its own IDLE fast path.
+#[tokio::test]
+async fn non_inbox_sync_skips_inbox() {
+    if !enabled() {
+        return;
+    }
+    let config = test_account();
+    let backend = ImapBackend::connect("harness", &config.imap.clone().unwrap())
+        .await
+        .unwrap();
+    let mailbox = format!("OrigamiNonInbox-{}", uuid::Uuid::now_v7());
+    backend.create_mailbox(&mailbox).await.unwrap();
+    let raw = b"From: Sweep <sweep@example.org>\r\nTo: Origami <origami@localhost>\r\nSubject: sweep me\r\nMessage-ID: <sweep-me@example.org>\r\n\r\nbody\r\n";
+    backend.append_message(&mailbox, raw, &[]).await.unwrap();
+
+    let (engine, _dir) = engine();
+    let results = engine.sync_non_inbox("harness", &config).await.unwrap();
+
+    assert!(
+        results.iter().all(|(folder, _)| folder != "INBOX"),
+        "INBOX belongs to the IDLE fast path"
+    );
+    let account = engine
+        .store()
+        .upsert_account("harness", "Harness", "origami@localhost")
+        .unwrap();
+    assert!(
+        engine
+            .store()
+            .folder_id(&account, "INBOX")
+            .unwrap()
+            .is_none(),
+        "INBOX must not even be created by the background pass"
+    );
+    let (_, stats) = results
+        .iter()
+        .find(|(folder, _)| folder == &mailbox)
+        .expect("custom folder must converge");
+    assert_eq!(stats.added, 1);
+
+    backend.delete_mailbox(&mailbox).await.unwrap();
+}
+
 #[tokio::test]
 async fn second_sync_is_a_cheap_delta() {
     if !enabled() {

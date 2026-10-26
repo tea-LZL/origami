@@ -2,7 +2,7 @@
 title: Log
 type: log
 status: current
-updated: 2026-10-22
+updated: 2026-10-26
 ---
 
 # Log
@@ -333,3 +333,13 @@ notification work, notify_rust runs on `spawn_blocking`, and the tray badge is d
 `bootstrap()` paints from accounts/folders/statuses before the saved-search, correspondent,
 and keyword scans, and the tag catalog no longer rescans on every folder sync. Recorded in
 [[sync-engine]] and [[ui-state-and-rendering]].
+
+## [2026-10-26] change | Background non-INBOX refresh and staggered startup syncs
+An IDLE wake still converges INBOX only, but now starts a background `sync_non_inbox` pass
+for every other folder, gated to at most once per 5-minute window. It shares the per-account
+lock with a full sync, skips INBOX, and re-arms the watch before the sweep begins, so
+filters, labels, and archive folders no longer wait for the 25-minute full pass. Account sync
+loops also start 2 s apart so three TLS+AUTH+folder passes do not all land during the first
+paint. Unit tests cover the sweep window and stagger; the Dovecot harness checks that
+`sync_non_inbox` never returns INBOX. The temporary UI `report_timing` probe was removed now
+that the sync path has its own timing spans. Recorded in [[sync-engine]].

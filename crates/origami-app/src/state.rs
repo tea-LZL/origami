@@ -6,6 +6,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 
 use origami_core::config::{AccountConfig, AuthMechanism, Config, OAuthConfig, Secret};
 use origami_core::imap::ImapBackend;
@@ -14,6 +15,14 @@ use origami_core::store::Store;
 use origami_core::sync::SyncEngine;
 use origami_core::{Error, Result};
 use tokio_util::sync::CancellationToken;
+
+/// Delay between account sync loops at startup so three TLS+AUTH+full-folder
+/// passes do not collide with the first paint. The first account starts at once.
+const SYNC_START_STAGGER: Duration = Duration::from_secs(2);
+
+fn stagger_delay(index: usize) -> Duration {
+    SYNC_START_STAGGER.saturating_mul(index as u32)
+}
 
 pub struct AppState {
     pub engine: Arc<SyncEngine>,
@@ -90,18 +99,30 @@ impl AppState {
         Ok(())
     }
 
-    /// Start background sync loops for all IMAP accounts.
+    /// Start background sync loops for all IMAP accounts, staggered so the
+    /// first screen paints while the later accounts are still connecting.
     pub fn spawn_sync_loops(&self) {
         let config = self.read_config();
+        let mut index = 0;
         for (id, account) in &config.accounts {
             if account.imap.is_some() {
-                self.start_account_sync(id.clone(), account.clone());
+                self.start_account_sync_after(id.clone(), account.clone(), stagger_delay(index));
+                index += 1;
             }
         }
     }
 
     /// Start a sync loop for one account, tracking its cancellation token.
     pub fn start_account_sync(&self, account_id: String, account: AccountConfig) {
+        self.start_account_sync_after(account_id, account, Duration::ZERO);
+    }
+
+    fn start_account_sync_after(
+        &self,
+        account_id: String,
+        account: AccountConfig,
+        delay: Duration,
+    ) {
         let token = CancellationToken::new();
         let engine = self.engine.clone();
         let token_clone = token.clone();
@@ -126,6 +147,12 @@ impl AppState {
             .insert(account_id.clone());
 
         tauri::async_runtime::spawn(async move {
+            if !delay.is_zero() {
+                tokio::select! {
+                    _ = initial_cancel.cancelled() => return,
+                    _ = tokio::time::sleep(delay) => {}
+                }
+            }
             if let Some(oauth) = initial_oauth {
                 if let Err(error) = refresh_oauth_token(
                     &initial_account_id,
@@ -460,6 +487,13 @@ pub fn data_dir() -> PathBuf {
 mod tests {
     use super::*;
     use origami_core::model::MailboxRole;
+
+    #[test]
+    fn startup_sync_stagger_offsets_each_account() {
+        assert_eq!(stagger_delay(0), std::time::Duration::ZERO);
+        assert_eq!(stagger_delay(1), SYNC_START_STAGGER);
+        assert_eq!(stagger_delay(2), SYNC_START_STAGGER * 2);
+    }
 
     #[test]
     fn display_fetch_gates_share_one_gate_and_release_it() {

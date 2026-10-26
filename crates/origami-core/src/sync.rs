@@ -103,6 +103,9 @@ const POLL_INTERVAL: Duration = Duration::from_secs(60);
 /// Full-account convergence cadence: the IDLE watch timeout, reused by poll
 /// mode so non-INBOX folders still converge periodically.
 const FULL_SYNC_INTERVAL: Duration = Duration::from_secs(25 * 60);
+/// Background convergence cadence for folders other than INBOX once IDLE wakes
+/// stop running whole-account passes. At most one pass per window.
+const NON_INBOX_SYNC_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 /// Decide the sync action for a folder.
 ///
@@ -170,6 +173,21 @@ fn wake_action(last_full_sync: Option<std::time::Instant>, now: std::time::Insta
 /// sort keeps the server's order for everything else.
 fn sort_inbox_first(mailboxes: &mut [crate::model::Mailbox]) {
     mailboxes.sort_by_key(|mailbox| (mailbox.role != MailboxRole::Inbox) as u8);
+}
+
+/// Whether a mailbox is the account's INBOX. Role mapping can miss unusual
+/// server listings, so the canonical name is accepted too.
+fn is_inbox(mailbox: &crate::model::Mailbox) -> bool {
+    mailbox.role == MailboxRole::Inbox || mailbox.name.eq_ignore_ascii_case("INBOX")
+}
+
+/// Whether the background non-INBOX convergence is due. The first pass after a
+/// full sync starts the window, so an event cannot trigger a duplicate sweep.
+fn non_inbox_sync_due(last_sync: Option<std::time::Instant>, now: std::time::Instant) -> bool {
+    match last_sync {
+        Some(at) => now.saturating_duration_since(at) >= NON_INBOX_SYNC_INTERVAL,
+        None => true,
+    }
 }
 
 /// Whether an INBOX poll observed a change that needs a folder sync.
@@ -348,6 +366,17 @@ impl SyncEngine {
             .unwrap_or(false)
     }
 
+    /// Serialize whole-account passes for one account. The background
+    /// non-INBOX sweep shares this lock so it cannot overlap a full sync.
+    fn account_lock(&self, account_config_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        self.account_locks
+            .lock()
+            .unwrap()
+            .entry(account_config_id.to_string())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    }
+
     /// One-shot full convergence of an account: folders, envelopes,
     /// flag deltas, then outbox replay.
     pub async fn sync_account(
@@ -355,13 +384,7 @@ impl SyncEngine {
         account_config_id: &str,
         config: &AccountConfig,
     ) -> Result<Vec<(String, FolderSyncStats)>> {
-        let account_lock = self
-            .account_locks
-            .lock()
-            .unwrap()
-            .entry(account_config_id.to_string())
-            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
-            .clone();
+        let account_lock = self.account_lock(account_config_id);
         let _guard = account_lock.lock().await;
         self.emit(SyncEvent::AccountSyncStarted {
             account_id: account_config_id.to_string(),
@@ -598,6 +621,85 @@ impl SyncEngine {
                 .await;
         }
         Ok(stats)
+    }
+
+    /// Converge every folder except INBOX: the background freshness pass that
+    /// keeps filters, labels, and archive folders from waiting for the
+    /// 25-minute full sync. INBOX is skipped because the IDLE fast path owns it.
+    pub async fn sync_non_inbox(
+        &self,
+        account_config_id: &str,
+        config: &AccountConfig,
+    ) -> Result<Vec<(String, FolderSyncStats)>> {
+        let imap = config
+            .imap
+            .as_ref()
+            .ok_or_else(|| Error::Config(format!("account `{account_config_id}` has no IMAP")))?;
+        // Take the account lock before connecting so a full sync cannot start
+        // while this pass is idle on the wire, and a queued sweep cannot hold an
+        // unused IMAP session behind a running full pass.
+        let account_lock = self.account_lock(account_config_id);
+        let _guard = account_lock.lock().await;
+        let backend = with_network_timeout(ImapBackend::connect(account_config_id, imap)).await?;
+        let account_db_id =
+            self.store
+                .upsert_account(account_config_id, &config.name, &config.email)?;
+
+        let mut mailboxes = with_network_timeout(backend.list_mailboxes()).await?;
+        mailboxes.retain(|mailbox| !is_inbox(mailbox));
+        let mut results = Vec::new();
+        for mailbox in mailboxes {
+            let folder_db_id =
+                self.store
+                    .upsert_folder(&account_db_id, &mailbox.name, mailbox.role)?;
+            match self
+                .sync_folder(&backend, account_config_id, &folder_db_id, &mailbox.name)
+                .await
+            {
+                Ok(stats) => results.push((mailbox.name.clone(), stats)),
+                Err(error) => tracing::debug!(
+                    account = %account_config_id,
+                    folder = %mailbox.name,
+                    %error,
+                    "background folder sync failed"
+                ),
+            }
+        }
+        Ok(results)
+    }
+
+    /// Start the background non-INBOX sweep. Fire-and-forget: the watch must
+    /// re-arm immediately, and a failure is retried on the next window.
+    fn spawn_non_inbox_sync(
+        self: &Arc<Self>,
+        account_config_id: String,
+        config: AccountConfig,
+        cancel: CancellationToken,
+    ) -> tokio::task::JoinHandle<()> {
+        let engine = Arc::clone(self);
+        tokio::spawn(async move {
+            let started = std::time::Instant::now();
+            tokio::select! {
+                _ = cancel.cancelled() => {}
+                result = engine.sync_non_inbox(&account_config_id, &config) => {
+                    match result {
+                        Ok(folders) => tracing::debug!(
+                            target: "origami::timing",
+                            account = %account_config_id,
+                            phase = "non_inbox_sync",
+                            folders = folders.len(),
+                            elapsed_ms = started.elapsed().as_millis() as u64,
+                            "timing"
+                        ),
+                        Err(error) => tracing::debug!(
+                            account = %account_config_id,
+                            %error,
+                            "background non-INBOX sync failed"
+                        ),
+                    }
+                }
+            }
+        })
     }
 
     /// The authoritative row to push after an insert. The envelope built by the
@@ -1370,9 +1472,10 @@ impl SyncEngine {
     /// Long-running per-account loop: full account sync, then live updates for
     /// INBOX via the QRESYNC/IDLE watch stream, or a 60 s INBOX poll when the
     /// server lacks QRESYNC (or the watch stream errors). An IDLE wake
-    /// converges INBOX only; the whole account converges on the 25 min window
-    /// (and at startup). Checks `cancel` at every yield point so the caller
-    /// can stop the loop cleanly.
+    /// converges INBOX only; a background pass converges the other folders at
+    /// most every 5 minutes, and the whole account converges on the 25 min
+    /// window (and at startup). Checks `cancel` at every yield point so the
+    /// caller can stop the loop cleanly.
     pub async fn run_account_loop(
         self: Arc<Self>,
         account_config_id: String,
@@ -1383,6 +1486,8 @@ impl SyncEngine {
         let mut inbox_limiter = ReconnectLimiter::new();
         let mut watch_supported = true;
         let mut last_full_sync: Option<std::time::Instant> = None;
+        let mut last_non_inbox_sync: Option<std::time::Instant> = None;
+        let mut non_inbox_task: Option<tokio::task::JoinHandle<()>> = None;
 
         loop {
             if cancel.is_cancelled() {
@@ -1414,6 +1519,7 @@ impl SyncEngine {
                     Ok(_) => limiter.record_success(),
                 }
                 last_full_sync = Some(std::time::Instant::now());
+                last_non_inbox_sync = last_full_sync;
                 self.spawn_recent_prefetch(account_config_id.clone(), config.clone(), None);
             }
 
@@ -1458,6 +1564,7 @@ impl SyncEngine {
                         ok = inbox_result.is_ok(),
                         "timing"
                     );
+                    let inbox_ok = inbox_result.is_ok();
                     if let Err(error) = inbox_result {
                         self.emit(SyncEvent::Error {
                             account_id: account_config_id.clone(),
@@ -1473,6 +1580,24 @@ impl SyncEngine {
                         }
                     } else {
                         inbox_limiter.record_success();
+                    }
+                    // Non-INBOX folders no longer ride the wake. Refresh them
+                    // without awaiting the sweep; the loop re-arms the watch on
+                    // its next iteration. Skip it when INBOX itself failed so a
+                    // dead account does not open a second failing connection.
+                    let now = std::time::Instant::now();
+                    if inbox_ok
+                        && non_inbox_sync_due(last_non_inbox_sync, now)
+                        && non_inbox_task
+                            .as_ref()
+                            .is_none_or(|task| task.is_finished())
+                    {
+                        last_non_inbox_sync = Some(now);
+                        non_inbox_task = Some(self.spawn_non_inbox_sync(
+                            account_config_id.clone(),
+                            config.clone(),
+                            cancel.clone(),
+                        ));
                     }
                 }
                 WatchAttempt::WindowElapsed { waited } => {
@@ -1784,6 +1909,36 @@ mod tests {
     fn first_wake_without_a_full_sync_runs_full_sync() {
         let now = std::time::Instant::now();
         assert_eq!(wake_action(None, now), WakeAction::FullSync);
+    }
+
+    #[test]
+    fn non_inbox_sweep_is_due_when_never_run() {
+        let now = std::time::Instant::now();
+        assert!(non_inbox_sync_due(None, now));
+    }
+
+    #[test]
+    fn non_inbox_sweep_waits_for_the_five_minute_window() {
+        let now = std::time::Instant::now();
+        assert!(
+            !non_inbox_sync_due(Some(now), now),
+            "an event right after a sweep must not sweep non-INBOX folders again"
+        );
+    }
+
+    #[test]
+    fn non_inbox_sweep_runs_after_the_five_minute_window() {
+        let now = std::time::Instant::now();
+        let long_ago = now - NON_INBOX_SYNC_INTERVAL;
+        assert!(non_inbox_sync_due(Some(long_ago), now));
+    }
+
+    #[test]
+    fn inbox_is_excluded_by_name_even_without_the_inbox_role() {
+        let unnamed_role = test_mailbox("inbox", MailboxRole::Other);
+        assert!(is_inbox(&unnamed_role));
+        let archive = test_mailbox("Archive", MailboxRole::Archive);
+        assert!(!is_inbox(&archive));
     }
 
     #[test]

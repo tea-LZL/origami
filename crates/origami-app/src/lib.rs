@@ -311,7 +311,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
-            commands::report_timing,
             commands::list_accounts,
             commands::list_folders,
             commands::create_folder,

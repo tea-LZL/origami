@@ -13,7 +13,10 @@
      `UID FETCH 1:* (FLAGS) (CHANGEDSINCE <modseq>)`; upsert into SQLite,
      then emit UI events. Store per-folder `(UIDVALIDITY, HIGHESTMODSEQ,
      last_uid)` in `sync_state`.
-  3. Live updates: IDLE on INBOX (fallback: 60 s NOOP poll), wake → delta pull.
+  3. Live updates: IDLE on INBOX (fallback: 60 s INBOX poll), wake → INBOX
+     delta only; after a wake, other folders converge in a background pass at
+     most every 5 minutes, and a full account pass runs at startup and every
+     25 minutes (quiet accounts stay on the 25-minute cadence).
   4. Envelope-first: headers sync eagerly; bodies fetch on open; background
      prefetch of the newest N messages; raw RFC 822 in the content-addressed
      blob store, FTS5 index updated after body fetch.

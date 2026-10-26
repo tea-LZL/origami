@@ -70,19 +70,6 @@ pub fn app_info() -> AppInfo {
     }
 }
 
-/// Timing probe: lets the UI stamp receipt/paint timestamps into the same
-/// `origami::timing` log stream as the Rust sync path. Debug-level only.
-#[tauri::command]
-pub fn report_timing(label: String, epoch_ms: f64) {
-    tracing::debug!(
-        target: "origami::timing",
-        phase = "ui",
-        label = %label,
-        epoch_ms,
-        "timing"
-    );
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountDto {

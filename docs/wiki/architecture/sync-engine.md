@@ -2,7 +2,7 @@
 title: Sync engine
 type: architecture
 status: current
-updated: 2026-10-24
+updated: 2026-10-26
 sources:
   - docs/adr/0003-sync-algorithm.md
   - docs/PLAN.md
@@ -32,7 +32,12 @@ converged with the server. The algorithm is CONDSTORE-first and envelope-first
    replay — no `LIST`). The full account pass runs at startup and when
    `wake_action` sees the last full pass older than the 25-minute window, so a busy INBOX
    that re-arms the watch every few seconds cannot starve non-INBOX folders. INBOX sorts
-   first inside a full pass. A failed **or unsupported** watch resets the full-sync marker so
+   first inside a full pass. After a wake, a background pass (`sync_non_inbox`) converges
+   every other folder at most once per 5-minute window, so filters, labels, and archive
+   folders do not wait for the 25-minute full pass; it shares the account lock with a full
+   sync and skips INBOX. With no INBOX wake traffic (quiet account or poll mode), those
+   folders still converge only on the 25-minute full pass. Account loops start staggered (2 s apart) so later accounts do not
+   collide with the first paint. A failed **or unsupported** watch resets the full-sync marker so
    reconnect backoff and `Error` events still apply. `watch_mailbox_blocking` returns `None`
    when the server lacks QRESYNC, so "unsupported" is distinct from "watch error".
 4. **Envelope-first, body-on-demand**: headers sync eagerly; bodies fetch on open, with
@@ -93,7 +98,9 @@ blobs, and FTS-indexes a message; outbox flag ops replay to the server; and the 
 watch stream observes an APPEND from a second session. `sync_plan.rs` and `sync_status.rs`
 cover planning and status; `prefetch_runtime.rs` guards the runtime-less prefetch path and
 the queued-display write path. Wake-scope decisions are unit-tested in `sync.rs`
-(`wake_action` for recent/window/none, `sort_inbox_first`); the end-to-end wake path against
+(`wake_action` for recent/window/none, `non_inbox_sync_due` for the 5-minute window,
+`sort_inbox_first`); startup staggering is unit-tested in `state.rs`, and
+`sync_non_inbox` skips INBOX against Dovecot in the harness. The end-to-end wake path against
 Dovecot is covered by the harness only when Docker is available. Retry primitives
 (`is_transient`, `backoff_delay`, `ReconnectLimiter`, `retry_wait_for`, `acquire_bounded`)
 have in-module unit tests. The failure-isolation and poison-replay **end-to-end** runs

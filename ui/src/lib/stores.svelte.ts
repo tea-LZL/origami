@@ -508,12 +508,6 @@ export async function bootstrap() {
 
   await onSyncEvent((event) => {
     const e = event as { type: string; folder?: string; accountId?: string };
-    if (e.type === "newEnvelope" || e.type === "folderSynced") {
-      api.reportTiming(`${e.type}.received`, Date.now()).catch(() => {});
-      requestAnimationFrame(() => {
-        api.reportTiming(`${e.type}.paint`, Date.now()).catch(() => {});
-      });
-    }
     if (e.type === "newEnvelope") {
       const pushed = event as { folder?: string; envelope?: Envelope };
       if (pushed.folder && pushed.envelope) {
