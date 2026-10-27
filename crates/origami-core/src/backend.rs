@@ -6,6 +6,8 @@
 //! behind this trait; JMAP/Gmail backends can be added later without touching
 //! the sync engine or UI.
 
+#![allow(clippy::double_must_use)] // async_trait expands `#[must_use]` onto `Result`-returning methods
+
 use async_trait::async_trait;
 
 use crate::model::{Envelope, Flag, Mailbox};
