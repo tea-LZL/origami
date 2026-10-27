@@ -15,7 +15,7 @@ sources:
 **Current classification: feature-rich beta / daily-driver candidate — not public-production
 ready.**
 
-`docs/IMPROVEMENT_PLAN.md` reports 64 of 81 items complete (79% checklist coverage), but that
+`docs/IMPROVEMENT_PLAN.md` reports 65 of 81 items complete (80% checklist coverage), but that
 measures **feature breadth, not release confidence**. Public readiness is lower because
 several proof and distribution gates are absent.
 

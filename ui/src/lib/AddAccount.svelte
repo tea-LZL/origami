@@ -364,23 +364,23 @@
     box-shadow: var(--shadow-panel);
     animation: surface-in var(--transition-med) both;
   }
-  h2 { margin: 0 0 4px; font-size: 18px; }
-  p { color: var(--fg-muted); font-size: 13px; margin: 0 0 16px; }
+  h2 { margin: 0 0 4px; font-size: var(--fs-18); }
+  p { color: var(--fg-muted); font-size: var(--fs-13); margin: 0 0 16px; }
   .provider { color: var(--accent); font-weight: 600; }
-  p.alt { text-align: center; margin: 12px 0; color: var(--fg-subtle); font-size: 12px; }
-  p.hint { color: var(--fg-muted); font-size: 12px; margin: -4px 0 12px; line-height: 1.4; }
+  p.alt { text-align: center; margin: 12px 0; color: var(--fg-subtle); font-size: var(--fs-12); }
+  p.hint { color: var(--fg-muted); font-size: var(--fs-12); margin: -4px 0 12px; line-height: 1.4; }
   button.link {
     display: inline; padding: 0; border: 0; background: none;
     color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer;
   }
-  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--fg-muted); margin-bottom: 12px; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-12); color: var(--fg-muted); margin-bottom: 12px; }
   label input, fieldset input {
     background: var(--bg-sunken); border: 1px solid var(--border);
     border-radius: var(--radius-sm); padding: 8px 10px; color: var(--fg); font: inherit; min-height: 36px;
   }
   fieldset { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px; }
-  fieldset legend { font-size: 12px; color: var(--fg-subtle); }
-  .err { color: var(--danger); font-size: 12px !important; }
+  fieldset legend { font-size: var(--fs-12); color: var(--fg-subtle); }
+  .err { color: var(--danger); font-size: var(--fs-12) !important; }
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
   .cancel { padding: 8px 16px; border-radius: var(--radius-sm); color: var(--fg-muted); }
   .cancel:hover { background: var(--bg-sunken); }
@@ -390,13 +390,13 @@
   .oauth {
     width: 100%; background: var(--bg-sunken);
     border: 1px solid var(--border); border-radius: var(--radius-sm);
-    padding: 12px; font-weight: 600; font-size: 14px; margin-top: 8px;
+    padding: 12px; font-weight: 600; font-size: var(--fs-14); margin-top: 8px;
   }
   .oauth:hover { background: var(--border); }
   .oauth:disabled { opacity: 0.6; }
   .advanced {
     background: none; border: 0; padding: 0; margin: 0 0 12px;
-    color: var(--accent); font: inherit; font-size: 12px; cursor: pointer;
+    color: var(--accent); font: inherit; font-size: var(--fs-12); cursor: pointer;
   }
   .advanced:hover { text-decoration: underline; }
   @media (max-width: 430px) {

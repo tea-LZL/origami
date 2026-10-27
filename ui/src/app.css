@@ -96,6 +96,19 @@
     "Inter", "SF Pro Text", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+
+  /* Type scale. The font-scale preference multiplies every UI text size; at
+     100% each token resolves to its pixel base. */
+  --ui-font-scale: 1;
+  --fs-9: calc(9px * var(--ui-font-scale));
+  --fs-10: calc(10px * var(--ui-font-scale));
+  --fs-11: calc(11px * var(--ui-font-scale));
+  --fs-12: calc(12px * var(--ui-font-scale));
+  --fs-13: calc(13px * var(--ui-font-scale));
+  --fs-14: calc(14px * var(--ui-font-scale));
+  --fs-16: calc(16px * var(--ui-font-scale));
+  --fs-18: calc(18px * var(--ui-font-scale));
+  --fs-20: calc(20px * var(--ui-font-scale));
 }
 
 :root[data-theme="dark"] {
@@ -248,7 +261,7 @@ body,
 
 body {
   font-family: var(--font-ui);
-  font-size: 14px;
+  font-size: var(--fs-14);
   line-height: 1.5;
   color: var(--fg);
   background:

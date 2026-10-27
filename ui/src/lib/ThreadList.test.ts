@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   app: {
     value: {
       density: "comfortable",
+      fontScale: 100,
       layout: "three-pane",
       searchQuery: "",
       searchTotal: null as number | null,
@@ -92,6 +93,7 @@ describe("ThreadList", () => {
     });
     mocks.app.value = {
       density: "comfortable",
+      fontScale: 100,
       layout: "three-pane",
       searchQuery: "",
       searchTotal: null as number | null,
@@ -180,6 +182,32 @@ describe("ThreadList", () => {
     expect(unreadLabel).toHaveTextContent("Unread");
     expect(document.querySelector(".unread-pip")).toBeTruthy();
     expect(document.querySelectorAll(".unread-pip")).toHaveLength(1);
+  });
+
+  it("row_height_follows_the_font_scale", () => {
+    mocks.app.value.density = "compact";
+    mocks.app.value.fontScale = 150;
+    mocks.app.value.envelopes = [
+      {
+        id: "scaled-1",
+        mailboxId: "inbox",
+        subject: "Scaled subject",
+        from: [{ name: "Alice", addr: "alice@example.org" }],
+        to: [],
+        date: null,
+        flags: [],
+        hasAttachment: false,
+        size: 10,
+        serverUid: 1,
+        messageId: "scaled@example.org",
+        threadId: "thread-scaled",
+        keywords: [],
+        sources: [{ mailboxId: "inbox", serverUid: 1 }],
+      },
+    ];
+    render(ThreadList);
+    const row = document.querySelector(".row") as HTMLElement | null;
+    expect(row?.style.height).toBe("78px");
   });
 
   it("shows row dates in local time", () => {

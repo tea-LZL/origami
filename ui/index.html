@@ -18,6 +18,13 @@
             pref = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
           }
           document.documentElement.dataset.theme = pref;
+          // Apply the saved font scale before first paint as well, so a
+          // non-default preference does not flash the 100% chrome.
+          var scale = saved.fontScale;
+          if (typeof scale === "number" && isFinite(scale)) {
+            scale = Math.min(150, Math.max(85, Math.round(scale))) / 100;
+            document.documentElement.style.setProperty("--ui-font-scale", String(scale));
+          }
         } catch (error) {
           document.documentElement.dataset.theme = "light";
         }

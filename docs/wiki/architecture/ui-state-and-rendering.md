@@ -2,7 +2,7 @@
 title: UI state and rendering
 type: architecture
 status: current
-updated: 2026-10-24
+updated: 2026-10-27
 sources:
   - ui/src/lib/ComposePane.svelte
   - ui/src/lib/ComposeTabs.svelte
@@ -32,6 +32,7 @@ sources:
   - ui/src/lib/forward.ts
   - ui/src/lib/attachmentOpen.ts
   - ui/src/lib/formatDate.ts
+  - ui/src/app.css
   - crates/origami-app/src/commands.rs
   - ui/src/lib/remoteContent.ts
   - crates/origami-core/src/store.rs
@@ -242,6 +243,18 @@ theme block: body/raised/muted text at 4.5:1, accent/danger/success/warning/info
 pairs and all tag hues at 3:1, with tag hues discovered dynamically so new ones cannot
 escape. It caught a real `--fg-muted` failure during the palette work. `forced-colors`
 blocks are untouched by theming.
+
+## Font scale
+
+`State.fontScale` (percent, default 100, clamped to 85–150) persists with the other
+preferences and is applied by `applyFontScale` as the root `--ui-font-scale` multiplier.
+Every UI type size — in `ui/src/app.css` and the Svelte components — goes through the
+`--fs-9` … `--fs-20` tokens, each `calc(Npx * var(--ui-font-scale))`, so the preference
+scales labels, list rows, dialogs, and chrome together. `ThreadList` derives its virtual
+row height from the same preference (`Math.round(base * fontScale / 100)`) and the
+skeleton rows use the multiplier in CSS, so scaled text never clips and the virtualization
+window math stays consistent. Message-body zoom (`State.messageZoom`) remains a separate
+control for the reading pane. Invalid saved values fall back to 100.
 
 ## Predictive and viewport prefetch
 

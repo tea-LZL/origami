@@ -15,7 +15,7 @@ vi.mock("./api", () => ({
 }));
 
 import { api } from "./api";
-import { app, selectEnvelope, setPreferences, setSelectedFlag } from "./stores.svelte";
+import { app, applyFontScale, selectEnvelope, setPreferences, setSelectedFlag } from "./stores.svelte";
 import type { MessageDto } from "./api";
 import type { Envelope } from "./types";
 
@@ -172,5 +172,33 @@ describe("message zoom", () => {
     setPreferences({ messageZoom: 100 });
     app.value.messageZoom = Math.min(300, app.value.messageZoom + 10);
     expect(app.value.messageZoom).toBe(110);
+  });
+});
+
+describe("font scale", () => {
+  beforeEach(() => {
+    stubLocalStorage();
+    vi.clearAllMocks();
+    app.value.fontScale = 100;
+  });
+
+  it("font_scale_clamps_to_bounds", () => {
+    setPreferences({ fontScale: 999 });
+    expect(app.value.fontScale).toBe(150);
+    setPreferences({ fontScale: 10 });
+    expect(app.value.fontScale).toBe(85);
+  });
+
+  it("font_scale_persists_with_preferences", () => {
+    setPreferences({ fontScale: 125 });
+    const saved = JSON.parse(localStorage.getItem("origami-preferences") ?? "{}");
+    expect(saved.fontScale).toBe(125);
+  });
+
+  it("apply_font_scale_sets_the_root_multiplier", () => {
+    applyFontScale(125);
+    expect(document.documentElement.style.getPropertyValue("--ui-font-scale")).toBe("1.25");
+    applyFontScale(60);
+    expect(document.documentElement.style.getPropertyValue("--ui-font-scale")).toBe("0.85");
   });
 });

@@ -107,12 +107,12 @@
     align-items: center;
     gap: 12px;
     border-bottom: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
-    font-size: 11px;
+    font-size: var(--fs-11);
     color: var(--fg-muted);
   }
   .recipients-label {
     color: var(--fg-subtle);
-    font-size: 9px;
+    font-size: var(--fs-9);
     font-weight: 700;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -134,7 +134,7 @@
     border-radius: 999px;
     background: color-mix(in oklab, var(--accent) 14%, var(--bg-raised));
     color: var(--fg);
-    font-size: 11px;
+    font-size: var(--fs-11);
   }
   .chip-text { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chip-remove {
@@ -145,7 +145,7 @@
     border-radius: 50%;
     background: transparent;
     color: var(--fg-muted);
-    font-size: 12px;
+    font-size: var(--fs-12);
     line-height: 1;
     cursor: pointer;
   }
@@ -161,7 +161,7 @@
     border: none;
     background: transparent;
     color: var(--fg);
-    font-size: 12px;
+    font-size: var(--fs-12);
     outline: none;
   }
 </style>

@@ -203,8 +203,8 @@
     box-shadow: var(--shadow-panel);
     animation: surface-in var(--transition-med) both;
   }
-  h2 { margin: 0 0 16px; font-size: 16px; }
-  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--fg-muted); margin-bottom: 12px; }
+  h2 { margin: 0 0 16px; font-size: var(--fs-16); }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-12); color: var(--fg-muted); margin-bottom: 12px; }
   label input {
     background: var(--bg-sunken);
     border: 1px solid var(--border);
@@ -215,20 +215,20 @@
     min-height: 36px;
   }
   fieldset { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px; }
-  fieldset legend { font-size: 12px; color: var(--fg-subtle); }
+  fieldset legend { font-size: var(--fs-12); color: var(--fg-subtle); }
   .oauth-reconnect {
     display: flex; align-items: center; justify-content: space-between; gap: 16px;
     margin-bottom: 12px; padding: 12px; border: 1px solid var(--border);
     border-radius: var(--radius-sm); background: var(--bg-sunken);
   }
   .oauth-reconnect div { display: grid; gap: 3px; }
-  .oauth-reconnect strong { font-size: 12px; color: var(--fg); }
-  .oauth-reconnect span { font-size: 10px; color: var(--fg-subtle); }
+  .oauth-reconnect strong { font-size: var(--fs-12); color: var(--fg); }
+  .oauth-reconnect span { font-size: var(--fs-10); color: var(--fg-subtle); }
   .oauth-reconnect button { flex: none; padding: 7px 10px; min-height: 36px; border-radius: var(--radius-sm); background: var(--accent); color: var(--accent-fg); font-weight: 650; }
   .oauth-reconnect button:disabled { opacity: 0.6; }
-  .err { color: var(--danger); font-size: 12px; }
+  .err { color: var(--danger); font-size: var(--fs-12); }
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
-  .actions button { padding: 6px 16px; min-height: 36px; border-radius: var(--radius-sm); font-size: 13px; }
+  .actions button { padding: 6px 16px; min-height: 36px; border-radius: var(--radius-sm); font-size: var(--fs-13); }
   .actions button:first-child { color: var(--fg-muted); }
   .actions button:last-child { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
   .actions button:last-child:disabled { opacity: 0.6; }

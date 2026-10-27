@@ -149,6 +149,22 @@
         </label>
 
         <label>
+          Font scale
+          <Select
+            value={String(app.value.fontScale)}
+            ariaLabel="Font scale"
+            options={[
+              { value: "85", label: "85%" },
+              { value: "100", label: "100%" },
+              { value: "110", label: "110%" },
+              { value: "125", label: "125%" },
+              { value: "150", label: "150%" },
+            ]}
+            onValueChange={(scale) => setPreferences({ fontScale: Number(scale) })}
+          />
+        </label>
+
+        <label>
           Workspace layout
           <Select
             value={app.value.layout}
@@ -323,7 +339,7 @@
   header { display: flex; align-items: flex-start; justify-content: space-between; }
   header span {
     color: var(--accent);
-    font-size: 9px;
+    font-size: var(--fs-9);
     font-weight: 800;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -332,20 +348,20 @@
   h3 {
     margin: 0;
     color: var(--fg-subtle);
-    font-size: 10px;
+    font-size: var(--fs-10);
     font-weight: 800;
     letter-spacing: 0.1em;
     text-transform: uppercase;
   }
-  header button { width: 28px; height: 28px; border-radius: var(--radius-sm); font-size: 20px; }
+  header button { width: 28px; height: 28px; border-radius: var(--radius-sm); font-size: var(--fs-20); }
   header button:hover { background: var(--bg-sunken); }
   section { display: grid; gap: 12px; padding-top: 4px; }
   section + section { padding-top: 16px; border-top: 1px solid var(--paper-crease); }
   label { display: grid; grid-template-columns: 1fr 180px; align-items: center; gap: 16px; font-weight: 650; }
   .help,
-  .muted { margin: -4px 0 0; color: var(--fg-muted); font-size: 11px; line-height: 1.45; }
+  .muted { margin: -4px 0 0; color: var(--fg-muted); font-size: var(--fs-11); line-height: 1.45; }
   .allowlist-group { display: grid; gap: 5px; }
-  .allowlist-group strong { color: var(--fg-muted); font-size: 11px; }
+  .allowlist-group strong { color: var(--fg-muted); font-size: var(--fs-11); }
   .allowlist-row {
     min-width: 0;
     padding: 6px 8px;
@@ -355,10 +371,10 @@
     align-items: center;
     gap: 8px;
     background: color-mix(in oklab, var(--bg-sunken) 78%, var(--bg-raised));
-    font-size: 11px;
+    font-size: var(--fs-11);
   }
   .allowlist-row span { min-width: 0; flex: 1; overflow-wrap: anywhere; color: var(--fg); }
-  .allowlist-row button { flex-shrink: 0; color: var(--danger); font-size: 10px; }
+  .allowlist-row button { flex-shrink: 0; color: var(--danger); font-size: var(--fs-10); }
   input[type="time"] {
     width: 100%;
     padding: 7px 9px;
@@ -370,12 +386,12 @@
   }
   input[type="checkbox"] { justify-self: end; width: 18px; height: 18px; accent-color: var(--accent); }
   .time-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .time-row label { grid-template-columns: auto 1fr; gap: 8px; font-size: 11px; }
+  .time-row label { grid-template-columns: auto 1fr; gap: 8px; font-size: var(--fs-11); }
   .actions { display: flex; min-height: 32px; align-items: center; justify-content: flex-end; gap: 12px; }
-  .actions span { color: var(--success); font-size: 11px; font-weight: 700; }
+  .actions span { color: var(--success); font-size: var(--fs-11); font-weight: 700; }
   .primary { min-height: 36px; padding: 7px 11px; border-radius: var(--radius-sm); background: var(--accent); color: var(--accent-fg); font-weight: 750; }
   .primary:disabled { opacity: 0.55; }
-  p { margin: 2px 0 0; color: var(--fg-subtle); font-size: 11px; }
+  p { margin: 2px 0 0; color: var(--fg-subtle); font-size: var(--fs-11); }
   .error { color: var(--danger); }
   @media (max-width: 520px) {
     label { grid-template-columns: 1fr; gap: 6px; }

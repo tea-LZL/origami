@@ -132,7 +132,7 @@
   }
   .aggregate {
     display: inline-flex; align-items: center; gap: 5px; margin-left: 4px;
-    color: var(--fg-subtle); font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
+    color: var(--fg-subtle); font-size: var(--fs-9); font-weight: 700; letter-spacing: 0.04em;
     text-transform: uppercase;
   }
   .aggregate i { width: 5px; height: 5px; border-radius: 50%; background: var(--success); }
@@ -142,7 +142,7 @@
   .pending {
     padding: 2px 6px; border-radius: 999px;
     background: color-mix(in oklab, var(--accent) 11%, transparent);
-    color: var(--accent); font-size: 9px; font-weight: 750;
+    color: var(--accent); font-size: var(--fs-9); font-weight: 750;
   }
   @keyframes status-pulse { 50% { opacity: 0.35; transform: scale(0.8); } }
 

@@ -78,7 +78,7 @@ This plan turns the current prototype into a dependable daily-driver mail client
 - [x] Add System, Full, and Reduced motion preferences.
 - [x] Respect the operating system reduced-motion preference.
 - [x] Restore text selection and consistent focus-visible styling.
-- [ ] Add pane, font scale, message zoom, and mark-read preferences.
+- [x] Add pane, font scale, message zoom, and mark-read preferences.
 - [x] Add notification privacy, quiet-hours, and folder-scope settings.
 - [ ] Complete keyboard and screen-reader interaction tests.
 

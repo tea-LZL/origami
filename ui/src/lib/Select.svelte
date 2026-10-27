@@ -261,7 +261,7 @@
   }
   .select-trigger[aria-expanded="true"] > svg { transform: rotate(180deg); }
   .select-trigger.placeholder { color: var(--fg-subtle); }
-  .select-trigger.compact { width: auto; min-width: 76px; max-width: 130px; min-height: 28px; padding: 3px 28px 3px 7px; font-size: 10px; }
+  .select-trigger.compact { width: auto; min-width: 76px; max-width: 130px; min-height: 28px; padding: 3px 28px 3px 7px; font-size: var(--fs-10); }
   .select-trigger.compact svg { right: 8px; width: 10px; height: 10px; }
   .select-trigger:disabled { cursor: not-allowed; opacity: 0.58; }
 

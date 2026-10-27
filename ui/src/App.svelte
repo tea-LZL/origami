@@ -3,6 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import {
     app,
+    applyFontScale,
     applyThemePreference,
     bootstrap,
     commitPaneWidth,
@@ -52,6 +53,7 @@
     applyThemePreference(app.value.theme);
     root.dataset.density = app.value.density;
     root.dataset.motion = app.value.motion;
+    applyFontScale(app.value.fontScale);
   });
 
   onMount(async () => {
@@ -241,7 +243,7 @@
      border-radius: var(--radius-sm);
     background: var(--accent);
     color: var(--accent-fg);
-    font-size: 13px;
+    font-size: var(--fs-13);
     font-weight: 750;
      box-shadow: var(--shadow-sheet);
     z-index: 10;
@@ -256,7 +258,7 @@
     padding: 10px 24px;
     border-radius: var(--radius-sm);
     font-weight: 600;
-    font-size: 14px;
+    font-size: var(--fs-14);
     min-height: 36px;
   }
    .add-btn:hover { background: var(--accent-hover); }
@@ -267,7 +269,7 @@
     color: var(--danger-fg);
     padding: 8px 16px;
     border-radius: var(--radius-sm);
-    font-size: 13px;
+    font-size: var(--fs-13);
     cursor: pointer;
     z-index: 100;
   }
@@ -286,7 +288,7 @@
     background: var(--fg);
     color: var(--bg-raised);
     box-shadow: var(--shadow-panel);
-    font-size: 12px;
+    font-size: var(--fs-12);
   }
   .undo-toast button {
     padding: 4px 8px;
@@ -307,7 +309,7 @@
     background: var(--bg-raised);
     color: var(--fg);
     box-shadow: var(--shadow-panel);
-    font-size: 12px;
+    font-size: var(--fs-12);
     text-align: left;
   }
 

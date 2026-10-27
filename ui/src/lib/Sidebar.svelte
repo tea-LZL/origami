@@ -445,7 +445,7 @@
     display: flex;
     justify-content: space-between;
     color: var(--fg-muted);
-    font-size: 12px;
+    font-size: var(--fs-12);
     font-weight: 750;
     min-height: 36px;
     transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
@@ -463,7 +463,7 @@
     align-items: center;
     gap: 6px;
     padding: 10px 12px 6px;
-    font-size: 13px;
+    font-size: var(--fs-13);
     font-weight: 700;
     color: var(--fg);
     user-select: none;
@@ -474,20 +474,20 @@
     border-radius: 999px;
     background: color-mix(in oklab, var(--danger) 14%, transparent);
     color: var(--danger);
-    font-size: 9px;
+    font-size: var(--fs-9);
     font-weight: 700;
     text-transform: uppercase;
   }
   .runtime-status {
     display: inline-flex; align-items: center; gap: 4px;
-    color: var(--fg-subtle); font-size: 9px; font-weight: 700; text-transform: uppercase;
+    color: var(--fg-subtle); font-size: var(--fs-9); font-weight: 700; text-transform: uppercase;
   }
   .runtime-status i { width: 5px; height: 5px; border-radius: 50%; background: var(--success); }
   .runtime-status.syncing i { background: var(--accent); animation: status-pulse 1.2s ease-in-out infinite; }
   .outbox-status {
     width: calc(100% - 20px); display: flex; align-items: baseline; gap: 6px; margin: 0 10px 5px; padding: 5px 8px;
     border-radius: var(--radius-sm); background: color-mix(in oklab, var(--accent) 8%, transparent);
-    color: var(--fg-muted); font-size: 10px;
+    color: var(--fg-muted); font-size: var(--fs-10);
   }
   .outbox-status span { color: var(--accent); font-weight: 750; }
   .outbox-status strong { color: var(--fg); }
@@ -501,9 +501,9 @@
     border: 1px solid color-mix(in oklab, var(--danger) 36%, var(--border));
     border-radius: var(--radius-md);
     background: color-mix(in oklab, var(--danger) 7%, var(--bg-raised));
-    font-size: 11px;
+    font-size: var(--fs-11);
   }
-  .status-card strong { color: var(--fg); font-size: 12px; }
+  .status-card strong { color: var(--fg); font-size: var(--fs-12); }
   .status-card p { margin: 4px 0 9px; color: var(--fg-muted); line-height: 1.4; }
   .status-actions { display: flex; gap: 6px; }
   .status-actions button {
@@ -535,7 +535,7 @@
     display: grid;
     place-items: center;
     border-radius: var(--radius-sm);
-    font-size: 11px;
+    font-size: var(--fs-11);
     opacity: 0;
     transition: opacity var(--transition-fast), background-color var(--transition-fast), transform var(--transition-fast);
   }
@@ -554,7 +554,7 @@
     padding: 5px 8px;
     border-radius: var(--radius-sm);
     color: var(--fg);
-    font-size: 12px;
+    font-size: var(--fs-12);
     min-height: 32px;
     transition: background-color var(--transition-fast), color var(--transition-fast);
   }
@@ -562,7 +562,7 @@
   .twist, .twist-spacer {
     width: 14px;
     flex: 0 0 14px;
-    font-size: 10px;
+    font-size: var(--fs-10);
     color: var(--fg-subtle);
   }
   .twist {
@@ -623,18 +623,18 @@
     color: var(--accent-fg);
     border-radius: 10px;
     padding: 1px 6px;
-    font-size: 10px;
+    font-size: var(--fs-10);
     font-weight: 600;
     min-width: 16px;
     text-align: center;
   }
-  .total { color: var(--fg-subtle); font-size: 10px; }
+  .total { color: var(--fg-subtle); font-size: var(--fs-10); }
 
   .empty {
     padding: 24px;
     color: var(--fg-muted);
     text-align: center;
-    font-size: 12px;
+    font-size: var(--fs-12);
   }
 
   .tag-catalog {
@@ -645,7 +645,7 @@
     display: block;
     padding: 0 8px 6px;
     color: var(--fg-subtle);
-    font-size: 10px;
+    font-size: var(--fs-10);
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -659,7 +659,7 @@
     padding: 5px 8px;
     border-radius: var(--radius-sm);
     color: var(--fg);
-    font-size: 12px;
+    font-size: var(--fs-12);
     min-height: 32px;
   }
   .tag-row::before {
@@ -676,7 +676,7 @@
     color: var(--accent);
   }
   .tag-name { flex: 1; text-align: left; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .tag-count { color: var(--fg-subtle); font-size: 10px; font-weight: 600; }
+  .tag-count { color: var(--fg-subtle); font-size: var(--fs-10); font-weight: 600; }
 
   .add-account {
     margin: 8px;
@@ -684,7 +684,7 @@
     border: 1px dashed var(--border);
     border-radius: var(--radius-sm);
     color: var(--fg-muted);
-    font-size: 12px;
+    font-size: var(--fs-12);
     font-weight: 600;
     min-height: 36px;
   }
@@ -706,7 +706,7 @@
   }
   .context-menu button {
     padding: 6px 14px;
-    font-size: 12px;
+    font-size: var(--fs-12);
     text-align: left;
     border-radius: 4px;
     color: var(--fg);
@@ -732,8 +732,8 @@
     animation: surface-in var(--transition-med) both;
   }
   .dialog h3 { margin: 0 0 8px; }
-  .dialog p { color: var(--fg-muted); font-size: 13px; margin: 0 0 16px; }
-  .dialog label { display: grid; gap: 5px; color: var(--fg-muted); font-size: 12px; }
+  .dialog p { color: var(--fg-muted); font-size: var(--fs-13); margin: 0 0 16px; }
+  .dialog label { display: grid; gap: 5px; color: var(--fg-muted); font-size: var(--fs-12); }
   .dialog input {
     padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius-sm);
     background: var(--bg-sunken); color: var(--fg); font: inherit;
@@ -743,7 +743,7 @@
   .actions button {
     padding: 6px 16px;
     border-radius: var(--radius-sm);
-    font-size: 13px;
+    font-size: var(--fs-13);
   }
   .actions button:first-child { color: var(--fg-muted); }
   .actions button:first-child:hover { background: var(--bg-sunken); }

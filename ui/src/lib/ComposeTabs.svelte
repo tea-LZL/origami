@@ -128,7 +128,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     padding: 5px 4px 5px 10px;
-    font-size: 11px;
+    font-size: var(--fs-11);
     font-weight: 600;
   }
   .tab-close {
@@ -136,7 +136,7 @@
     height: 20px;
     margin-right: 4px;
     border-radius: 50%;
-    font-size: 12px;
+    font-size: var(--fs-12);
     color: var(--fg-subtle);
   }
   .tab-close:hover { background: var(--bg-sunken); color: var(--fg); }

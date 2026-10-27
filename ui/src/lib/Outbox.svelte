@@ -157,30 +157,30 @@
     animation: surface-in var(--transition-med) both;
   }
   header { display: flex; align-items: flex-start; justify-content: space-between; }
-  header span { color: var(--accent); font-size: 9px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+  header span { color: var(--accent); font-size: var(--fs-9); font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
   h2 { margin: 1px 0 0; font: 400 27px/1 var(--font-display); letter-spacing: -0.02em; }
-  .close { width: 28px; height: 28px; border-radius: var(--radius-sm); font-size: 20px; }
+  .close { width: 28px; height: 28px; border-radius: var(--radius-sm); font-size: var(--fs-20); }
   .close:hover { background: var(--bg-sunken); }
-  .intro { margin: 0; color: var(--fg-subtle); font-size: 11px; line-height: 1.45; }
+  .intro { margin: 0; color: var(--fg-subtle); font-size: var(--fs-11); line-height: 1.45; }
   .list { overflow-y: auto; display: grid; align-content: start; gap: 8px; padding-right: 3px; }
   article { padding: 11px; border: 1px solid var(--border); border-radius: var(--radius-md); background: color-mix(in oklab, var(--bg-sunken) 78%, var(--bg-raised)); box-shadow: inset 0 1px var(--paper-highlight); }
   article.failed { border-color: color-mix(in oklab, var(--danger) 34%, var(--border)); }
-  .chip { padding: 1px 8px; border-radius: 999px; font-size: 9px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+  .chip { padding: 1px 8px; border-radius: 999px; font-size: var(--fs-9); font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
   .failed-chip { color: var(--danger-fg); background: var(--danger); }
   .pending-chip { color: var(--info-fg); background: var(--info); }
-  .retry-entry { justify-self: start; padding: 3px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 11px; cursor: pointer; }
+  .retry-entry { justify-self: start; padding: 3px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: var(--fs-11); cursor: pointer; }
   .retry-entry:hover { background: var(--bg-sunken); }
   .operation { display: flex; justify-content: space-between; gap: 12px; }
-  .operation strong { font-size: 12px; }
-  time { color: var(--fg-subtle); font-size: 9px; }
-  article p { margin: 4px 0 7px; color: var(--fg-muted); font-size: 11px; }
-  details { color: var(--danger); font-size: 10px; }
+  .operation strong { font-size: var(--fs-12); }
+  time { color: var(--fg-subtle); font-size: var(--fs-9); }
+  article p { margin: 4px 0 7px; color: var(--fg-muted); font-size: var(--fs-11); }
+  details { color: var(--danger); font-size: var(--fs-10); }
   summary { cursor: pointer; font-weight: 700; }
   pre { margin: 6px 0 0; padding: 7px; overflow: auto; border-radius: var(--radius-sm); background: var(--bg-raised); color: var(--fg-muted); font: 10px/1.4 var(--font-mono); white-space: pre-wrap; user-select: text; }
-  .empty { min-height: 100px; display: grid; place-content: center; gap: 4px; text-align: center; color: var(--fg-subtle); font-size: 11px; }
+  .empty { min-height: 100px; display: grid; place-content: center; gap: 4px; text-align: center; color: var(--fg-subtle); font-size: var(--fs-11); }
   :global(.outbox-art) { width: 88px; margin: 0 auto 4px; }
-  .empty strong { color: var(--fg); font-size: 13px; }
-  .error { margin: 0; color: var(--danger); font-size: 11px; }
+  .empty strong { color: var(--fg); font-size: var(--fs-13); }
+  .error { margin: 0; color: var(--danger); font-size: var(--fs-11); }
   footer { display: flex; justify-content: flex-end; gap: 8px; }
   footer button { padding: 7px 12px; min-height: 36px; border-radius: var(--radius-sm); color: var(--fg-muted); }
   footer .primary { background: var(--accent); color: var(--accent-fg); font-weight: 700; }

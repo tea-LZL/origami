@@ -32,7 +32,8 @@
   import { tagColor } from "./tags";
   import { formatMessageDate } from "./formatDate";
 
-  const rowHeight = $derived(app.value.density === "compact" ? 52 : 60);
+  const baseRowHeight = $derived(app.value.density === "compact" ? 52 : 60);
+  const rowHeight = $derived(Math.round(baseRowHeight * (app.value.fontScale / 100)));
   let listEl: HTMLElement | null = $state(null);
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
   let labelsOpen = $state(false);
@@ -435,7 +436,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     color: var(--fg-muted);
-    font-size: 10px;
+    font-size: var(--fs-10);
     font-weight: 700;
   }
   .layout-button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
@@ -448,7 +449,7 @@
   .eyebrow {
     display: block;
     color: var(--fg-subtle);
-    font-size: 9px;
+    font-size: var(--fs-9);
     font-weight: 700;
     letter-spacing: 0.12em;
     text-transform: uppercase;
@@ -460,7 +461,7 @@
     border-radius: 999px;
     background: var(--bg-sunken);
     color: var(--fg-muted);
-    font-size: 11px;
+    font-size: var(--fs-11);
     text-align: center;
   }
   .search-box {
@@ -484,7 +485,7 @@
     background: transparent;
     color: var(--fg);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--fs-12);
   }
   @media (forced-colors: active) {
     .search-box:focus-within {
@@ -493,7 +494,7 @@
       box-shadow: none;
     }
   }
-  .search-box button { color: var(--accent); font-size: 18px; }
+  .search-box button { color: var(--accent); font-size: var(--fs-18); }
   .save-search { margin: 0 10px 7px; display: flex; gap: 5px; }
   .save-search input {
     min-width: 0; flex: 1; padding: 5px 7px; border: 1px solid var(--border);
@@ -503,7 +504,7 @@
   .saved-searches { padding: 0 10px 7px; display: flex; gap: 5px; overflow-x: auto; }
   .saved-searches span {
     flex-shrink: 0; border: 1px solid var(--border); border-radius: 999px;
-    display: flex; align-items: center; background: var(--bg-raised); font-size: 10px;
+    display: flex; align-items: center; background: var(--bg-raised); font-size: var(--fs-10);
   }
   .saved-searches button { padding: 3px 6px; color: var(--fg-muted); }
   .saved-searches button:last-child { padding-left: 1px; }
@@ -518,18 +519,18 @@
     gap: 4px;
     background: color-mix(in oklab, var(--accent) 6%, var(--bg-raised));
   }
-  .bulk-bar strong { flex: 1 0 100%; font-size: 11px; white-space: nowrap; }
+  .bulk-bar strong { flex: 1 0 100%; font-size: var(--fs-11); white-space: nowrap; }
   .bulk-bar button {
     min-height: 28px;
     padding: 4px 7px;
     border-radius: 4px;
     color: var(--fg-muted);
-    font-size: 10px;
+    font-size: var(--fs-10);
     font-weight: 650;
   }
   .bulk-bar button:hover { background: var(--bg-raised); color: var(--fg); }
   .bulk-bar .danger { color: var(--danger); }
-  .bulk-bar .clear { font-size: 16px; line-height: 1; }
+  .bulk-bar .clear { font-size: var(--fs-16); line-height: 1; }
   .label-editor {
     padding: 7px 9px;
     border-bottom: 1px solid var(--border);
@@ -547,7 +548,7 @@
     background: var(--bg-sunken);
     color: var(--fg);
     font: inherit;
-    font-size: 11px;
+    font-size: var(--fs-11);
   }
   .label-editor form button,
   .active-labels button {
@@ -555,14 +556,14 @@
     border-radius: 4px;
     background: var(--bg-sunken);
     color: var(--fg-muted);
-    font-size: 10px;
+    font-size: var(--fs-10);
   }
   .active-labels { display: flex; flex-wrap: wrap; gap: 4px; }
   .list-body { position: relative; flex: 1 1 0; min-height: 0; display: flex; overflow: hidden; }
   .message-loading { width: 100%; overflow: hidden; }
   .skeleton-list { width: 100%; }
   .skeleton-row {
-    height: 60px;
+    height: calc(60px * var(--ui-font-scale));
     padding: 10px 12px;
     border-bottom: 1px solid var(--border);
     display: grid;
@@ -575,7 +576,7 @@
   .skeleton-sender { width: min(72%, 180px); height: 10px; border-radius: 3px; }
   .skeleton-date { justify-self: end; width: 42px; height: 8px; border-radius: 3px; }
   .skeleton-subject { width: min(88%, 240px); height: 8px; border-radius: 3px; }
-  :global(:root[data-density="compact"]) .skeleton-row { height: 52px; padding-block: 7px; }
+  :global(:root[data-density="compact"]) .skeleton-row { height: calc(52px * var(--ui-font-scale)); padding-block: 7px; }
   .loading-more {
     position: absolute;
     left: 50%;
@@ -587,7 +588,7 @@
     background: var(--bg-raised);
     color: var(--fg-muted);
     box-shadow: 0 2px 8px rgba(0,0,0,0.12);
-    font-size: 10px;
+    font-size: var(--fs-10);
   }
   .empty {
     flex: 1 1 0;
@@ -601,20 +602,20 @@
     gap: 10px;
     color: var(--fg-muted);
     text-align: center;
-    font-size: 13px;
+    font-size: var(--fs-13);
   }
   :global(.empty-art) { width: 82px; margin-inline: auto; opacity: 0.72; }
   .row-content { position: relative; display: flex; flex-direction: column; gap: 2px; padding-left: 34px; }
   .top { display: flex; justify-content: space-between; gap: 8px; line-height: 1.25; }
-  .from { font-size: 13px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .from { font-size: var(--fs-13); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .search-match {
     padding: 0 2px;
     border-radius: 3px;
     background: color-mix(in oklab, var(--accent) 20%, transparent);
     color: var(--fg);
   }
-  .date { font-size: 11px; color: var(--fg-subtle); white-space: nowrap; }
-  .subject { font-size: 12px; line-height: 1.35; color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .date { font-size: var(--fs-11); color: var(--fg-subtle); white-space: nowrap; }
+  .subject { font-size: var(--fs-12); line-height: 1.35; color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .unread .from, .unread .subject { font-weight: 700; color: var(--fg); }
   .unread-pip {
     position: absolute;
@@ -644,14 +645,14 @@
     border-radius: 999px;
     background: color-mix(in oklab, var(--accent) 12%, transparent);
     color: var(--accent);
-    font-size: 9px;
+    font-size: var(--fs-9);
     font-weight: 750;
   }
   .tag {
     display: inline-block;
     padding: 0 5px;
     border-radius: 3px;
-    font-size: 10px;
+    font-size: var(--fs-10);
     font-weight: 600;
     color: var(--tag-fg);
     margin-left: 4px;

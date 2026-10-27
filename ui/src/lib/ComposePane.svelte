@@ -490,7 +490,7 @@
   .compose-title { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   .eyebrow {
     color: var(--fg-subtle);
-    font-size: 9px;
+    font-size: var(--fs-9);
     font-weight: 700;
     letter-spacing: 0.16em;
     text-transform: uppercase;
@@ -511,7 +511,7 @@
     border-radius: 999px;
     background: color-mix(in oklab, var(--bg-sunken) 62%, var(--bg-raised));
     color: var(--fg-muted);
-    font-size: 11px;
+    font-size: var(--fs-11);
     text-transform: uppercase;
     letter-spacing: 0.08em;
   }
@@ -521,7 +521,7 @@
     padding: 4px 11px;
     border: 1px solid var(--border);
     border-radius: 999px;
-    font-size: 11px;
+    font-size: var(--fs-11);
     color: var(--fg-muted);
     background: var(--bg-raised);
   }
@@ -554,12 +554,12 @@
     align-items: center;
     gap: 12px;
     border-bottom: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
-    font-size: 12px;
+    font-size: var(--fs-12);
     color: var(--fg-muted);
   }
   .field-label {
     color: var(--fg-subtle);
-    font-size: 9px;
+    font-size: var(--fs-9);
     font-weight: 700;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -581,7 +581,7 @@
   .fields label.subject {
     grid-template-columns: 58px minmax(0, 1fr);
     border-bottom-color: var(--border-strong);
-    font-size: 13px;
+    font-size: var(--fs-13);
   }
   .fields label.subject input {
     min-height: 44px;
@@ -620,7 +620,7 @@
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--fg-muted);
-    font-size: 12px;
+    font-size: var(--fs-12);
     line-height: 1;
     cursor: pointer;
   }
@@ -688,7 +688,7 @@
     background:
       linear-gradient(135deg, transparent calc(100% - 9px), color-mix(in oklab, var(--paper-crease) 70%, var(--bg-raised)) calc(100% - 8px)),
       color-mix(in oklab, var(--bg-sunken) 72%, var(--bg-raised));
-    font-size: 11px;
+    font-size: var(--fs-11);
   }
   .attachments small { color: var(--fg-subtle); }
   .attachments .thumb {
@@ -708,7 +708,7 @@
     padding: 6px 16px;
     border-bottom: 1px solid var(--border);
     background: color-mix(in oklab, var(--bg-sunken) 50%, var(--bg-raised));
-    font-size: 12px;
+    font-size: var(--fs-12);
   }
   .link-row label { display: flex; align-items: center; gap: 6px; flex: 1; color: var(--fg-muted); }
   .link-row input {
@@ -726,7 +726,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: var(--bg-raised);
-    font-size: 12px;
+    font-size: var(--fs-12);
   }
   .link-row button:hover { border-color: var(--accent); color: var(--accent); }
   .discard-confirm {
@@ -737,7 +737,7 @@
     padding: 8px 16px;
     border-top: 1px solid color-mix(in oklab, var(--warning) 40%, var(--border));
     background: color-mix(in oklab, var(--warning) 12%, var(--bg-raised));
-    font-size: 12px;
+    font-size: var(--fs-12);
   }
   .discard-confirm span { margin-right: auto; }
   .discard-confirm button {
@@ -745,7 +745,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: var(--bg-raised);
-    font-size: 12px;
+    font-size: var(--fs-12);
   }
   .discard-confirm .discard { background: var(--danger); color: var(--danger-fg); border-color: var(--danger); }
   footer {
@@ -759,7 +759,7 @@
       linear-gradient(0deg, color-mix(in oklab, var(--paper-highlight) 42%, transparent), transparent 70%),
       color-mix(in oklab, var(--bg-sunken) 56%, var(--bg-raised));
   }
-  .mode-toggle { padding: 3px 10px; border: 1px solid transparent; border-radius: 999px; font-size: 11px; cursor: pointer; color: var(--fg-muted); background: transparent; }
+  .mode-toggle { padding: 3px 10px; border: 1px solid transparent; border-radius: 999px; font-size: var(--fs-11); cursor: pointer; color: var(--fg-muted); background: transparent; }
   .mode-toggle.active { color: var(--accent-fg); background: var(--accent); border-color: var(--accent); }
   .toolbar .sep { width: 1px; height: 18px; background: color-mix(in oklab, var(--border) 80%, transparent); }
   .plain-editor {
@@ -791,7 +791,7 @@
     margin-right: auto;
     align-self: center;
     color: var(--fg-subtle);
-    font-size: 10px;
+    font-size: var(--fs-10);
     letter-spacing: 0.02em;
   }
   .ink-dot {
@@ -809,7 +809,7 @@
     border-radius: var(--radius-sm);
     background: color-mix(in oklab, var(--warning) 12%, var(--bg-raised));
     color: var(--fg);
-    font-size: 11px;
+    font-size: var(--fs-11);
   }
   .sync-retry:hover { border-color: var(--warning); }
   .cancel {

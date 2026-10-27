@@ -655,7 +655,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     color: var(--fg-muted);
-    font-size: 11px;
+    font-size: var(--fs-11);
     font-weight: 650;
   }
   .back-to-messages:hover { border-color: var(--accent); color: var(--accent); }
@@ -674,7 +674,7 @@
     border-radius: var(--radius-sm);
     background: color-mix(in oklab, var(--bg-sunken) 82%, var(--bg-raised));
     color: var(--fg-muted);
-    font-size: 11px;
+    font-size: var(--fs-11);
     font-weight: 600;
   }
   .message-actions button.icon {
@@ -695,7 +695,7 @@
     overflow: hidden;
   }
   .content-mode button { border: 0; border-radius: 0; }
-  .meta { color: var(--fg-muted); display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; margin-bottom: 18px; }
+  .meta { color: var(--fg-muted); display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: var(--fs-12); margin-bottom: 18px; }
   .meta .address { color: var(--fg); overflow-wrap: anywhere; user-select: text; }
   .details {
     display: grid;
@@ -705,7 +705,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     background: color-mix(in oklab, var(--bg-sunken) 72%, var(--bg-raised));
-    font-size: 11px;
+    font-size: var(--fs-11);
   }
   .details div { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 10px; }
   .details dt { color: var(--fg-subtle); font-weight: 700; }
@@ -726,7 +726,7 @@
     background: color-mix(in oklab, var(--accent) 6%, var(--bg-raised));
     box-shadow: inset 0 1px var(--paper-highlight);
     color: var(--fg-muted);
-    font-size: 11px;
+    font-size: var(--fs-11);
   }
   .remote-bar strong { color: var(--accent); }
   .remote-actions {
@@ -741,7 +741,7 @@
     border-radius: var(--radius-sm);
     background: var(--bg-raised);
     color: var(--fg-muted);
-    font-size: 10px;
+    font-size: var(--fs-10);
   }
   .remote-actions button:hover { border-color: var(--accent); color: var(--accent); }
   .remote-actions button.risk {
@@ -766,13 +766,13 @@
     overflow-x: auto;
     background: color-mix(in oklab, var(--bg-sunken) 72%, var(--bg-raised));
   }
-  .conversation span { margin-right: 3px; color: var(--fg-subtle); font-size: 10px; white-space: nowrap; }
+  .conversation span { margin-right: 3px; color: var(--fg-subtle); font-size: var(--fs-10); white-space: nowrap; }
   .conversation button {
     flex-shrink: 0;
     padding: 3px 7px;
     border-radius: 999px;
     color: var(--fg-muted);
-    font-size: 10px;
+    font-size: var(--fs-10);
   }
   .conversation button:hover { background: var(--bg-sunken); }
   .conversation button.current { background: var(--accent); color: var(--accent-fg); }
@@ -793,7 +793,7 @@
     margin: 0 auto;
     max-width: min(100%, var(--message-measure));
     font-family: var(--font-mono);
-    font-size: 14px;
+    font-size: var(--fs-14);
     line-height: 1.55;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -808,7 +808,7 @@
     background: var(--bg-raised);
     box-shadow: var(--shadow-sheet), inset 0 1px var(--paper-highlight);
   }
-  footer h2 { font-size: 13px; text-transform: uppercase; color: var(--fg-muted); margin: 0 0 8px; }
+  footer h2 { font-size: var(--fs-13); text-transform: uppercase; color: var(--fg-muted); margin: 0 0 8px; }
   footer ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
   footer .file {
     display: flex;
@@ -834,12 +834,12 @@
     border-radius: var(--radius-sm);
     padding: 6px 10px;
     color: var(--fg);
-    font-size: 12px;
+    font-size: var(--fs-12);
     font-weight: 650;
   }
   footer .file-actions button:hover { border-color: var(--accent); color: var(--accent); }
   footer .file-actions button:disabled { opacity: 0.55; }
-  footer small { color: var(--fg-subtle); font-size: 11px; }
+  footer small { color: var(--fg-subtle); font-size: var(--fs-11); }
   .attachment-view {
     flex-shrink: 0;
     width: 100%;
@@ -868,7 +868,7 @@
     background: var(--bg-raised);
     padding: 4px 8px;
     color: var(--fg-muted);
-    font-size: 12px;
+    font-size: var(--fs-12);
   }
   .attachment-view img {
     display: block;
@@ -882,7 +882,7 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: var(--fs-13);
     line-height: 1.5;
   }
 

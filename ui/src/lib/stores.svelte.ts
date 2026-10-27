@@ -68,6 +68,19 @@ export function applyThemePreference(pref: ThemePref): void {
   }
 }
 
+/** UI font scale bounds, in percent of the 14 px base. */
+export const FONT_SCALE_MIN = 85;
+export const FONT_SCALE_MAX = 150;
+
+/**
+ * Apply the font-scale preference as the root `--ui-font-scale` multiplier
+ * every `--fs-*` type token multiplies. Message-body zoom is separate.
+ */
+export function applyFontScale(percent: number): void {
+  const scale = Math.min(FONT_SCALE_MAX, Math.max(FONT_SCALE_MIN, Math.round(percent)));
+  document.documentElement.style.setProperty("--ui-font-scale", String(scale / 100));
+}
+
 export type WorkspaceLayout = "three-pane" | "two-pane" | "reading";
 
 export interface ComposerAttachment {
@@ -128,6 +141,7 @@ export interface State {
   threadRequest: number;
   markReadDelay: number;
   messageZoom: number;
+  fontScale: number;
   syncing: boolean;
   lastError: string | null;
   lastNotice: string | null;
@@ -177,6 +191,7 @@ const initial: State = {
   threadRequest: 0,
   markReadDelay: 0,
   messageZoom: 100,
+  fontScale: 100,
   syncing: false,
   lastError: null,
   lastNotice: null,
@@ -344,6 +359,7 @@ function loadPreferences() {
       unreadOnly: typeof saved.unreadOnly === "boolean" ? saved.unreadOnly : false,
       markReadDelay: clampMarkReadDelay(saved.markReadDelay),
       messageZoom: bounded(saved.messageZoom, 100, 50, 300),
+      fontScale: bounded(saved.fontScale, 100, FONT_SCALE_MIN, FONT_SCALE_MAX),
     });
   } catch {
     // Invalid preferences fall back to defaults.
@@ -361,14 +377,23 @@ function savePreferences() {
     unreadOnly: app.value.unreadOnly,
     markReadDelay: app.value.markReadDelay,
     messageZoom: app.value.messageZoom,
+    fontScale: app.value.fontScale,
   }));
 }
 
 export function setPreferences(
-  preferences: Partial<Pick<State, "theme" | "density" | "motion" | "markReadDelay" | "messageZoom">>,
+  preferences: Partial<Pick<State, "theme" | "density" | "motion" | "markReadDelay" | "messageZoom" | "fontScale">>,
 ) {
   const patchable = { ...preferences } as typeof preferences;
   if ("markReadDelay" in patchable) patchable.markReadDelay = clampMarkReadDelay(patchable.markReadDelay);
+  if ("fontScale" in patchable) {
+    patchable.fontScale = bounded(
+      patchable.fontScale,
+      app.value.fontScale,
+      FONT_SCALE_MIN,
+      FONT_SCALE_MAX,
+    );
+  }
   if ("messageZoom" in patchable) {
     patchable.messageZoom = bounded(patchable.messageZoom, 100, 50, 300);
   }

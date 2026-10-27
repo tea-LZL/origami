@@ -343,3 +343,13 @@ loops also start 2 s apart so three TLS+AUTH+folder passes do not all land durin
 paint. Unit tests cover the sweep window and stagger; the Dovecot harness checks that
 `sync_non_inbox` never returns INBOX. The temporary UI `report_timing` probe was removed now
 that the sync path has its own timing spans. Recorded in [[sync-engine]].
+
+## [2026-10-27] change | Font scale preference
+`State.fontScale` (85–150, default 100) joins the persisted appearance preferences and is
+applied as the root `--ui-font-scale` multiplier. `ui/src/app.css` now expresses every UI
+type size through `--fs-9` … `--fs-20` tokens (`calc(Npx * var(--ui-font-scale))`), so the
+Preferences control scales labels, dialogs, chrome, and the message list together;
+`ThreadList` scales its virtual row height from the same value and the skeleton rows scale
+in CSS, so text never clips. Message-body zoom stays a separate control. `applyFontScale`
+clamps out-of-range values; `stores.markread.test.ts` covers the bounds, persistence, and
+the root multiplier. Recorded in [[ui-state-and-rendering]].
