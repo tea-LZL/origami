@@ -33,8 +33,8 @@
     const keys = ["ArrowRight", "ArrowLeft", "Home", "End"];
     if (!keys.includes(event.key)) return;
     event.preventDefault();
-    const list = (event.currentTarget as HTMLElement).closest('[role="tablist"]');
-    const tabs = Array.from(list?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? []);
+    const list = (event.currentTarget as HTMLElement).closest(".compose-tabs");
+    const tabs = Array.from(list?.querySelectorAll<HTMLButtonElement>(".tab-button") ?? []);
     if (tabs.length === 0) return;
     const index = tabs.indexOf(event.currentTarget as HTMLButtonElement);
     const next = event.key === "Home"
@@ -60,17 +60,15 @@
 </script>
 
 {#if app.value.composerSessions.length > 0}
-  <div class="compose-tabs" role="tablist" aria-label="Open messages">
+  <div class="compose-tabs" role="group" aria-label="Open messages">
     {#each app.value.composerSessions as session (session.id)}
       {@const active = session.id === app.value.activeComposerId}
       <div class="tab" class:active>
         <button
           type="button"
-          role="tab"
           id={tabId(session)}
           class="tab-button"
-          aria-selected={active}
-          aria-controls={`compose-pane-${session.id}`}
+          aria-current={active ? "true" : undefined}
           tabindex={active ? 0 : -1}
           title={title(session)}
           onclick={() => select(session)}

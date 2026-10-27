@@ -130,7 +130,7 @@
   onscroll={onScroll}
   role="listbox"
   aria-label="Messages"
-  aria-keyshortcuts="J K Enter Space"
+  aria-keyshortcuts="J K Enter Space T"
   aria-multiselectable="true"
   tabindex={activeId == null ? 0 : -1}
 >

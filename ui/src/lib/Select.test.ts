@@ -18,11 +18,11 @@ describe("Select", () => {
       onValueChange,
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Theme" }));
+    await fireEvent.click(screen.getByRole("button", { name: /^Theme/ }));
     await fireEvent.click(screen.getByRole("option", { name: "Midnight blue", hidden: true }));
 
     expect(onValueChange).toHaveBeenCalledWith("dark");
-    expect(screen.getByRole("button", { name: "Theme" })).toHaveTextContent("Midnight blue");
+    expect(screen.getByRole("button", { name: /^Theme/ })).toHaveTextContent("Midnight blue");
   });
 
   it("supports arrow keys and Enter", async () => {
@@ -33,7 +33,7 @@ describe("Select", () => {
       ariaLabel: "Theme",
       onValueChange,
     });
-    const trigger = screen.getByRole("button", { name: "Theme" });
+    const trigger = screen.getByRole("button", { name: /^Theme/ });
 
     await fireEvent.keyDown(trigger, { key: "ArrowDown" });
     await fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
@@ -51,7 +51,7 @@ describe("Select", () => {
       ariaLabel: "Theme",
       onValueChange,
     });
-    const trigger = screen.getByRole("button", { name: "Theme" });
+    const trigger = screen.getByRole("button", { name: /^Theme/ });
 
     await fireEvent.keyDown(trigger, { key: "ArrowDown" });
     await fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
@@ -68,7 +68,7 @@ describe("Select", () => {
       ariaLabel: "Theme",
       onValueChange,
     });
-    const trigger = screen.getByRole("button", { name: "Theme" });
+    const trigger = screen.getByRole("button", { name: /^Theme/ });
     await fireEvent.click(trigger);
 
     const menu = screen.getByRole("listbox", { hidden: true });

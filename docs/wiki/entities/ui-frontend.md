@@ -19,7 +19,9 @@ system in `ui/src/app.css` (this contradicts an older plan tree — see [[known-
 Runtime: `@tauri-apps/api`, `@tauri-apps/plugin-opener`, `dompurify`.
 Rich text: TipTap (`@tiptap/core`, `@tiptap/pm`, `@tiptap/starter-kit`, currently declared
 under devDependencies).
-Tooling: `vite`, `svelte-check`, `typescript`, `vitest` + Testing Library + jsdom.
+Tooling: `vite`, `svelte-check`, `typescript`, `vitest` + Testing Library + jsdom, and
+Playwright + axe-core for the end-to-end and accessibility suite (`ui/e2e`, stubbed Tauri
+bridge).
 
 ## Structure
 

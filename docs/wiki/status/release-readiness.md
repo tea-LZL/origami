@@ -15,7 +15,7 @@ sources:
 **Current classification: feature-rich beta / daily-driver candidate — not public-production
 ready.**
 
-`docs/IMPROVEMENT_PLAN.md` reports 65 of 81 items complete (80% checklist coverage), but that
+`docs/IMPROVEMENT_PLAN.md` reports 67 of 81 items complete (83% checklist coverage), but that
 measures **feature breadth, not release confidence**. Public readiness is lower because
 several proof and distribution gates are absent.
 
@@ -45,7 +45,10 @@ several proof and distribution gates are absent.
 ### 3. End-to-end confidence
 - The GreenMail SMTP round-trip tolerates a known `io-smtp` greeting-parser incompatibility
   ([[test-suite-md]]).
-- No Playwright daily-driver suite and no native WebKit automated workflow.
+- Playwright covers five UI flows — read, compose/send, search, keyboard list/dialog
+  interaction, and axe scans (list in light/dark/ember; Preferences and Compose in light) —
+  against the built UI with a stubbed Tauri bridge (`ui/e2e`, CI job `ui-e2e`). There is
+  still no automated native-WebKit workflow.
 - **Budgets landed** (2026-09-28): cached-open (mean LRU hit < 50 ms,
   `open_latency.rs`, `--ignored`) and 10,000-row scale budgets
   (`crates/origami-core/tests/perf_budget.rs`: list/dedupe/search/count/thread/eviction).
@@ -61,9 +64,11 @@ several proof and distribution gates are absent.
   attachment scoping; link-scheme allowlist tests; secret redaction on errors and outbox
   rows ([[store-and-search]], [[content-addressed-store]],
   [[hardening-caching-palette-spec]]).
-- Still open: automated accessibility or visual-regression checks beyond the palette
-  contrast gate and dialog keyboard tests (the fuzz gate for the search boundary and the
-  FTS under-index invariant landed 2026-09-28, branch `daily-driver`).
+- Accessibility is automated: axe scans the message list in light, dark, and ember, plus
+  Preferences and Compose in the light theme (`ui/e2e/a11y.spec.ts`, CI `ui-e2e`), and the
+  palette gate also checks `--fg-subtle` / `--fg-placeholder`. Visual-regression baselines
+  remain open because they need a container-pinned renderer. (The search-boundary fuzz gate
+  and the FTS under-index invariant landed 2026-09-28, branch `daily-driver`.)
 
 ### 5. Daily-driver gaps — **delivered 2026-09-27** (branch `daily-driver`)
 

@@ -21,3 +21,8 @@ packaging/arch/*.pkg.tar.zst.sha256
 
 # Hermes agent plans (local only)
 .hermes/
+
+# Playwright
+/ui/test-results/
+/ui/playwright-report/
+/ui/blob-report/

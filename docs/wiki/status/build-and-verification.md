@@ -2,7 +2,7 @@
 title: Build and verification
 type: status
 status: current
-updated: 2026-10-03
+updated: 2026-10-27
 sources:
   - MEMORY.md
   - .github/workflows/ci.yml
@@ -25,6 +25,7 @@ cargo build -p origami-app --no-default-features
 npm --prefix ui run check
 npm --prefix ui test -- --run
 npm --prefix ui run build
+npm --prefix ui run test:e2e
 npm --prefix ui run check:contrast
 
 git diff --check
@@ -32,6 +33,17 @@ git status --short --branch
 ```
 
 Live protocol tests need Docker and env-gated variables — see [[test-suite-md]].
+
+The Playwright suite (`ui/e2e`) builds and previews the UI itself. Its Tauri bridge is
+stubbed with `page.addInitScript` (`e2e/tauri.ts`), which serves scenario fixtures and
+records every invoke, so the workflows exercise the real components without a Rust process.
+Install the browser once with `npm --prefix ui run test:e2e:install`; CI runs the suite in
+the `ui-e2e` job against the Arch `chromium` package
+(`PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium`). Vitest is scoped to `src/`
+(`vitest.config.ts`) so the shared `.spec.ts` suffix stays out of `npm test`.
+`a11y.spec.ts` runs axe over the message list in light, dark, and ember, plus Preferences and
+Compose in the light theme; `keyboard.spec.ts` covers list navigation, Escape, and the dialog
+focus trap.
 
 ## Last verified locally
 

@@ -353,3 +353,21 @@ Preferences control scales labels, dialogs, chrome, and the message list togethe
 in CSS, so text never clips. Message-body zoom stays a separate control. `applyFontScale`
 clamps out-of-range values; `stores.markread.test.ts` covers the bounds, persistence, and
 the root multiplier. Recorded in [[ui-state-and-rendering]].
+
+## [2026-10-27] test | Playwright workflows and accessibility gates
+`ui/e2e` adds a Playwright suite over the built UI (`vite preview`); `e2e/tauri.ts` stubs the
+Tauri bridge before page scripts run, serves scenario fixtures, and records every invoke.
+Covered: open a message (cached body, mark-read), compose/send, global search, `j`/`k` list
+navigation with Enter, Escape and the Tab focus trap in Preferences, and axe scans of the
+message list in light, dark, and ember plus Preferences and Compose in the light theme. `npm run test:e2e` builds
+and previews on its own; `test:e2e:install` fetches Chromium; `vitest.config.ts` scopes unit
+collection to `src/`; CI gained `ui-e2e` (Arch `chromium`) and now runs `check:contrast`.
+Axe drove real fixes: `--fg-subtle`/`--fg-placeholder` meet 4.5:1 in every theme (including
+ember unread rows, and the palette gate now checks those tokens), the list title is the page
+`h1`, row selection is carried by `aria-selected` with a presentational check affordance (no
+focusable control inside the option), Select triggers name their value, the Preferences
+header is no longer a second banner, recipient chips are a group around a combobox, the
+compose editor is labelled, and composer tabs are a named group with `aria-current`.
+Visual-regression baselines remain open because they need a container-pinned renderer.
+Recorded in [[build-and-verification]], [[ui-state-and-rendering]], and
+[[release-readiness]].
