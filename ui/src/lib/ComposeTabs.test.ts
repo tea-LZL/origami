@@ -55,24 +55,24 @@ describe("ComposeTabs", () => {
     expect(requestDiscardComposer).toHaveBeenCalledWith("a");
   });
 
-  it("active_tab_is_aria_selected", () => {
+  it("marks the active composer with aria-current", () => {
     app.value.activeComposerId = "a";
     render(ComposeTabs);
 
-    const tabs = screen.getAllByRole("tab");
-    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
-    expect(tabs[1]).toHaveAttribute("aria-selected", "false");
+    expect(screen.getByTitle("First")).toHaveAttribute("aria-current", "true");
+    expect(screen.getByTitle("bob@example.org")).not.toHaveAttribute("aria-current");
   });
 
   it("arrow_keys_rove_focus", async () => {
     app.value.activeComposerId = "a";
     render(ComposeTabs);
-    const tabs = screen.getAllByRole("tab");
-    tabs[0].focus();
+    const first = screen.getByTitle("First");
+    const second = screen.getByTitle("bob@example.org");
+    first.focus();
 
-    await fireEvent.keyDown(tabs[0], { key: "ArrowRight" });
+    await fireEvent.keyDown(first, { key: "ArrowRight" });
 
-    expect(tabs[1]).toHaveFocus();
+    expect(second).toHaveFocus();
   });
 
   it("status_dot_reports_sync_error", () => {

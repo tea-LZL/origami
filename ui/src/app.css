@@ -43,8 +43,8 @@
   --paper-rule: #c6bcaa;
   --fg: #252b38;
   --fg-muted: #5c6272;
-  --fg-subtle: #7b7d83;
-  --fg-placeholder: #7b7d83;
+  --fg-subtle: #60636a;
+  --fg-placeholder: #60636a;
   --border: #d8d0c2;
   --border-strong: #bdb29f;
   --shadow-panel: 0 1px 0 var(--paper-highlight), 0 10px 24px rgba(49, 45, 38, 0.13);
@@ -169,8 +169,8 @@
   --paper-rule: #4a3d2c;
   --fg: #f2ebe0;
   --fg-muted: #b8aa98;
-  --fg-subtle: #8f8070;
-  --fg-placeholder: #8f8070;
+  --fg-subtle: #a09080;
+  --fg-placeholder: #a09080;
   --border: #3e3427;
   --border-strong: #5c4c36;
   --accent: #d99a3d;

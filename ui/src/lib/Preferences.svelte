@@ -95,13 +95,13 @@
       class="preferences"
       aria-labelledby="preferences-title"
     >
-      <header>
+      <div class="pref-header">
         <div>
           <span>Origami</span>
           <h2 id="preferences-title">Preferences</h2>
         </div>
         <button type="button" onclick={() => app.value.preferencesOpen = false} aria-label="Close preferences">×</button>
-      </header>
+      </div>
 
       <section aria-labelledby="appearance-title">
         <h3 id="appearance-title">Appearance</h3>
@@ -320,8 +320,8 @@
     animation: surface-in var(--transition-med) both;
     color: var(--fg);
   }
-  header { display: flex; align-items: flex-start; justify-content: space-between; }
-  header span {
+  .pref-header { display: flex; align-items: flex-start; justify-content: space-between; }
+  .pref-header span {
     color: var(--accent);
     font-size: 9px;
     font-weight: 800;
@@ -337,8 +337,8 @@
     letter-spacing: 0.1em;
     text-transform: uppercase;
   }
-  header button { width: 28px; height: 28px; border-radius: var(--radius-sm); font-size: 20px; }
-  header button:hover { background: var(--bg-sunken); }
+  .pref-header button { width: 28px; height: 28px; border-radius: var(--radius-sm); font-size: 20px; }
+  .pref-header button:hover { background: var(--bg-sunken); }
   section { display: grid; gap: 12px; padding-top: 4px; }
   section + section { padding-top: 16px; border-top: 1px solid var(--paper-crease); }
   label { display: grid; grid-template-columns: 1fr 180px; align-items: center; gap: 16px; font-weight: 650; }

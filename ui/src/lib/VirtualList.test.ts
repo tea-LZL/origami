@@ -9,7 +9,7 @@ describe("VirtualList", () => {
 
     expect(list).toHaveAttribute("tabindex", "0");
     expect(list).toHaveAttribute("aria-multiselectable", "true");
-    expect(list).toHaveAttribute("aria-keyshortcuts", "J K Enter Space");
+    expect(list).toHaveAttribute("aria-keyshortcuts", "J K Enter Space T");
     expect(screen.getAllByRole("option")).toHaveLength(2);
     list.focus();
     expect(list).toHaveFocus();

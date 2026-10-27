@@ -160,7 +160,7 @@
   class="select-trigger"
   class:compact
   class:placeholder={selectedIndex < 0}
-  aria-label={ariaLabel}
+  aria-label={`${ariaLabel}: ${selectedLabel}`}
   aria-haspopup="listbox"
   aria-expanded={open}
   aria-controls={menuId}

@@ -14,7 +14,7 @@ describe("RecipientInput", () => {
       props: { value: "alice@example.org, bob@example.org", label: "To", correspondents },
     });
 
-    const chips = screen.getByRole("list", { name: "To recipients" });
+    const chips = screen.getByRole("group", { name: "To recipients" });
     expect(within(chips).getByText("alice@example.org")).toBeInTheDocument();
     expect(within(chips).getByText("bob@example.org")).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Remove alice@example.org" })).toBeTruthy();
@@ -26,7 +26,7 @@ describe("RecipientInput", () => {
       props: { value: "", label: "To", correspondents, onChange },
     });
 
-    const input = screen.getByRole("textbox", { name: "To" });
+    const input = screen.getByRole("combobox", { name: "To" });
     await fireEvent.input(input, { target: { value: "carol@example.org" } });
     await fireEvent.keyDown(input, { key: "Enter" });
 
@@ -50,7 +50,7 @@ describe("RecipientInput", () => {
       props: { value: "", label: "To", correspondents, onChange },
     });
 
-    const input = screen.getByRole("textbox", { name: "To" });
+    const input = screen.getByRole("combobox", { name: "To" });
     await fireEvent.input(input, { target: { value: "not-an-address" } });
     await fireEvent.keyDown(input, { key: "Enter" });
 
@@ -74,7 +74,7 @@ describe("RecipientInput", () => {
       props: { value: "alice@example.org", label: "To", correspondents, onChange },
     });
 
-    const input = screen.getByRole("textbox", { name: "To" });
+    const input = screen.getByRole("combobox", { name: "To" });
     await fireEvent.input(input, { target: { value: "alice@example.org" } });
     await fireEvent.keyDown(input, { key: "Enter" });
 
@@ -87,7 +87,7 @@ describe("RecipientInput", () => {
       props: { value: "alice@example.org, bob@example.org", label: "To", correspondents, onChange },
     });
 
-    const input = screen.getByRole("textbox", { name: "To" });
+    const input = screen.getByRole("combobox", { name: "To" });
     await fireEvent.keyDown(input, { key: "Backspace" });
 
     expect(onChange).toHaveBeenCalledWith("alice@example.org");

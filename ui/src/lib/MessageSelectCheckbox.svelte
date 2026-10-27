@@ -1,30 +1,22 @@
 <script lang="ts">
   interface Props {
     checked: boolean;
-    label: string;
-    onToggle: (range: boolean) => void;
   }
 
-  let { checked, label, onToggle }: Props = $props();
+  let { checked }: Props = $props();
 </script>
 
-<label class="select-control">
-  <input
-    class="select-input"
-    type="checkbox"
-    {checked}
-    aria-label={label}
-    onclick={(event) => {
-      event.stopPropagation();
-      onToggle(event.shiftKey);
-    }}
-  />
-  <span class="select-paper" aria-hidden="true">
+<!-- Presentational check affordance. The row is the listbox option, so
+     selection is exposed there via aria-selected and toggled by the row's
+     Space handler; ThreadList also routes clicks on this box to selection
+     instead of opening the message. -->
+<span class="select-control" class:checked>
+  <span class="select-paper">
     <svg viewBox="0 0 20 20" focusable="false">
       <path d="m4.75 10.25 3.3 3.4 7.2-7.5" />
     </svg>
   </span>
-</label>
+</span>
 
 <style>
   .select-control {
@@ -35,16 +27,6 @@
     height: 28px;
     display: grid;
     place-items: center;
-    cursor: pointer;
-  }
-  .select-input {
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    opacity: 0;
     cursor: pointer;
   }
   .select-paper {
@@ -99,26 +81,16 @@
     border-color: var(--accent);
     box-shadow: inset 0 1px 0 var(--checkbox-glint), 0 3px 8px rgba(49, 45, 38, 0.2);
   }
-  .select-input:checked + .select-paper {
+  .select-control.checked .select-paper {
     border-color: var(--accent-hover);
     background: linear-gradient(145deg, var(--accent), var(--accent-active));
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), 0 3px 10px color-mix(in oklab, var(--accent) 28%, transparent);
   }
-  .select-input:checked + .select-paper::before { background: var(--accent-hover); }
-  .select-input:checked + .select-paper svg { opacity: 1; }
-  .select-input:focus-visible + .select-paper {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
+  .select-control.checked .select-paper::before { background: var(--accent-hover); }
+  .select-control.checked svg { opacity: 1; }
   @media (forced-colors: active) {
-    .select-input {
-      appearance: auto;
-      -webkit-appearance: auto;
-      inset: 5px;
-      width: 18px;
-      height: 18px;
-      opacity: 1;
-    }
-    .select-paper { display: none; }
+    .select-paper { border-color: CanvasText; forced-color-adjust: none; }
+    .select-control.checked .select-paper { background: Highlight; }
+    .select-control.checked svg { stroke: HighlightText; opacity: 1; }
   }
 </style>

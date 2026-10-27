@@ -80,7 +80,7 @@ This plan turns the current prototype into a dependable daily-driver mail client
 - [x] Restore text selection and consistent focus-visible styling.
 - [ ] Add pane, font scale, message zoom, and mark-read preferences.
 - [x] Add notification privacy, quiet-hours, and folder-scope settings.
-- [ ] Complete keyboard and screen-reader interaction tests.
+- [x] Complete keyboard and screen-reader interaction tests.
 
 ## P6 - Mail-system completeness
 
@@ -100,8 +100,8 @@ This plan turns the current prototype into a dependable daily-driver mail client
 ## P7 - Release quality
 
 - [~] Expand UI component and interaction tests beyond the current focused suite.
-- [ ] Add Playwright daily-driver workflows.
-- [ ] Add accessibility and visual-regression checks.
+- [x] Add Playwright daily-driver workflows.
+- [~] Add accessibility and visual-regression checks.
 - [ ] Add cached-open, sync, search, and 10,000-row performance budgets.
 - [~] Expand the current sanitizer/iframe regressions into a hostile-message and navigation corpus.
 - [ ] Run Gmail, Outlook, Fastmail, Posteo, and Dovecot release checks.

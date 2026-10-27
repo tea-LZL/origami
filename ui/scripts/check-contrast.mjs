@@ -76,6 +76,9 @@ for (const theme of Object.keys(blocks)) {
   check(theme, "body on bg", "--fg", "--bg", 4.5);
   check(theme, "body on raised", "--fg", "--bg-raised", 4.5);
   check(theme, "muted on bg", "--fg-muted", "--bg", 4.5);
+  check(theme, "subtle on bg", "--fg-subtle", "--bg", 4.5);
+  check(theme, "subtle on raised", "--fg-subtle", "--bg-raised", 4.5);
+  check(theme, "placeholder on raised", "--fg-placeholder", "--bg-raised", 4.5);
   check(theme, "accent label", "--accent-fg", "--accent", 3);
   check(theme, "danger label", "--danger-fg", "--danger", 3);
   check(theme, "success label", "--success-fg", "--success", 3);

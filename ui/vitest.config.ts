@@ -7,6 +7,8 @@ export default defineConfig({
     conditions: ["browser"],
   },
   test: {
+    // Playwright specs share the `.spec.ts` suffix; keep them out of vitest.
+    include: ["src/**/*.{test,spec}.?(c|m)[jt]s?(x)"],
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
   },

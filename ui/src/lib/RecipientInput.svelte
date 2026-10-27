@@ -63,10 +63,10 @@
 
 <label class="recipients">
   <span class="recipients-label">{label}</span>
-  <span class="chips" role="list" aria-label={`${label} recipients`}>
+  <span class="chips" role="group" aria-label={`${label} recipients`}>
     {#each recipients as recipient (recipient)}
       {@const valid = isAddress(recipient)}
-      <span class="chip" class:invalid={!valid} role="listitem">
+      <span class="chip" class:invalid={!valid}>
         <span
           class="chip-text"
           aria-invalid={valid ? undefined : "true"}
@@ -84,7 +84,6 @@
       use:autofocusAction
       type="text"
       aria-label={label}
-      role="textbox"
       list={listId}
       bind:value={typed}
       onkeydown={onKeydown}

@@ -24,6 +24,7 @@
   let ccVisible = $state(false);
   let linkOpen = $state(false);
   let linkUrl = $state("");
+  let inlineInput = $state<HTMLInputElement | null>(null);
 
   const session = $derived(
     app.value.composerSessions.find((item) => item.id === app.value.activeComposerId) ?? null,
@@ -82,6 +83,9 @@
       editorProps: {
         attributes: {
           class: "prose",
+          role: "textbox",
+          "aria-label": "Message body",
+          "aria-multiline": "true",
         },
       },
       onUpdate: ({ editor }) => {
@@ -363,10 +367,21 @@
         <span class="sep" aria-hidden="true"></span>
         <button type="button" class="tool" aria-label="Undo" title="Undo" onclick={() => exec("undo")}><ActionIcon name="undo" /></button>
         <button type="button" class="tool" aria-label="Redo" title="Redo" onclick={() => exec("redo")}><ActionIcon name="redo" /></button>
-        <label class="tool attach-button inline-image" title="Insert image" aria-label="Insert image">
-          <input type="file" accept="image/*" multiple hidden aria-label="Insert image file" onchange={addInlineImages} />
-          <ActionIcon name="image" />
-        </label>
+        <button
+          type="button"
+          class="tool"
+          aria-label="Insert image"
+          title="Insert image"
+          onclick={() => inlineInput?.click()}
+        ><ActionIcon name="image" /></button>
+        <input
+          bind:this={inlineInput}
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          onchange={addInlineImages}
+        />
       {/if}
       <label class="tool attach-button push-end" title="Attach files">
         <ActionIcon name="paperclip" />

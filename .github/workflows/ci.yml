@@ -107,8 +107,51 @@ jobs:
       - name: check
         run: npm run check --prefix ui
 
+      - name: contrast
+        run: npm run check:contrast --prefix ui
+
       - name: build
         run: npm run build --prefix ui
+
+  ui-e2e:
+    name: ui-e2e
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install Arch packages
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel nodejs npm git chromium fontconfig
+
+      - uses: actions/checkout@v4
+
+      - name: Cache npm registry
+        uses: actions/cache@v4
+        with:
+          path: .npm/
+          key: v2-ui-e2e-${{ hashFiles('ui/package-lock.json') }}
+          restore-keys: |
+            v2-ui-e2e-
+
+      - name: install
+        run: npm ci --prefix ui
+
+      - name: e2e
+        run: npm run test:e2e --prefix ui
+        env:
+          PLAYWRIGHT_CHROMIUM_EXECUTABLE: /usr/bin/chromium
+
+      - name: upload traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: ui/test-results/
+          retention-days: 7
 
   package_arch:
     name: package_arch

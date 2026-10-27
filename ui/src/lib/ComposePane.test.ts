@@ -86,7 +86,7 @@ describe("ComposePane", () => {
       "false",
     );
     expect(screen.getByLabelText("Attach files")).toBeInTheDocument();
-    expect(screen.getByLabelText("Insert image file")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Insert image" })).toBeInTheDocument();
   });
 
   it("minimizes from the header button", async () => {

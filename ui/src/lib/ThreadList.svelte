@@ -110,6 +110,14 @@
       toggleEnvelopeSelection(app.value.selectedEnvelope, event.shiftKey);
       return;
     }
+    if (event.key.toLowerCase() === "t" && app.value.selectedEnvelope) {
+      const selected = app.value.selectedEnvelope;
+      if ((threadCounts.get(threadKey(selected)) ?? 1) > 1) {
+        event.preventDefault();
+        toggleThread(selected);
+        return;
+      }
+    }
     if (!["j", "k", "ArrowDown", "ArrowUp"].includes(event.key)) return;
 
     const envelopes = visibleEnvelopes;
@@ -162,6 +170,17 @@
   }
 
   function onRowSelect(envelope: Envelope, event: MouseEvent | KeyboardEvent) {
+    const target = event.target as Element | null;
+    if (target?.closest(".select-control")) {
+      event.stopPropagation();
+      toggleEnvelopeSelection(envelope, event.shiftKey);
+      return;
+    }
+    if (target?.closest(".thread-count")) {
+      event.stopPropagation();
+      toggleThread(envelope);
+      return;
+    }
     if (event.shiftKey) {
       toggleEnvelopeSelection(envelope, true);
       selectEnvelope(envelope);
@@ -173,8 +192,7 @@
     }
   }
 
-  function toggleThread(event: MouseEvent, envelope: Envelope) {
-    event.stopPropagation();
+  function toggleThread(envelope: Envelope) {
     const key = threadKey(envelope);
     expandedThreads = expandedThreads.includes(key)
       ? expandedThreads.filter((item) => item !== key)
@@ -201,11 +219,11 @@
   <header class="list-header">
     <div>
       <span class="eyebrow">{app.value.searchQuery.startsWith("tag:") ? "Tag" : app.value.searchQuery.trim() ? "Search" : "Mailbox"}</span>
-      <h2 class="header-title">{app.value.searchQuery.startsWith("tag:")
+      <h1 class="header-title">{app.value.searchQuery.startsWith("tag:")
         ? app.value.searchQuery.slice(4)
         : app.value.searchQuery.trim()
         ? `“${app.value.searchQuery.trim()}”`
-        : app.value.unifiedInbox ? "Unified Inbox" : selectedFolder?.name ?? "Messages"}</h2>
+        : app.value.unifiedInbox ? "Unified Inbox" : selectedFolder?.name ?? "Messages"}</h1>
     </div>
     <div class="header-actions">
       {#if app.value.layout === "two-pane"}
@@ -357,11 +375,7 @@
           {@const sender = fromName(item)}
           {@const subject = snippet(item)}
           <div class="row-content" class:unread={isUnread(item)}>
-            <MessageSelectCheckbox
-              checked={selectedIds.has(item.id)}
-              label={`Select message from ${sender}: ${subject}`}
-              onToggle={(range) => toggleEnvelopeSelection(item, range)}
-            />
+            <MessageSelectCheckbox checked={selectedIds.has(item.id)} />
             {#if isUnread(item)}
               <span class="sr-only">Unread</span>
               <span class="unread-pip" title="Unread" aria-hidden="true"></span>
@@ -374,17 +388,16 @@
               </span>
               <span class="date">{formatMessageDate(item.date)}</span>
             </div>
-            <div class="subject" aria-label={subject}>
+            <div
+              class="subject"
+              aria-label={count > 1 ? `${subject} · ${count} message conversation` : subject}
+            >
               {#each highlightSearchText(subject, app.value.searchQuery) as part}
                 <span class:search-match={part.match}>{part.text}</span>
               {/each}
               {#if count > 1}
-                <button
-                  type="button"
-                  class="thread-count"
-                  onclick={(event) => toggleThread(event, item)}
-                  aria-label={`${expandedThreads.includes(threadKey(item)) ? "Collapse" : "Expand"} ${count} message conversation`}
-                >{expandedThreads.includes(threadKey(item)) ? "−" : "+"}{count}</button>
+                <span class="thread-count" aria-hidden="true"
+                >{expandedThreads.includes(threadKey(item)) ? "−" : "+"}{count}</span>
               {/if}
               {#each item.keywords as tag}
                 <span class="tag" style:background={tagColor(tag)}>{tag}</span>
@@ -453,7 +466,7 @@
     letter-spacing: 0.12em;
     text-transform: uppercase;
   }
-  .list-header h2 { margin: 1px 0 0; font: 400 19px/1.1 var(--font-display); letter-spacing: -0.015em; }
+  .list-header h1 { margin: 1px 0 0; font: 400 19px/1.1 var(--font-display); letter-spacing: -0.015em; }
   .message-count {
     min-width: 28px;
     padding: 2px 7px;
@@ -643,7 +656,7 @@
     padding: 0 5px;
     border-radius: 999px;
     background: color-mix(in oklab, var(--accent) 12%, transparent);
-    color: var(--accent);
+    color: var(--fg);
     font-size: 9px;
     font-weight: 750;
   }

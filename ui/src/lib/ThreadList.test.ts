@@ -182,6 +182,57 @@ describe("ThreadList", () => {
     expect(document.querySelectorAll(".unread-pip")).toHaveLength(1);
   });
 
+  it("row affordances toggle selection and expand threads without opening", async () => {
+    const shared = {
+      mailboxId: "inbox",
+      subject: "Threaded subject",
+      from: [{ name: "Alice", addr: "alice@example.org" }],
+      to: [],
+      date: null,
+      hasAttachment: false,
+      size: 10,
+      keywords: [],
+      threadId: "thread-shared",
+    };
+    mocks.app.value.envelopes = [
+      { ...shared, id: "thread-1", flags: [], serverUid: 1, messageId: "t1@example.org", sources: [{ mailboxId: "inbox", serverUid: 1 }] },
+      { ...shared, id: "thread-2", flags: ["Seen"], serverUid: 2, messageId: "t2@example.org", sources: [{ mailboxId: "inbox", serverUid: 2 }] },
+    ];
+    render(ThreadList);
+
+    expect(document.querySelectorAll(".row")).toHaveLength(1);
+    await fireEvent.click(document.querySelector(".thread-count")!);
+    expect(document.querySelectorAll(".row")).toHaveLength(2);
+    expect(mocks.selectEnvelopeExclusive).not.toHaveBeenCalled();
+
+    await fireEvent.click(document.querySelector(".select-control")!);
+    expect(mocks.toggleEnvelopeSelection).toHaveBeenCalled();
+    expect(mocks.selectEnvelopeExclusive).not.toHaveBeenCalled();
+  });
+
+  it("t toggles the selected conversation from the keyboard", async () => {
+    const shared = {
+      mailboxId: "inbox",
+      subject: "Threaded subject",
+      from: [],
+      to: [],
+      date: null,
+      hasAttachment: false,
+      size: 10,
+      keywords: [],
+      threadId: "thread-shared",
+    };
+    mocks.app.value.envelopes = [
+      { ...shared, id: "thread-1", flags: [], serverUid: 1, messageId: "t1@example.org", sources: [{ mailboxId: "inbox", serverUid: 1 }] },
+      { ...shared, id: "thread-2", flags: ["Seen"], serverUid: 2, messageId: "t2@example.org", sources: [{ mailboxId: "inbox", serverUid: 2 }] },
+    ];
+    mocks.app.value.selectedEnvelope = mocks.app.value.envelopes[0];
+    render(ThreadList);
+
+    await fireEvent.keyDown(document.querySelector(".row")!, { key: "t" });
+    expect(document.querySelectorAll(".row")).toHaveLength(2);
+  });
+
   it("shows row dates in local time", () => {
     mocks.app.value.envelopes = [
       {
