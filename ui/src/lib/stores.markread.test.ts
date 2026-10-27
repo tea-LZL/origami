@@ -5,6 +5,7 @@ vi.mock("./api", () => ({
     getCachedMessage: vi.fn(),
     getMessage: vi.fn(),
     storeFlags: vi.fn(),
+    storeFlagsBatch: vi.fn().mockResolvedValue(undefined),
     listFolders: vi.fn().mockResolvedValue([]),
     searchPage: vi.fn().mockResolvedValue([]),
     searchCount: vi.fn().mockResolvedValue(0),
@@ -14,7 +15,7 @@ vi.mock("./api", () => ({
 }));
 
 import { api } from "./api";
-import { app, selectEnvelope, setPreferences } from "./stores.svelte";
+import { app, selectEnvelope, setPreferences, setSelectedFlag } from "./stores.svelte";
 import type { MessageDto } from "./api";
 import type { Envelope } from "./types";
 
@@ -139,6 +140,16 @@ describe("delayed mark as read", () => {
     await vi.advanceTimersByTimeAsync(60_000);
 
     expect(storeFlags).not.toHaveBeenCalled();
+    expect(app.value.envelopes[0].flags).not.toContain("Seen");
+  });
+
+  it("explicit_unread_cancels_pending_mark_read", async () => {
+    app.value.markReadDelay = 3;
+    app.value.selectedMessageIds = ["row-1"];
+    await selectEnvelope(envelope("row-1"));
+    await vi.advanceTimersByTimeAsync(0);
+    await setSelectedFlag("Seen", false);
+    await vi.advanceTimersByTimeAsync(5_000);
     expect(app.value.envelopes[0].flags).not.toContain("Seen");
   });
 });

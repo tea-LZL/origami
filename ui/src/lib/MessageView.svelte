@@ -5,6 +5,7 @@
     clearMessageView,
     forwardMessage,
     minimizeComposer,
+    deleteSelectedPermanently,
     moveSelectedToRole,
     openReplyComposer,
     selectEnvelopeExclusive,
@@ -12,6 +13,7 @@
     setPreferences,
     setSelectedFlag,
   } from "./stores.svelte";
+  import { commandChordLabel, dispatchCommand } from "./commands";
   import { api } from "./api";
   import { attachmentAction, imageDataUrl, previewText } from "./attachmentOpen";
   import { allowedLinkHref, sanitizeMessageHtml } from "./messageHtml";
@@ -190,10 +192,21 @@
 
     document.addEventListener("click", openExternalLink);
     document.addEventListener("keydown", (keyEvent) => {
+      if (dispatchCommand(keyEvent)) return;
       onBodyKeydown(keyEvent);
       if (bodyEl) handleMessageBodyKeydown(keyEvent, bodyEl);
     });
   }
+
+  function titled(id: string, name: string): string {
+    const chord = commandChordLabel(id);
+    return chord ? `${name} (${chord})` : name;
+  }
+
+  const inTrashFolder = $derived(
+    app.value.folders.find((folder) => folder.id === app.value.selectedFolderId)?.role === "Trash"
+    && app.value.searchQuery.trim() === "",
+  );
 
   function headerEnvelope() {
     return app.value.message?.envelope ?? app.value.selectedEnvelope;
@@ -362,30 +375,36 @@
             onclick={() => detailsOpen = !detailsOpen}
           >Details</button>
           <span class="sep" aria-hidden="true"></span>
-          <button type="button" class="icon" aria-label="Reply" title="Reply" onclick={() => openReplyComposer("reply")}>
+          <button type="button" class="icon" aria-label="Reply" title={titled("reply", "Reply")} onclick={() => openReplyComposer("reply")}>
             <ActionIcon name="reply" />
           </button>
-          <button type="button" class="icon" aria-label="Reply all" title="Reply all" onclick={() => openReplyComposer("replyAll")}>
+          <button type="button" class="icon" aria-label="Reply all" title={titled("reply-all", "Reply all")} onclick={() => openReplyComposer("replyAll")}>
             <ActionIcon name="reply-all" />
           </button>
           <button
             type="button"
             class="icon"
             aria-label="Forward"
-            title={forwarding ? "Preparing forward…" : "Forward"}
+            title={forwarding ? "Preparing forward…" : titled("forward", "Forward")}
             disabled={forwarding}
             onclick={() => void startForward()}
           >
             <ActionIcon name="forward" />
           </button>
           <span class="sep" aria-hidden="true"></span>
-          <button type="button" class="icon" aria-label="Archive" title="Archive" onclick={() => moveSelectedToRole("Archive")}>
+          <button type="button" class="icon" aria-label="Archive" title={titled("archive", "Archive")} onclick={() => moveSelectedToRole("Archive")}>
             <ActionIcon name="archive" />
           </button>
-          <button type="button" class="icon" aria-label="Trash" title="Trash" onclick={() => moveSelectedToRole("Trash")}>
+          <button
+            type="button"
+            class="icon"
+            aria-label={inTrashFolder ? "Delete permanently" : "Trash"}
+            title={titled(inTrashFolder ? "delete-permanent" : "trash", inTrashFolder ? "Delete permanently" : "Trash")}
+            onclick={() => inTrashFolder ? deleteSelectedPermanently() : moveSelectedToRole("Trash")}
+          >
             <ActionIcon name="trash" />
           </button>
-          <button type="button" class="icon" aria-label="Junk" title="Junk" onclick={() => moveSelectedToRole("Junk")}>
+          <button type="button" class="icon" aria-label="Junk" title={titled("junk", "Junk")} onclick={() => moveSelectedToRole("Junk")}>
             <ActionIcon name="junk" />
           </button>
           <span class="sep" aria-hidden="true"></span>
@@ -394,7 +413,7 @@
             class="icon"
             class:active={env.flags.includes("Flagged")}
             aria-label="Star"
-            title="Star"
+            title={titled("star", "Star")}
             aria-pressed={env.flags.includes("Flagged")}
             onclick={() => setSelectedFlag("Flagged", !env.flags.includes("Flagged"))}
           >

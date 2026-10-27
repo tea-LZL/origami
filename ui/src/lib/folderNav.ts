@@ -53,6 +53,12 @@ export function sidebarFolders(folders: Mailbox[]): Mailbox[] {
     .filter((folder): folder is Mailbox => folder != null);
 }
 
+export function sidebarFolderRows(folders: Mailbox[]): FolderRow[] {
+  const tree = sidebarTree(folders);
+  return flattenFolderTree(tree, allExpandablePaths(tree))
+    .filter((row) => row.folder != null);
+}
+
 export function sidebarTree(folders: Mailbox[]): FolderNode[] {
   const visible = folders.filter((folder) => {
     if (folder.role !== "Other") return true;

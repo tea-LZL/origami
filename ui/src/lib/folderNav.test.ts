@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Mailbox } from "./types";
-import { flattenFolderTree, folderRoleHue, sidebarFolders, sidebarTree } from "./folderNav";
+import { flattenFolderTree, folderRoleHue, sidebarFolderRows, sidebarFolders, sidebarTree } from "./folderNav";
 
 function folder(partial: Partial<Mailbox> & Pick<Mailbox, "id" | "name" | "role">): Mailbox {
   return {
@@ -61,6 +61,24 @@ describe("sidebarFolders", () => {
     expect(rows[0]?.id).toBe("virtual:Work");
     expect(rows[0]?.unread).toBe(3);
     expect(rows[0]?.folder).toBeNull();
+  });
+});
+
+describe("sidebarFolderRows", () => {
+  it("uses_sidebar_labels_not_imap_names_and_hides_gmail_system_mailboxes", () => {
+    const folders = [
+      folder({ id: "all", name: "[Gmail]/All Mail", role: "Other" }),
+      folder({ id: "inbox", name: "INBOX", role: "Inbox" }),
+      folder({ id: "work", name: "Work", role: "Other" }),
+      folder({ id: "acme", name: "Work/Acme", role: "Other" }),
+    ];
+    const rows = sidebarFolderRows(folders);
+    expect(rows.map((row) => ({ id: row.id, label: row.label }))).toEqual([
+      { id: "inbox", label: "Inbox" },
+      { id: "work", label: "Work" },
+      { id: "acme", label: "Acme" },
+    ]);
+    expect(rows.every((row) => row.folder != null)).toBe(true);
   });
 });
 

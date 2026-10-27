@@ -59,6 +59,22 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("./stores.svelte", () => mocks);
+vi.mock("./commands", () => ({
+  dispatchCommand: vi.fn(() => false),
+  commandChordLabel: (id: string) =>
+    ({
+      archive: "E",
+      trash: "⌫",
+      "delete-permanent": "⌫",
+      junk: "!",
+      star: "S",
+      reply: "R",
+      "reply-all": "A",
+      forward: "F",
+      "mark-read": "Shift+I",
+      "mark-unread": "Shift+U",
+    }[id] ?? null),
+}));
 
 import ThreadList from "./ThreadList.svelte";
 

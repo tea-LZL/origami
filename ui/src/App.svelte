@@ -21,7 +21,9 @@
   import AddAccount from "./lib/AddAccount.svelte";
   import Preferences from "./lib/Preferences.svelte";
   import Outbox from "./lib/Outbox.svelte";
+  import CommandPalette from "./lib/CommandPalette.svelte";
   import PaneSplitter from "./lib/PaneSplitter.svelte";
+  import { dispatchCommand } from "./lib/commands";
 
   interface AppInfo {
     name: string;
@@ -64,6 +66,11 @@
 
   function onKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
+      if (app.value.commandPaletteOpen) {
+        e.preventDefault();
+        app.value.commandPaletteOpen = false;
+        return;
+      }
       if (app.value.preferencesOpen) {
         e.preventDefault();
         app.value.preferencesOpen = false;
@@ -80,6 +87,7 @@
       }
       return;
     }
+    if (dispatchCommand(e)) return;
     const target = e.target as HTMLElement | null;
     const protectedTarget = target?.closest(
       "input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu'], [popover], [aria-haspopup='listbox']",
@@ -185,6 +193,7 @@
   <AddAccount bind:this={addAccount} />
   <Preferences />
   <Outbox />
+  <CommandPalette />
 
   {#if app.value.lastError}
     <button class="toast" type="button" aria-live="assertive" onclick={() => (app.value.lastError = null)}>

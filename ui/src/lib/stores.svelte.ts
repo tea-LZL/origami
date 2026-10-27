@@ -134,6 +134,7 @@ export interface State {
   accountErrors: Record<string, string>;
   accountStatuses: Record<string, AccountStatusDto>;
   preferencesOpen: boolean;
+  commandPaletteOpen: boolean;
   outboxAccountId: string | null;
   theme: ThemePref;
   density: "comfortable" | "compact";
@@ -182,6 +183,7 @@ const initial: State = {
   accountErrors: {},
   accountStatuses: {},
   preferencesOpen: false,
+  commandPaletteOpen: false,
   outboxAccountId: null,
   theme: "system",
   density: "comfortable",
@@ -1055,6 +1057,10 @@ export async function selectAllMessages() {
 export async function setSelectedFlag(flag: Flag, enabled: boolean) {
   const selected = new Set(app.value.selectedMessageIds);
   if (selected.size === 0) return;
+  if (flag === "Seen" && !enabled && markReadTimer !== null) {
+    clearTimeout(markReadTimer);
+    markReadTimer = null;
+  }
 
   const targets = app.value.envelopes.filter(
     (envelope) => selected.has(envelope.id) && envelopeSources(envelope).length > 0,
@@ -1185,6 +1191,18 @@ function removeSelectedLocally(targets: Envelope[]) {
   });
 }
 
+function nextAfterRemoval(envelopes: Envelope[], removed: Set<string>): Envelope | null {
+  const first = envelopes.findIndex((envelope) => removed.has(envelope.id));
+  if (first < 0) return envelopes.find((envelope) => !removed.has(envelope.id)) ?? null;
+  for (let i = first; i < envelopes.length; i++) {
+    if (!removed.has(envelopes[i]!.id)) return envelopes[i]!;
+  }
+  for (let i = first - 1; i >= 0; i--) {
+    if (!removed.has(envelopes[i]!.id)) return envelopes[i]!;
+  }
+  return null;
+}
+
 function scheduleMessageAction(message: string, targets: Envelope[], execute: () => Promise<void>) {
   if (pendingUndo) {
     clearTimeout(pendingUndo.timer);
@@ -1222,7 +1240,23 @@ function scheduleMessageAction(message: string, targets: Envelope[], execute: ()
     if (app.value.undoAction?.token === token) patch({ undoAction: null });
     await execute();
   };
+  const removed = new Set(targets.map((target) => target.id));
+  const open = app.value.selectedEnvelope;
+  const next = open != null && !removed.has(open.id)
+    ? open
+    : nextAfterRemoval(app.value.envelopes, removed);
   removeSelectedLocally(targets);
+  if (next && app.value.envelopes.some((envelope) => envelope.id === next.id)) {
+    void selectEnvelopeExclusive(next);
+  } else if (app.value.envelopes.length === 0 && app.value.hasMoreEnvelopes) {
+    const request = envelopeRequest;
+    void loadMoreEnvelopes().then(() => {
+      if (request !== envelopeRequest) return;
+      if (app.value.selectedMessageIds.length > 0) return;
+      const first = app.value.envelopes[0];
+      if (first) void selectEnvelopeExclusive(first);
+    });
+  }
   const timer = setTimeout(() => void run(), 6000);
   pendingUndo = { token, timer, restore, execute: run };
   patch({ undoAction: { message, token } });
@@ -1231,9 +1265,10 @@ function scheduleMessageAction(message: string, targets: Envelope[], execute: ()
 export function undoLastMessageAction() {
   if (!pendingUndo) return;
   clearTimeout(pendingUndo.timer);
+  envelopeRequest += 1;
   pendingUndo.restore();
   pendingUndo = null;
-  patch({ undoAction: null });
+  patch({ undoAction: null, envelopesLoadingMore: false });
 }
 
 function selectedTargets(): Envelope[] {

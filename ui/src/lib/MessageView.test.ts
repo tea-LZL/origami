@@ -12,10 +12,23 @@ const mocks = vi.hoisted(() => ({
       envelopes: [],
       selectedEnvelope: null as unknown,
       lastError: null as string | null,
+      selectedFolderId: "folder-1" as string | null,
+      searchQuery: "",
+      folders: [] as Array<{
+        id: string;
+        role: string;
+        accountId: string;
+        name: string;
+        subscribed: boolean;
+        total: number;
+        unread: number;
+        sourceIds: string[];
+      }>,
     },
   },
   clearMessageView: vi.fn(),
   moveSelectedToRole: vi.fn(),
+  deleteSelectedPermanently: vi.fn(),
   openReplyComposer: vi.fn(),
   forwardMessage: vi.fn(),
   selectEnvelopeExclusive: vi.fn(),
@@ -33,6 +46,20 @@ vi.mock("./api", () => ({
   },
 }));
 vi.mock("./stores.svelte", () => mocks);
+vi.mock("./commands", () => ({
+  dispatchCommand: vi.fn(() => false),
+  commandChordLabel: (id: string) =>
+    ({
+      archive: "E",
+      trash: "⌫",
+      "delete-permanent": "⌫",
+      junk: "!",
+      star: "S",
+      reply: "R",
+      "reply-all": "A",
+      forward: "F",
+    }[id] ?? null),
+}));
 
 import MessageView from "./MessageView.svelte";
 
@@ -91,9 +118,23 @@ describe("MessageView", () => {
       envelopes: [],
       selectedEnvelope: message.envelope,
       lastError: null,
+      selectedFolderId: "folder-1",
+      searchQuery: "",
+      folders: [{
+        id: "folder-1",
+        role: "Inbox",
+        accountId: "db-1",
+        name: "INBOX",
+        subscribed: true,
+        total: 1,
+        unread: 0,
+        sourceIds: [],
+      }],
     };
     mocks.getAttachment.mockReset();
     mocks.openAttachment.mockReset();
+    mocks.deleteSelectedPermanently.mockReset();
+    mocks.moveSelectedToRole.mockReset();
   });
 
   it("offers a one-message remote image override", async () => {
@@ -187,12 +228,39 @@ describe("MessageView", () => {
   it("exposes every message action as an icon control with a stable name and tooltip", () => {
     render(MessageView);
 
+    expect(screen.getByRole("button", { name: "Archive" })).toHaveAttribute("title", "Archive (E)");
+    expect(screen.getByRole("button", { name: "Trash" })).toHaveAttribute("title", "Trash (⌫)");
+    expect(screen.getByRole("button", { name: "Junk" })).toHaveAttribute("title", "Junk (!)");
+    expect(screen.getByRole("button", { name: "Star" })).toHaveAttribute("title", "Star (S)");
+    expect(screen.getByRole("button", { name: "Reply" })).toHaveAttribute("title", "Reply (R)");
+    expect(screen.getByRole("button", { name: "Reply all" })).toHaveAttribute("title", "Reply all (A)");
+    expect(screen.getByRole("button", { name: "Forward" })).toHaveAttribute("title", "Forward (F)");
     for (const name of ["Reply", "Reply all", "Forward", "Archive", "Trash", "Junk", "Star"]) {
       const button = screen.getByRole("button", { name });
       expect(button).toHaveClass("icon");
-      expect(button).toHaveAttribute("title", name);
       expect(button.querySelector("svg")).not.toBeNull();
     }
+  });
+
+  it("trash_icon_in_trash_folder_deletes_permanently", async () => {
+    mocks.app.value.selectedFolderId = "trash";
+    mocks.app.value.searchQuery = "";
+    mocks.app.value.folders = [{
+      id: "trash",
+      role: "Trash",
+      accountId: "db-1",
+      name: "Trash",
+      subscribed: true,
+      total: 1,
+      unread: 0,
+      sourceIds: [],
+    }];
+    render(MessageView);
+    const button = screen.getByRole("button", { name: "Delete permanently" });
+    expect(button).toHaveAttribute("title", "Delete permanently (⌫)");
+    await fireEvent.click(button);
+    expect(mocks.deleteSelectedPermanently).toHaveBeenCalled();
+    expect(mocks.moveSelectedToRole).not.toHaveBeenCalled();
   });
 
   it("routes icon actions to their message handlers", async () => {

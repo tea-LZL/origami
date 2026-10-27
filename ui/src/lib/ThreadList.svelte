@@ -21,6 +21,7 @@
     restoredFolderScroll,
     prefetcher,
   } from "./stores.svelte";
+  import { commandChordLabel } from "./commands";
   import VirtualList from "./VirtualList.svelte";
   import type { Envelope } from "./types";
   import { threadKey } from "./threads";
@@ -151,6 +152,11 @@
     return e.subject.length === 0 ? "(no subject)" : e.subject;
   }
 
+  function titled(id: string, name: string): string {
+    const chord = commandChordLabel(id);
+    return chord ? `${name} (${chord})` : name;
+  }
+
   function isUnread(e: Envelope): boolean {
     return !e.flags.includes("Seen");
   }
@@ -261,13 +267,13 @@
   {#if app.value.selectedMessageIds.length > 0}
     <div class="bulk-bar" role="toolbar" aria-label="Selected messages">
       <strong>{app.value.selectedMessageIds.length} selected</strong>
-      <button type="button" onclick={() => setSelectedFlag("Seen", true)}>Read</button>
-      <button type="button" onclick={() => setSelectedFlag("Seen", false)}>Unread</button>
-      <button type="button" onclick={() => setSelectedFlag("Flagged", true)}>Star</button>
+      <button type="button" title={titled("mark-read", "Read")} onclick={() => setSelectedFlag("Seen", true)}>Read</button>
+      <button type="button" title={titled("mark-unread", "Unread")} onclick={() => setSelectedFlag("Seen", false)}>Unread</button>
+      <button type="button" title={titled("star", "Star")} onclick={() => setSelectedFlag("Flagged", true)}>Star</button>
       <button type="button" onclick={() => setSelectedFlag("Flagged", false)}>Unstar</button>
-      <button type="button" onclick={() => moveSelectedToRole("Archive")}>Archive</button>
-      <button type="button" onclick={() => moveSelectedToRole("Trash")}>Trash</button>
-      <button type="button" onclick={() => moveSelectedToRole("Junk")}>Junk</button>
+      <button type="button" title={titled("archive", "Archive")} onclick={() => moveSelectedToRole("Archive")}>Archive</button>
+      <button type="button" title={titled("trash", "Trash")} onclick={() => moveSelectedToRole("Trash")}>Trash</button>
+      <button type="button" title={titled("junk", "Junk")} onclick={() => moveSelectedToRole("Junk")}>Junk</button>
       <button type="button" aria-expanded={labelsOpen} onclick={() => labelsOpen = !labelsOpen}>Tags</button>
       {#if selectedFolder?.role === "Trash" && !app.value.searchQuery.trim()}
         <button type="button" class="danger" onclick={deleteSelectedPermanently}>Delete</button>
