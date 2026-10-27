@@ -2,7 +2,7 @@
 title: Release readiness
 type: status
 status: current
-updated: 2026-10-03
+updated: 2026-10-15
 sources:
   - docs/superpowers/specs/2026-09-26-hardening-caching-palette-design.md
   - MEMORY.md
@@ -28,7 +28,11 @@ several proof and distribution gates are absent.
   36276664146, 36278995728); `v0.2.0` released 2026-10-03 with all four assets (run
   37146060642). Windows installer is unsigned/experimental — SmartScreen warns
   ([[github-cicd-md]]). PR #1 (`harden-cache-palette`) ran the full matrix green
-  (run 36308544416) including the new `cargo-audit` / `cargo-deny` steps.
+  (run 36308544416) including the new `cargo-audit` / `cargo-deny` steps. Release cadence
+  since then, each tag publishing the same four assets (verified against the GitHub release
+  API 2026-10-15): `v0.2.1` 2026-10-06 (attachment open/view fix), `v0.3.0` 2026-10-11T11:14Z
+  (per-draft compose sessions), `v0.4.0` 2026-10-11T15:42Z (proper forward and background
+  send).
 - `packaging/arch/PKGBUILD` is tracked and installs the native binary, desktop entry, and
   hicolor icons.
 - The Tauri `deb` target remains, while Arch distribution uses the tracked PKGBUILD.
@@ -87,13 +91,13 @@ split into required-1.0 items and documented post-1.0 scope.
 
 ## Recommended QoL order
 
-1. Preserve folder/search selection and scroll state.
-2. Add explicit Discard/Start-clean actions for recovered composer drafts.
-3. ~~Label global-search context correctly and show its result count.~~ Delivered
-   (branch `search-context-count`, 2026-09-27).
+1. ~~Preserve folder/search selection and scroll state.~~ Delivered (branch
+   `daily-driver`, 2026-09-27: per-folder view restoration at startup plus in-session
+   envelope/selection/scroll snapshots).
 2. ~~Add explicit Discard/Start-clean actions for recovered composer drafts.~~ Delivered
    (PR `composer-draft-discard`, 2026-09-27).
-3. Label global-search context correctly and show its result count.
+3. ~~Label global-search context correctly and show its result count.~~ Delivered
+   (branch `search-context-count`, 2026-09-27).
 4. ~~Add configurable delayed mark-as-read and message zoom.~~ Delivered (branch
    `markread-zoom`, 2026-09-27).
 5. ~~Add recipient chips over the existing learned correspondent data.~~ Delivered (branch

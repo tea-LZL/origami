@@ -26,3 +26,6 @@ packaging/arch/*.pkg.tar.zst.sha256
 /ui/test-results/
 /ui/playwright-report/
 /ui/blob-report/
+
+# Local git worktrees
+.worktrees/

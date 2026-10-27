@@ -2,7 +2,7 @@
 title: Known drift
 type: status
 status: current
-updated: 2026-09-27
+updated: 2026-10-15
 sources:
   - MEMORY.md
   - docs/PLAN.md
@@ -26,7 +26,7 @@ trusted. Precedence is defined in [[SCHEMA]]: code wins for *current*, plans win
 | Release checkboxes | `docs/PLAN.md` and `docs/IMPROVEMENT_PLAN.md` checkboxes | Checkbox state is **not** release evidence | Only real build/provider/package/native-smoke evidence updates release status |
 | File permissions | Audit found `0755` dirs and `0644` files | PR #1 landed the existing-data smoke: real app open paths tighten dirs/files (incl. WAL sidecars and blob shards) to `0700`/`0600` with contents unchanged; symlink-safe | [[store-and-search]], [[release-readiness]] |
 | SMTP E2E | Send/receive E2E expected | GreenMail round-trip tolerates an `io-smtp` greeting bug via diagnostic skip | [[test-suite-md]], [[backend-seam]] |
-| Version surfaces | Tag version must match four files | `Cargo.toml`, `tauri.conf.json`, `ui/package.json`, `PKGBUILD` all report `0.1.0` today | [[github-cicd-md]] |
+| Version surfaces | Tag version must match four files | `Cargo.toml`, `tauri.conf.json`, `ui/package.json`, `PKGBUILD` all report `0.4.0` (verified 2026-10-15) | [[github-cicd-md]] |
 | Gmail onboarding | Overview previously listed "Gmail/Microsoft OAuth"; `provider_hints` still maps Gmail to `Xoauth2`; config still has `oauth.google_client_id` | The add-account wizard uses a Gmail **app password** and does not offer Google OAuth. Microsoft OAuth remains the wizard's OAuth path. | [[accounts-and-secrets]], [[sidebar-folders-tags-onboarding]] |
 
 ## Open follow-ups
@@ -34,8 +34,9 @@ trusted. Precedence is defined in [[SCHEMA]]: code wins for *current*, plans win
 - `README.md` still reads "See `MEMORY.md` for the verified project snapshot"; `MEMORY.md`
   is now a pointer into this wiki. Update the README link when convenient — a human decision,
   since README is a source file.
-- The "~17,700 lines across 66 files" figure in [[memory-md]] is dated 2026-08-24; re-count
-  before quoting it.
+- RESOLVED (2026-10-15): the "~17,700 lines across 66 files" figure in [[memory-md]] is a
+  2026-08-24 snapshot. Re-counted 2026-10-15: ~28,900 lines, 111 files (33 test files),
+  recorded in [[overview]].
 - Verify the Sent-projection and tray behavior against current source before relying on
   [[hermes-sent-tray-background]] as a description of *current* behavior.
 - RESOLVED (2026-09-27): first-open Seen now patches `selectedEnvelope` from the freshly

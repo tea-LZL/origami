@@ -2,7 +2,7 @@
 title: Overview
 type: overview
 status: current
-updated: 2026-10-03
+updated: 2026-10-15
 sources:
   - README.md
   - docs/PLAN.md
@@ -15,7 +15,7 @@ sources:
 
 Origami is a **provider-neutral, offline-first Linux desktop email client**. The product
 target is Arch Linux and Wayland/Hyprland first, while the architecture stays portable.
-Version `0.1.0`; workspace edition 2021, `rust-version` 1.85.
+Version `0.4.0`; workspace edition 2021, `rust-version` 1.85.
 
 ## Stack
 
@@ -29,9 +29,10 @@ Version `0.1.0`; workspace edition 2021, `rust-version` 1.85.
 | Protocols | IMAP and SMTP behind Origami-owned traits |
 | Packaging | Arch PKGBUILD via GitHub Actions; unsigned Windows NSIS installer on tags (not a supported Windows product; signed pacman repo deferred) |
 
-Tracked source was ~17,700 lines across 66 Rust/Svelte/TS/CSS files as of 2026-08-24
-([[memory-md]]); later work includes trap-focus dialogs, the tag catalog, nested folders,
-the app-password wizard, and the unread-only list filter.
+Tracked Rust/Svelte/TypeScript/CSS source is ~28,900 lines (111 files, 33 of them test
+files) as of 2026-10-15; recent work since the PR #1 hardening includes trap-focus dialogs,
+the tag catalog, nested folders, the app-password wizard, the unread-only list filter, and
+compose tabs.
 
 ## Architecture in one paragraph
 

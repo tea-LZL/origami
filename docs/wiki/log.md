@@ -304,6 +304,48 @@ per-envelope decision now lives in `notifications::notify_new_mail` (single
 call site, grouped or single exactly once, logical-id dedupe retained) with
 regression test `one_notification_per_new_mail_in_both_modes`.
 
+## [2026-10-06] release | v0.2.1 published
+Version bumped to `0.2.1` (commit `1eb65f7`) shipping the attachment open/view fix
+(`c61b903`, above). Tag `v0.2.1` published the full four-asset set on 2026-10-06T22:05Z.
+Distilled into [[release-readiness]].
+
+## [2026-10-10] fix | HTML mail scrolls inside the email frame
+The reading pane scrolled a content-height iframe inside an auto-scrolling wrapper,
+repainting a giant cross-document iframe every frame on WebKitGTK. The iframe now fills
+the pane and the email document owns its scrollbar (plain text keeps the wrapper
+scroller); wheel over the header/footer and keydown inside the frame are forwarded so
+`J`/`K`, zoom, and `Alt+3` keep working, with regression tests for the scroll helper and
+wheel forwarding (commit `fbd2276`). Recorded in [[ui-state-and-rendering]].
+
+## [2026-10-10] fix | Watch failures poll INBOX instead of tight-resyncing
+QRESYNC-less servers (Gmail) failed the watch immediately, and established watches died
+after ~5 s when io-imap surfaced EAGAIN as a fatal stream error; because every cycle
+began with a successful full sync, the reconnect limiter reset each cycle and the
+account loop full-swept every 2 s forever. `watch_mailbox_blocking` now returns
+`Ok(None)` when the server lacks QRESYNC, and `run_account_loop` picks a mode per cycle,
+falling back to a 60 s INBOX poll (`SELECT` plus `UIDVALIDITY`/`HIGHESTMODSEQ`/`EXISTS`
+compare, folder sync only on change) with a full account sync every 25 min; watch errors
+no longer feed the backoff (commit `545af3f`). Recorded in [[sync-engine]].
+
+## [2026-10-11] change | Proper forward and background send
+Forward quoted only `message.text`, so HTML-only mail forwarded just the subject and
+attachments were dropped. Forward now builds a header block, sanitizes the original
+HTML, inlines `cid:` images as data URLs, and copies non-inline attachments before the
+composer opens. Send blocked the UI on SMTP plus the Sent copy and remote draft delete;
+`send_message` now durably queues and returns immediately, and a background flush
+delivers under a per-account send lock shared with outbox replay (one `sendFinished`
+event carries the outcome). Recorded in [[ui-state-and-rendering]] (commit `6c99552`).
+
+## [2026-10-11] release | v0.3.0 published
+Version bumped to `0.3.0` (commit `caa85ef`); tag `v0.3.0` published the full four-asset
+set on 2026-10-11T11:14Z, shipping the per-draft compose sessions recorded on
+2026-10-08. Distilled into [[release-readiness]].
+
+## [2026-10-11] release | v0.4.0 published
+Version bumped to `0.4.0` (commit `4a659b5`); tag `v0.4.0` published the full four-asset
+set on 2026-10-11T15:42Z, shipping proper forward and background send. Distilled into
+[[release-readiness]].
+
 ## [2026-10-22] change | Faster page loads, cached sanitization, stationery composer
 `list_envelopes_in_folders` now merges indexed per-folder scans and stops at the page,
 hydrating label copies by normalized Message-ID (or batched metadata for no-ID mail)
