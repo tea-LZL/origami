@@ -136,12 +136,16 @@ export interface State {
   composerSessions: ComposerSession[];
   activeComposerId: string | null;
   sendingComposerId: string | null;
+  /** Composer id → epoch ms when the held send leaves the undo window. */
+  heldSends: Record<string, number>;
   discardConfirmId: string | null;
   threadCrossFolder: Envelope[];
   threadRequest: number;
   markReadDelay: number;
   messageZoom: number;
   fontScale: number;
+  /** Seconds to hold a send so it can be undone (0 disables). */
+  sendDelay: number;
   syncing: boolean;
   lastError: string | null;
   lastNotice: string | null;
@@ -149,6 +153,7 @@ export interface State {
   accountStatuses: Record<string, AccountStatusDto>;
   preferencesOpen: boolean;
   commandPaletteOpen: boolean;
+  shortcutsOpen: boolean;
   outboxAccountId: string | null;
   theme: ThemePref;
   density: "comfortable" | "compact";
@@ -186,12 +191,14 @@ const initial: State = {
   composerSessions: [],
   activeComposerId: null,
   sendingComposerId: null,
+  heldSends: {},
   discardConfirmId: null,
   threadCrossFolder: [],
   threadRequest: 0,
   markReadDelay: 0,
   messageZoom: 100,
   fontScale: 100,
+  sendDelay: 5,
   syncing: false,
   lastError: null,
   lastNotice: null,
@@ -199,6 +206,7 @@ const initial: State = {
   accountStatuses: {},
   preferencesOpen: false,
   commandPaletteOpen: false,
+  shortcutsOpen: false,
   outboxAccountId: null,
   theme: "system",
   density: "comfortable",
@@ -337,6 +345,16 @@ function clampMarkReadDelay(value: unknown): number {
   return 0;
 }
 
+const SEND_DELAY_OPTIONS = [0, 5, 10, 20, 30] as const;
+
+/** Undo-send window seconds; unknown saved values fall back to 5. */
+function clampSendDelay(value: unknown): number {
+  return typeof value === "number"
+    && (SEND_DELAY_OPTIONS as readonly number[]).includes(value)
+    ? value
+    : 5;
+}
+
 function bounded(value: unknown, fallback: number, min: number, max: number): number {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.min(max, Math.max(min, Math.round(value)))
@@ -360,6 +378,7 @@ function loadPreferences() {
       markReadDelay: clampMarkReadDelay(saved.markReadDelay),
       messageZoom: bounded(saved.messageZoom, 100, 50, 300),
       fontScale: bounded(saved.fontScale, 100, FONT_SCALE_MIN, FONT_SCALE_MAX),
+      sendDelay: clampSendDelay(saved.sendDelay),
     });
   } catch {
     // Invalid preferences fall back to defaults.
@@ -378,14 +397,18 @@ function savePreferences() {
     markReadDelay: app.value.markReadDelay,
     messageZoom: app.value.messageZoom,
     fontScale: app.value.fontScale,
+    sendDelay: app.value.sendDelay,
   }));
 }
 
 export function setPreferences(
-  preferences: Partial<Pick<State, "theme" | "density" | "motion" | "markReadDelay" | "messageZoom" | "fontScale">>,
+  preferences: Partial<Pick<State, "theme" | "density" | "motion" | "markReadDelay" | "messageZoom" | "fontScale" | "sendDelay">>,
 ) {
   const patchable = { ...preferences } as typeof preferences;
   if ("markReadDelay" in patchable) patchable.markReadDelay = clampMarkReadDelay(patchable.markReadDelay);
+  if ("sendDelay" in patchable) {
+    patchable.sendDelay = clampSendDelay(patchable.sendDelay);
+  }
   if ("fontScale" in patchable) {
     patchable.fontScale = bounded(
       patchable.fontScale,
@@ -1606,6 +1629,7 @@ export function minimizeComposer() {
 
 /** Remove a session and activate the nearest remaining tab. */
 function removeComposerSession(id: string, index: number) {
+  clearHeldSend(id);
   const saveTimer = composerSaveTimers.get(id);
   if (saveTimer !== undefined) {
     clearTimeout(saveTimer);
@@ -1806,7 +1830,41 @@ export async function syncComposerNow(id: string) {
   await syncComposerSession(id);
 }
 
-export async function sendComposer(id: string) {
+const pendingSendTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function clearHeldSend(id: string) {
+  const timer = pendingSendTimers.get(id);
+  if (timer !== undefined) {
+    clearTimeout(timer);
+    pendingSendTimers.delete(id);
+  }
+  if (app.value.heldSends[id] !== undefined) {
+    const next = { ...app.value.heldSends };
+    delete next[id];
+    patch({ heldSends: next });
+  }
+}
+
+/** Parse and validate recipients; returns an error message when invalid. */
+function composerRecipients(
+  session: ComposerSession,
+): { to: string[]; cc: string[]; bcc: string[] } | string {
+  const parse = (value: string) => value.split(/[,\s]+/).filter(Boolean);
+  const to = parse(session.draft.to);
+  const cc = parse(session.draft.cc);
+  const bcc = parse(session.draft.bcc);
+  const invalid = [...to, ...cc, ...bcc]
+    .find((address) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address));
+  if (invalid) return `invalid recipient: ${invalid}`;
+  if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
+    return "add at least one recipient";
+  }
+  return { to, cc, bcc };
+}
+
+/** Send the composer as it stands now (after the undo window, if any). */
+async function deliverComposer(id: string) {
+  clearHeldSend(id);
   const session = findComposerSession(id);
   if (!session || app.value.sendingComposerId === id) return;
   const account = app.value.accounts.find((item) => item.id === session.accountId)
@@ -1815,20 +1873,12 @@ export async function sendComposer(id: string) {
     patch({ lastError: "no account configured" });
     return;
   }
-  const parse = (value: string) => value.split(/[,\s]+/).filter(Boolean);
-  const to = parse(session.draft.to);
-  const cc = parse(session.draft.cc);
-  const bcc = parse(session.draft.bcc);
-  const invalid = [...to, ...cc, ...bcc]
-    .find((address) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address));
-  if (invalid) {
-    patch({ lastError: `invalid recipient: ${invalid}` });
+  const recipients = composerRecipients(session);
+  if (typeof recipients === "string") {
+    patch({ lastError: recipients });
     return;
   }
-  if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
-    patch({ lastError: "add at least one recipient" });
-    return;
-  }
+  const { to, cc, bcc } = recipients;
   patch({ sendingComposerId: id });
   try {
     const plain = session.draft.composeMode === "plain";
@@ -1862,6 +1912,40 @@ export async function sendComposer(id: string) {
   } finally {
     if (app.value.sendingComposerId === id) patch({ sendingComposerId: null });
   }
+}
+
+export async function sendComposer(id: string) {
+  const session = findComposerSession(id);
+  if (
+    !session
+    || app.value.sendingComposerId === id
+    || app.value.heldSends[id] !== undefined
+  ) return;
+  // Reject a bad draft before it enters the undo window.
+  const recipients = composerRecipients(session);
+  if (typeof recipients === "string") {
+    patch({ lastError: recipients });
+    return;
+  }
+  if (app.value.sendDelay > 0) {
+    const delayMs = app.value.sendDelay * 1000;
+    patch({
+      heldSends: { ...app.value.heldSends, [id]: Date.now() + delayMs },
+      lastError: null,
+    });
+    pendingSendTimers.set(id, setTimeout(() => {
+      void deliverComposer(id);
+    }, delayMs));
+    return;
+  }
+  await deliverComposer(id);
+}
+
+/** Cancel a held send and return the composer to the user. */
+export function undoSend(id: string) {
+  if (app.value.heldSends[id] === undefined) return;
+  clearHeldSend(id);
+  patch({ lastNotice: "Send undone" });
 }
 
 export async function syncNow(accountId?: string) {

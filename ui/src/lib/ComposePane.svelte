@@ -14,6 +14,7 @@
     scheduleComposerSave,
     sendComposer,
     syncComposerNow,
+    undoSend,
   } from "./stores.svelte";
   import Select from "./Select.svelte";
   import RecipientInput from "./RecipientInput.svelte";
@@ -30,6 +31,25 @@
     app.value.composerSessions.find((item) => item.id === app.value.activeComposerId) ?? null,
   );
   const sending = $derived(session !== null && app.value.sendingComposerId === session.id);
+  const heldDeadline = $derived(
+    session ? app.value.heldSends[session.id] : undefined,
+  );
+  const held = $derived(heldDeadline !== undefined);
+  let heldRemaining = $state(0);
+
+  $effect(() => {
+    const deadline = heldDeadline;
+    if (deadline === undefined) {
+      heldRemaining = 0;
+      return;
+    }
+    const tick = () => {
+      heldRemaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+    };
+    tick();
+    const timer = setInterval(tick, 250);
+    return () => clearInterval(timer);
+  });
   const confirmingDiscard = $derived(
     session !== null && app.value.discardConfirmId === session.id,
   );
@@ -454,7 +474,10 @@
     {/if}
 
     <footer>
-      {#if session.syncState === "error"}
+      {#if held}
+        <span class="sr-only" aria-live="polite">Send held for {app.value.sendDelay} seconds; choose Undo send to cancel.</span>
+        <span class="draft-state">Sending in {heldRemaining}s</span>
+      {:else if session.syncState === "error"}
         <button
           type="button"
           class="sync-retry"
@@ -463,18 +486,29 @@
       {:else}
         <span class="draft-state"><span class="ink-dot" aria-hidden="true"></span>{statusLabel(session)}</span>
       {/if}
-      <button type="button" class="cancel" onclick={() => requestDiscardComposer(session!.id)}>
-        Discard
-      </button>
       <button
         type="button"
-        class="send"
-        onclick={() => void sendComposer(session!.id)}
-        disabled={sending}
+        class="cancel"
+        onclick={() => requestDiscardComposer(session!.id)}
+        disabled={sending || held}
       >
-        {sending ? "Sending…" : "Send"}
-        <span class="send-fold" aria-hidden="true"></span>
+        Discard
       </button>
+      {#if held}
+        <button type="button" class="cancel" onclick={() => undoSend(session!.id)}>
+          Undo send
+        </button>
+      {:else}
+        <button
+          type="button"
+          class="send"
+          onclick={() => void sendComposer(session!.id)}
+          disabled={sending}
+        >
+          {sending ? "Sending…" : "Send"}
+          <span class="send-fold" aria-hidden="true"></span>
+        </button>
+      {/if}
     </footer>
   </div>
 {/if}

@@ -3,7 +3,7 @@ import { app } from "./stores.svelte";
 import * as stores from "./stores.svelte";
 import type { Mailbox } from "./types";
 
-export type CommandGroup = "Triage" | "Compose" | "Folders";
+export type CommandGroup = "Triage" | "Compose" | "Folders" | "Help";
 
 export type KeyChord = {
   key: string;
@@ -209,7 +209,7 @@ export const catalog: Command[] = [
     id: "compose",
     title: "Compose new message",
     group: "Compose",
-    keys: [],
+    keys: [{ key: "n" }],
     palette: true,
     when: () => app.value.activeComposerId === null,
     run: () => void stores.openComposer(),
@@ -233,13 +233,15 @@ export const catalog: Command[] = [
     run: togglePalette,
   },
   {
-    id: "open-palette-help",
-    title: "Open command palette",
-    group: "Folders",
+    id: "shortcuts",
+    title: "Keyboard shortcuts",
+    group: "Help",
     keys: [{ key: "?" }],
-    palette: false,
+    palette: true,
     when: () => paletteHostAllowed(),
-    run: togglePalette,
+    run: () => {
+      app.value.shortcutsOpen = true;
+    },
   },
 ];
 

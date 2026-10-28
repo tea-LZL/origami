@@ -202,3 +202,28 @@ describe("font scale", () => {
     expect(document.documentElement.style.getPropertyValue("--ui-font-scale")).toBe("0.85");
   });
 });
+
+describe("send delay", () => {
+  beforeEach(() => {
+    stubLocalStorage();
+    app.value.sendDelay = 5;
+  });
+
+  it("send_delay_accepts_known_windows", () => {
+    setPreferences({ sendDelay: 20 });
+    expect(app.value.sendDelay).toBe(20);
+    setPreferences({ sendDelay: 0 });
+    expect(app.value.sendDelay).toBe(0);
+  });
+
+  it("send_delay_falls_back_for_unknown_values", () => {
+    setPreferences({ sendDelay: 7 });
+    expect(app.value.sendDelay).toBe(5);
+  });
+
+  it("send_delay_persists", () => {
+    setPreferences({ sendDelay: 30 });
+    const saved = JSON.parse(localStorage.getItem("origami-preferences") ?? "{}");
+    expect(saved.sendDelay).toBe(30);
+  });
+});

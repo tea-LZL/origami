@@ -36,3 +36,15 @@ test("Escape closes preferences and Tab stays inside the dialog", async ({ page 
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
 });
+
+test("question mark opens shortcuts and Escape closes them", async ({ page }) => {
+  await installTauri(page);
+  await page.goto("/");
+
+  await page.keyboard.type("?");
+  const dialog = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+  await expect(dialog).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+});

@@ -23,6 +23,8 @@ const initialValue = {
   composerSessions: [makeSession("session-1")],
   activeComposerId: "session-1" as string | null,
   sendingComposerId: null as string | null,
+  heldSends: {} as Record<string, number>,
+  sendDelay: 0,
   discardConfirmId: null as string | null,
   lastError: null as string | null,
   lastNotice: null as string | null,
@@ -38,6 +40,7 @@ export const requestDiscardComposer = vi.fn();
 export const cancelDiscardComposer = vi.fn();
 export const discardComposer = vi.fn();
 export const sendComposer = vi.fn();
+export const undoSend = vi.fn();
 export const scheduleComposerSave = vi.fn();
 export const flushComposerSave = vi.fn();
 export const syncComposerNow = vi.fn();
