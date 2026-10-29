@@ -455,3 +455,17 @@ Tag `v0.5.1` (commit `7306f72`) published the four-asset set in run 40935229136:
 `Origami_0.5.1_x64-setup.exe` (8.0 MB) + sha256. Adds the unread-page fix (SQL predicate,
 partial index, list commands off the IPC thread) and undo send with the keyboard shortcut
 sheet on top of `v0.5.0`. Distilled into [[release-readiness]].
+
+## [2026-10-29] change | Neon themes and a consistent rounded reading sheet
+Adds two dark schemes to the theme preference: **Cyberpunk neon** (acid yellow + electric
+cyan on near-black, faint scanline grid, accent-tinted shadows) and **Synthwave sunset**
+(hot magenta + electric blue over deep violet with a horizon glow). Both define the full
+token set (tags, selects, checkbox, status hues) and pass the WCAG AA contrast gate, which
+now covers five themes; axe scans cover the message list and threaded rows in both.
+The window reads as frosted paper over coloured light: each scheme paints four soft
+radial lights from its palette, and the sidebar, list, titlebar, message sheet, and dialogs
+are translucent glass (`--glass-*`, `backdrop-filter: blur(22px) saturate(160%)`) with
+Apple-like 6/10/18/28 px radii. The reading sheet always rounds the body bottom, the
+attachments card is fully rounded, and the email HTML sits in a clipped `.frame-wrap`
+paper card so the message is rounded on all four corners. Recorded in
+[[ui-state-and-rendering]].

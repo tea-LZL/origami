@@ -357,9 +357,11 @@
   .wizard {
     width: min(520px, 90vw);
     max-height: 85vh; overflow-y: auto;
-    background: var(--bg-raised);
-    border: 1px solid var(--border);
+    background: var(--glass-strong);
+    border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     padding: 28px;
     box-shadow: var(--shadow-panel);
     animation: surface-in var(--transition-med) both;

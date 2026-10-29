@@ -49,6 +49,22 @@ describe("theme resolution", () => {
     expect(normalizeThemePref(undefined)).toBe("system");
     expect(normalizeThemePref("ember")).toBe("ember");
     expect(normalizeThemePref("dark")).toBe("dark");
+    expect(normalizeThemePref("cyberpunk")).toBe("cyberpunk");
+    expect(normalizeThemePref("synthwave")).toBe("synthwave");
+  });
+
+  it("resolveTheme_handles_neon_themes", () => {
+    expect(resolveTheme("cyberpunk", true)).toBe("cyberpunk");
+    expect(resolveTheme("cyberpunk", false)).toBe("cyberpunk");
+    expect(resolveTheme("synthwave", true)).toBe("synthwave");
+    expect(resolveTheme("synthwave", false)).toBe("synthwave");
+  });
+
+  it("every_theme_pref_has_a_css_block", () => {
+    const css = readFileSync("src/app.css", "utf8") as unknown as string;
+    for (const theme of ["dark", "ember", "cyberpunk", "synthwave"]) {
+      expect(css, `${theme} theme block`).toContain(`:root[data-theme="${theme}"]`);
+    }
   });
 
   it("resolveTheme_handles_ember", () => {

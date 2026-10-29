@@ -185,12 +185,14 @@
     margin: 0;
     padding: 12px;
     overflow: hidden;
-    border: 1px solid var(--border);
+    border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg);
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) auto;
     gap: 10px;
-    background: linear-gradient(145deg, var(--bg-raised), color-mix(in oklab, var(--bg-raised) 94%, var(--bg-sunken)));
+    background: var(--glass-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     box-shadow: var(--shadow-float);
     color: var(--fg);
   }

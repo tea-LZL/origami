@@ -68,10 +68,19 @@
         <rect x="9" y="2" width="2" height="8" rx=".5" />
       </svg>
     </button>
-    <button type="button" class="ctrl settings" onclick={() => app.value.preferencesOpen = true} aria-label="Preferences">
-      <svg viewBox="0 0 12 12">
-        <circle cx="6" cy="6" r="2" />
-        <path d="M6 1.5v1M6 9.5v1M1.5 6h1M9.5 6h1M2.8 2.8l.7.7M8.5 8.5l.7.7M9.2 2.8l-.7.7M3.5 8.5l-.7.7" />
+    <button
+      type="button"
+      class="ctrl settings"
+      onclick={() => app.value.preferencesOpen = true}
+      aria-label="Preferences"
+      title="Preferences"
+    >
+      <svg viewBox="0 0 24 24">
+        <path
+          fill="currentColor"
+          stroke="none"
+          d="M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7 7 0 0 0-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42L9.99 5.32a7 7 0 0 0-1.62.94l-2.39-.96a.5.5 0 0 0-.61.22L3.45 8.84a.5.5 0 0 0 .12.64L5.6 11a7.07 7.07 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .61.22l2.39-.96a7 7 0 0 0 1.62.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54a7 7 0 0 0 1.62-.94l2.39.96a.5.5 0 0 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64ZM12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5Z"
+        />
       </svg>
     </button>
     <button type="button" class="ctrl" onclick={minimize} aria-label="Minimize">
@@ -108,8 +117,10 @@
     align-items: center;
     justify-content: space-between;
     padding-left: 14px;
-    background: linear-gradient(180deg, color-mix(in oklab, var(--bg-raised) 94%, var(--paper-highlight)), var(--bg-raised));
-    border-bottom: 1px solid var(--border);
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border-bottom: 1px solid var(--glass-border);
     box-shadow: inset 0 -1px 0 var(--paper-highlight);
     flex-shrink: 0;
   }

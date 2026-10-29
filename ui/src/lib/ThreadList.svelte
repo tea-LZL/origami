@@ -420,8 +420,8 @@
     width: var(--thread-width, 360px);
     min-width: 280px;
     flex-shrink: 0;
-    border-right: 1px solid var(--border);
-    background: color-mix(in oklab, var(--bg) 86%, var(--bg-raised));
+    border-right: 1px solid var(--glass-border);
+    background: var(--glass-bg);
     overflow: hidden;
     display: flex;
     flex-direction: column;

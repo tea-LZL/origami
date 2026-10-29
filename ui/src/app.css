@@ -81,11 +81,16 @@
   --checkbox-fold: #dce8f8;
   --checkbox-glint: rgba(255, 255, 255, 0.82);
 
-  /* Shape & motion — folded-paper motif */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
+  /* Shape & motion — soft Apple-like geometry and frosted glass */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 18px;
+  --radius-xl: 28px;
+  --glass-bg: color-mix(in oklab, var(--bg-raised) 46%, transparent);
+  --glass-strong: color-mix(in oklab, var(--bg-raised) 64%, transparent);
+  --glass-border: color-mix(in oklab, var(--fg) 13%, transparent);
+  --glass-blur: blur(22px) saturate(160%);
+  --glass-shadow: 0 26px 64px rgba(0, 0, 0, 0.3);
   --titlebar-height: 40px;
   --transition-fast: 120ms ease;
   --transition-med: 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -235,6 +240,146 @@
   color-scheme: dark;
 }
 
+/* Neon night-city scheme: acid yellow + electric cyan on near-black. */
+:root[data-theme="cyberpunk"] {
+  --bg: #05070d;
+  --bg-raised: #0b1019;
+  --bg-sunken: #03050a;
+  --paper-highlight: rgba(0, 240, 255, 0.07);
+  --paper-crease: #16263a;
+  --paper-rule: #22384f;
+  --fg: #eafcff;
+  --fg-muted: #9db4c6;
+  --fg-subtle: #7f96aa;
+  --fg-placeholder: #7f96aa;
+  --border: #1d2a3a;
+  --border-strong: #2e4258;
+  --accent: #fcee0a;
+  --accent-hover: #fff95e;
+  --accent-active: #d9cc00;
+  --accent-fg: #0a0a00;
+  --accent-2: #00f0ff;
+  --accent-2-fg: #001417;
+  --success: #00ffa3;
+  --success-fg: #001a10;
+  --warning: #ffb020;
+  --warning-fg: #1c1200;
+  --info: #38cfff;
+  --info-fg: #001522;
+  --danger: #ff2a6d;
+  --danger-fg: #1a0008;
+  --overlay: rgba(0, 3, 8, 0.74);
+  --focus-ring: #00f0ff;
+  --shadow-panel:
+    0 0 0 1px color-mix(in oklab, var(--accent-2) 18%, transparent),
+    0 14px 34px rgba(0, 0, 0, 0.65);
+  --shadow-sheet:
+    0 0 0 1px color-mix(in oklab, var(--accent-2) 12%, transparent),
+    0 8px 22px rgba(0, 0, 0, 0.55);
+  --shadow-float:
+    0 0 0 1px color-mix(in oklab, var(--accent) 22%, transparent),
+    0 0 42px color-mix(in oklab, var(--accent-2) 16%, transparent),
+    0 26px 64px rgba(0, 0, 0, 0.72);
+  --paper-grain: rgba(0, 240, 255, 0.05);
+  --tag-blue: #2b8cff;
+  --tag-violet: #b46bff;
+  --tag-indigo: #7a7cff;
+  --tag-teal: #00d9c0;
+  --tag-cyan: #00e5ff;
+  --tag-green: #00ff9d;
+  --tag-lime: #b6ff2e;
+  --tag-amber: #fcee0a;
+  --tag-orange: #ff8a1f;
+  --tag-rose: #ff2e97;
+  --tag-plum: #df6bff;
+  --tag-slate: #8fa6b8;
+  --tag-fg: #05070d;
+  --select-panel: #0b1019;
+  --select-face: #101827;
+  --select-face-shade: #080d15;
+  --select-edge: #2e4258;
+  --select-fold: #123044;
+  --select-glint: rgba(255, 255, 255, 0.08);
+  --select-option-hover: #152033;
+  --select-option-selected: #0f3b4a;
+  --checkbox-paper: #101827;
+  --checkbox-paper-shade: #0a0f18;
+  --checkbox-edge: #2e4258;
+  --checkbox-fold: #0f3b4a;
+  --checkbox-glint: rgba(255, 255, 255, 0.09);
+  color-scheme: dark;
+}
+
+/* Sunset grid scheme: hot magenta and electric blue over deep violet. */
+:root[data-theme="synthwave"] {
+  --bg: #10061c;
+  --bg-raised: #1a0c2c;
+  --bg-sunken: #090310;
+  --paper-highlight: rgba(255, 138, 216, 0.08);
+  --paper-crease: #2f1c47;
+  --paper-rule: #43295f;
+  --fg: #f7e9ff;
+  --fg-muted: #c2a6de;
+  --fg-subtle: #a888c8;
+  --fg-placeholder: #a888c8;
+  --border: #2f1c47;
+  --border-strong: #4a2d6b;
+  --accent: #ff2e97;
+  --accent-hover: #ff62b1;
+  --accent-active: #d4006f;
+  --accent-fg: #1a0010;
+  --accent-2: #00e5ff;
+  --accent-2-fg: #001418;
+  --success: #4dffa1;
+  --success-fg: #001a0c;
+  --warning: #ffc247;
+  --warning-fg: #1c1300;
+  --info: #6fd6ff;
+  --info-fg: #001722;
+  --danger: #ff5f7e;
+  --danger-fg: #1c0008;
+  --overlay: rgba(10, 0, 20, 0.74);
+  --focus-ring: #00e5ff;
+  --shadow-panel:
+    0 0 0 1px color-mix(in oklab, var(--accent) 18%, transparent),
+    0 14px 34px rgba(0, 0, 0, 0.62);
+  --shadow-sheet:
+    0 0 0 1px color-mix(in oklab, var(--accent) 12%, transparent),
+    0 8px 22px rgba(0, 0, 0, 0.52);
+  --shadow-float:
+    0 0 0 1px color-mix(in oklab, var(--accent) 24%, transparent),
+    0 0 40px color-mix(in oklab, var(--accent-2) 14%, transparent),
+    0 26px 64px rgba(0, 0, 0, 0.7);
+  --paper-grain: rgba(255, 138, 216, 0.04);
+  --tag-blue: #5aa2ff;
+  --tag-violet: #b78cff;
+  --tag-indigo: #8f8cff;
+  --tag-teal: #3fe0c8;
+  --tag-cyan: #5fd8ff;
+  --tag-green: #5cffa8;
+  --tag-lime: #c4ff66;
+  --tag-amber: #ffd166;
+  --tag-orange: #ff9a5a;
+  --tag-rose: #ff6fb5;
+  --tag-plum: #e08cff;
+  --tag-slate: #a99bc0;
+  --tag-fg: #10061c;
+  --select-panel: #1a0c2c;
+  --select-face: #221038;
+  --select-face-shade: #150826;
+  --select-edge: #4a2d6b;
+  --select-fold: #3a2058;
+  --select-glint: rgba(255, 255, 255, 0.09);
+  --select-option-hover: #2a1544;
+  --select-option-selected: #451a58;
+  --checkbox-paper: #221038;
+  --checkbox-paper-shade: #170a29;
+  --checkbox-edge: #4a2d6b;
+  --checkbox-fold: #451a58;
+  --checkbox-glint: rgba(255, 255, 255, 0.1);
+  color-scheme: dark;
+}
+
 :root[data-theme="light"] { color-scheme: light; }
 
 
@@ -265,13 +410,28 @@ body {
   line-height: 1.5;
   color: var(--fg);
   background:
-    radial-gradient(circle at 18% 12%, var(--paper-grain) 0 0.6px, transparent 0.8px) 0 0 / 17px 17px,
-    radial-gradient(circle at 72% 68%, var(--paper-grain) 0 0.5px, transparent 0.75px) 5px 9px / 23px 23px,
+    radial-gradient(62% 52% at 18% 18%, color-mix(in oklab, var(--accent) 68%, transparent), transparent 72%),
+    radial-gradient(58% 48% at 86% 22%, color-mix(in oklab, var(--accent-2) 62%, transparent), transparent 72%),
+    radial-gradient(52% 46% at 72% 92%, color-mix(in oklab, var(--warning) 34%, transparent), transparent 72%),
+    radial-gradient(68% 52% at 20% 102%, color-mix(in oklab, var(--info) 48%, transparent), transparent 74%),
+    radial-gradient(46% 38% at 45% 55%, color-mix(in oklab, var(--accent-2) 30%, transparent), transparent 72%),
     var(--bg);
   -webkit-font-smoothing: antialiased;
   user-select: none;
   overflow: hidden;
   text-rendering: optimizeLegibility;
+}
+
+/* Cyberpunk keeps a faint city grid over the shared ambient wash. */
+:root[data-theme="cyberpunk"] body {
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 240, 255, 0.03) 0 1px, transparent 1px 4px),
+    radial-gradient(62% 52% at 18% 18%, color-mix(in oklab, var(--accent) 34%, transparent), transparent 72%),
+    radial-gradient(58% 48% at 86% 22%, color-mix(in oklab, var(--accent-2) 62%, transparent), transparent 72%),
+    radial-gradient(52% 46% at 72% 92%, color-mix(in oklab, var(--warning) 26%, transparent), transparent 72%),
+    radial-gradient(68% 52% at 20% 102%, color-mix(in oklab, var(--info) 48%, transparent), transparent 74%),
+    radial-gradient(46% 38% at 45% 55%, color-mix(in oklab, var(--accent-2) 30%, transparent), transparent 72%),
+    var(--bg);
 }
 
 button {

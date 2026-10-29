@@ -236,14 +236,34 @@ jumps and moves to the catalog.
 
 ## Themes and the palette system
 
-Theme preference (`State.theme`) is one of `system | light | dark | ember`; unknown saved
-values normalize to `system`. Resolution moved into JS (`resolveTheme`,
+Theme preference (`State.theme`) is one of
+`system | light | dark | ember | cyberpunk | synthwave`; unknown saved values normalize to
+`system`. Resolution moved into JS (`resolveTheme`,
 `applyThemePreference` in `stores.svelte.ts`): the app always sets a **concrete**
 `data-theme` attribute and re-resolves live on OS `prefers-color-scheme` flips, which let
 the duplicated `@media (prefers-color-scheme: dark)` CSS block be deleted. A pre-paint
 bootstrap in `ui/index.html` resolves the saved preference before first paint so dark-OS
 users get no light flash. **Ember** is a warm charcoal/amber dark theme alongside the
-paper-light and midnight-blue defaults.
+paper-light and midnight-blue defaults; **cyberpunk** is acid yellow + electric cyan on
+near-black with a faint scanline grid, and **synthwave** is hot magenta + electric blue over
+deep violet. `<OrigamiArtwork>` treats both neon schemes as dark surfaces.
+
+The window is layered like frosted paper over coloured light. Every scheme paints four
+soft radial lights from its own palette (`--accent`, `--accent-2`, `--warning`, `--info`
+over `--bg`); cyberpunk adds a faint scanline layer. Sidebar, thread list, titlebar,
+message head/body, attachment card, and every dialog use the glass tokens
+(`--glass-bg` / `--glass-strong`, `--glass-border`). The tall scrolling panes (sidebar,
+thread list) stay tinted but skip `backdrop-filter` because WebKitGTK charges for blurring
+them every frame; the titlebar, message sheet, attachment card, and dialogs add
+`backdrop-filter: var(--glass-blur)` (plus the `-webkit-` prefix). `VirtualList` keeps its
+surface transparent so the tint reaches the rows' background. Geometry is Apple-like:
+`--radius-sm/md/lg/xl` are 6/10/18/28 px.
+
+The reading sheet is one continuous glass panel: the head keeps its top radius, the body
+always rounds its bottom (`border-bottom` + `0 0 var(--radius-lg) var(--radius-lg)`), the
+attachments footer is a separate rounded card below it, and the email HTML lives in a
+`.frame-wrap` card (`overflow: hidden`, `--radius-md`, sheet shadow) so the paper is clipped
+on all four corners.
 
 Tokens live in `ui/src/app.css`: surfaces, text, borders, accent scales, status hues
 (`--success` / `--warning` / `--info` / `--danger` with `-fg` pairs), and twelve

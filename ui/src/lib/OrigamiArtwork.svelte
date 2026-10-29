@@ -10,7 +10,13 @@
   import caughtUpLight from "../../../assets/Origami-white-bg.png";
 
   export type ArtworkVariant = "launch" | "hero" | "success" | "empty" | "setup" | "caught-up";
-  export type ArtworkTheme = "system" | "light" | "dark" | "ember";
+  export type ArtworkTheme =
+    | "system"
+    | "light"
+    | "dark"
+    | "ember"
+    | "cyberpunk"
+    | "synthwave";
 
   interface Props {
     variant: ArtworkVariant;
@@ -42,7 +48,13 @@
     return () => media.removeEventListener("change", update);
   });
 
-  const dark = $derived(theme === "dark" || theme === "ember" || (theme === "system" && systemDark));
+  const dark = $derived(
+    theme === "dark"
+    || theme === "ember"
+    || theme === "cyberpunk"
+    || theme === "synthwave"
+    || (theme === "system" && systemDark),
+  );
   const source = $derived.by(() => {
     switch (variant) {
       case "launch": return dark ? launchDark : launchLight;
