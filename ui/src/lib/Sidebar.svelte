@@ -427,8 +427,10 @@
     width: var(--sidebar-width, 260px);
     min-width: 200px;
     flex-shrink: 0;
-    background: linear-gradient(100deg, color-mix(in oklab, var(--bg-raised) 92%, var(--accent)), var(--bg-raised));
-    border-right: 1px solid var(--border);
+    /* Tinted glass, no backdrop blur: this pane can be tall and scrolling,
+       and WebKitGTK charges for blurring it every frame. */
+    background: var(--glass-bg);
+    border-right: 1px solid var(--glass-border);
     box-shadow: inset -1px 0 var(--paper-highlight);
     display: flex;
     flex-direction: column;

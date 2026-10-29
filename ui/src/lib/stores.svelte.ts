@@ -31,7 +31,13 @@ import { buildForward, type ForwardAttachment } from "./forward";
 /// Shared display-prefetch scheduler (hover/keyboard predicted, viewport later).
 export const prefetcher = createPrefetcher();
 
-export type ThemePref = "system" | "light" | "dark" | "ember";
+export type ThemePref =
+  | "system"
+  | "light"
+  | "dark"
+  | "ember"
+  | "cyberpunk"
+  | "synthwave";
 export type ThemeName = Exclude<ThemePref, "system">;
 
 /** Resolve a preference to a concrete theme attribute value. */
@@ -41,7 +47,12 @@ export function resolveTheme(pref: ThemePref, prefersDark: boolean): ThemeName {
 
 /** Saved preference values outside the known set fall back to "system". */
 export function normalizeThemePref(raw: unknown): ThemePref {
-  return raw === "system" || raw === "light" || raw === "dark" || raw === "ember"
+  return raw === "system"
+    || raw === "light"
+    || raw === "dark"
+    || raw === "ember"
+    || raw === "cyberpunk"
+    || raw === "synthwave"
     ? raw
     : "system";
 }

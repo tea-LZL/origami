@@ -92,11 +92,13 @@
     max-height: min(82vh, 760px);
     overflow-y: auto;
     padding: 22px 26px 26px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg);
     display: grid;
     gap: 18px;
-    background: linear-gradient(145deg, var(--bg-raised), color-mix(in oklab, var(--bg-raised) 94%, var(--bg-sunken)));
+    background: var(--glass-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     box-shadow: var(--shadow-float);
     color: var(--fg);
   }

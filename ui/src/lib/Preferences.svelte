@@ -115,9 +115,13 @@
               { value: "light", label: "Paper light" },
               { value: "dark", label: "Midnight blue" },
               { value: "ember", label: "Ember warm dark" },
+              { value: "cyberpunk", label: "Cyberpunk neon" },
+              { value: "synthwave", label: "Synthwave sunset" },
             ]}
             onValueChange={(theme) =>
-              setPreferences({ theme: theme as "system" | "light" | "dark" | "ember" })}
+              setPreferences({
+                theme: theme as "system" | "light" | "dark" | "ember" | "cyberpunk" | "synthwave",
+              })}
           />
         </label>
 
@@ -346,11 +350,13 @@
     overflow-y: auto;
     margin: 0;
     padding: 20px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg);
     display: grid;
     gap: 14px;
-    background: linear-gradient(145deg, var(--bg-raised), color-mix(in oklab, var(--bg-raised) 94%, var(--bg-sunken)));
+    background: var(--glass-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     box-shadow: var(--shadow-float);
     animation: surface-in var(--transition-med) both;
     color: var(--fg);

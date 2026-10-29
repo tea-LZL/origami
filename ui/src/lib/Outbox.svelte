@@ -151,9 +151,9 @@
   }
   dialog {
     position: static; width: min(560px, 100%); max-height: min(720px, calc(100vh - 32px));
-    margin: 0; padding: 20px; overflow: hidden; border: 1px solid var(--border);
+    margin: 0; padding: 20px; overflow: hidden; border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg); display: grid; grid-template-rows: auto auto minmax(80px, 1fr) auto auto;
-    gap: 12px; background: linear-gradient(145deg, var(--bg-raised), color-mix(in oklab, var(--bg-raised) 94%, var(--bg-sunken))); box-shadow: var(--shadow-float); color: var(--fg);
+    gap: 12px; background: var(--glass-strong); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: var(--shadow-float); color: var(--fg);
     animation: surface-in var(--transition-med) both;
   }
   header { display: flex; align-items: flex-start; justify-content: space-between; }

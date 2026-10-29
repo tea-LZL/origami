@@ -51,7 +51,7 @@ test("compose pane passes axe", async ({ page }) => {
   await expectNoViolations(page, "compose");
 });
 
-for (const theme of ["dark", "ember"] as const) {
+for (const theme of ["dark", "ember", "cyberpunk", "synthwave"] as const) {
   test(`${theme} theme message list passes axe`, async ({ page }) => {
     await installTauri(page, {
       envelopes: [envelope(1, "Quarterly planning notes"), envelope(2, "Second message", ["Seen"])],
@@ -67,7 +67,7 @@ for (const theme of ["dark", "ember"] as const) {
   });
 }
 
-for (const theme of ["light", "dark", "ember"] as const) {
+for (const theme of ["light", "dark", "ember", "cyberpunk", "synthwave"] as const) {
   test(`threaded conversation passes axe (${theme})`, async ({ page }) => {
     const first = envelope(1, "Thread subject");
     const second = { ...envelope(2, "Thread subject", ["Seen"]), threadId: first.threadId };

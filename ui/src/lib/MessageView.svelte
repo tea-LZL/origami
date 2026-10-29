@@ -512,14 +512,16 @@
         use:messageBodyKeyboard
       >
         {#if showsFrame}
-          <iframe
-            class="email-frame"
-            title="Email HTML body"
-            sandbox="allow-same-origin"
-            referrerpolicy="no-referrer"
-            srcdoc={safeHtml.srcdoc}
-            onload={bindEmailFrame}
-          ></iframe>
+          <div class="frame-wrap">
+            <iframe
+              class="email-frame"
+              title="Email HTML body"
+              sandbox="allow-same-origin"
+              referrerpolicy="no-referrer"
+              srcdoc={safeHtml.srcdoc}
+              onload={bindEmailFrame}
+            ></iframe>
+          </div>
         {:else if safeText}
           <pre class="text">{safeText}</pre>
         {:else}
@@ -604,10 +606,12 @@
   .message > header {
     position: relative;
     padding: 26px 30px 14px;
-    border: 1px solid var(--border);
-    border-bottom-color: var(--paper-crease);
+    border: 1px solid var(--glass-border);
+    border-bottom-color: var(--glass-border);
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-    background: linear-gradient(145deg, var(--bg-raised), color-mix(in oklab, var(--bg-raised) 94%, var(--bg-sunken)));
+    background: var(--glass-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     box-shadow: var(--shadow-sheet), inset 0 1px var(--paper-highlight);
   }
   .message > .body {
@@ -621,8 +625,12 @@
     max-width: min(100%, var(--message-measure));
     margin-inline: auto;
     padding: 18px 30px 28px;
-    border-inline: 1px solid var(--border);
-    background: var(--bg-raised);
+    border-inline: 1px solid var(--glass-border);
+    border-bottom: 1px solid var(--glass-border);
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+    background: var(--glass-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     box-shadow: inset 0 1px var(--paper-highlight);
     animation: fade-in var(--transition-fast) both;
   }
@@ -777,17 +785,24 @@
   .conversation button:hover { background: var(--bg-sunken); }
   .conversation button.current { background: var(--accent); color: var(--accent-fg); }
   .body { min-width: 0; }
-  .email-frame {
-    display: block;
-    width: 100%;
-    max-width: min(100%, var(--message-measure));
-    margin-inline: auto;
+  .frame-wrap {
+    position: relative;
     flex: 1 1 auto;
     min-height: 0;
-    border: 1px solid color-mix(in oklab, var(--border) 70%, var(--paper-highlight));
-    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-    background: var(--bg-raised);
-    box-shadow: 0 10px 18px rgba(49, 45, 38, 0.06);
+    width: 100%;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1px solid var(--glass-border);
+    background: #ffffff;
+    box-shadow: var(--shadow-sheet);
+  }
+  .email-frame {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #ffffff;
   }
   .text {
     margin: 0 auto;
@@ -802,10 +817,11 @@
   footer {
     margin-top: 32px;
     padding: 18px 30px 26px;
-    border: 1px solid var(--border);
-    border-top: 1px solid var(--paper-crease);
-    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-    background: var(--bg-raised);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    background: var(--glass-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     box-shadow: var(--shadow-sheet), inset 0 1px var(--paper-highlight);
   }
   footer h2 { font-size: var(--fs-13); text-transform: uppercase; color: var(--fg-muted); margin: 0 0 8px; }

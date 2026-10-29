@@ -166,7 +166,7 @@
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    background: var(--bg);
+    background: transparent;
   }
   .spacer {
     position: relative;
