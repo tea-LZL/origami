@@ -413,3 +413,12 @@ compose editor is labelled, and composer tabs are a named group with `aria-curre
 Visual-regression baselines remain open because they need a container-pinned renderer.
 Recorded in [[build-and-verification]], [[ui-state-and-rendering]], and
 [[release-readiness]].
+
+## [2026-10-29] release | v0.5.0 published
+Tag `v0.5.0` (commit `8d28139`) published the four-asset set in run 40931739272:
+`origami-0.5.0-8-x86_64.pkg.tar.zst` (9.9 MB) + sha256 and
+`Origami_0.5.0_x64-setup.exe` (8.0 MB) + sha256. Since `v0.4.0`: INBOX-only IDLE wake with a
+5-minute non-INBOX sweep and faster first pages, the command palette and keyboard triage,
+a persisted font scale, the Playwright e2e suite with axe accessibility gates and the
+contrast/ARIA fixes they drove, plus npm and RustSec dependency updates. Distilled into
+[[release-readiness]].

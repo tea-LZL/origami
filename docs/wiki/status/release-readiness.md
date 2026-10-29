@@ -2,7 +2,7 @@
 title: Release readiness
 type: status
 status: current
-updated: 2026-10-15
+updated: 2026-10-29
 sources:
   - docs/superpowers/specs/2026-09-26-hardening-caching-palette-design.md
   - MEMORY.md
@@ -30,9 +30,10 @@ several proof and distribution gates are absent.
   ([[github-cicd-md]]). PR #1 (`harden-cache-palette`) ran the full matrix green
   (run 36308544416) including the new `cargo-audit` / `cargo-deny` steps. Release cadence
   since then, each tag publishing the same four assets (verified against the GitHub release
-  API 2026-10-15): `v0.2.1` 2026-10-06 (attachment open/view fix), `v0.3.0` 2026-10-11T11:14Z
+  API 2026-10-29): `v0.2.1` 2026-10-06 (attachment open/view fix), `v0.3.0` 2026-10-11T11:14Z
   (per-draft compose sessions), `v0.4.0` 2026-10-11T15:42Z (proper forward and background
-  send).
+  send), `v0.5.0` 2026-10-29T18:44Z (command palette and keyboard triage, persisted font
+  scale, Playwright/axe gates, sync latency fixes).
 - `packaging/arch/PKGBUILD` is tracked and installs the native binary, desktop entry, and
   hicolor icons.
 - The Tauri `deb` target remains, while Arch distribution uses the tracked PKGBUILD.

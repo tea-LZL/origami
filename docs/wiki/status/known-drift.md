@@ -2,7 +2,7 @@
 title: Known drift
 type: status
 status: current
-updated: 2026-10-28
+updated: 2026-10-29
 sources:
   - MEMORY.md
   - docs/PLAN.md
