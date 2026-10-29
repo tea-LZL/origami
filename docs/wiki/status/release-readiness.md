@@ -33,7 +33,8 @@ several proof and distribution gates are absent.
   API 2026-10-29): `v0.2.1` 2026-10-06 (attachment open/view fix), `v0.3.0` 2026-10-11T11:14Z
   (per-draft compose sessions), `v0.4.0` 2026-10-11T15:42Z (proper forward and background
   send), `v0.5.0` 2026-10-29T18:44Z (command palette and keyboard triage, persisted font
-  scale, Playwright/axe gates, sync latency fixes).
+  scale, Playwright/axe gates, sync latency fixes), `v0.5.1` 2026-10-29T19:06Z (unread-page
+  fix, undo send and shortcut sheet).
 - `packaging/arch/PKGBUILD` is tracked and installs the native binary, desktop entry, and
   hicolor icons.
 - The Tauri `deb` target remains, while Arch distribution uses the tracked PKGBUILD.

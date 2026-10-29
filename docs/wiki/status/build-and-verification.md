@@ -68,7 +68,8 @@ Docker/live-provider tests, package installation on a user machine, accessibilit
 gates, and a native daily-driver smoke. Remote CI verified 2026-09-26/27: runs 36269969749
 (master green), 36276664146 (Windows package green), 36278995728 (tag `v0.1.0` published —
 4 release assets). The same tag pipeline published `v0.5.0` on 2026-10-29 in run 40931739272
-(Arch package + unsigned NSIS installer, each with sha256). For native
+and `v0.5.1` in run 40935229136 (Arch package + unsigned NSIS installer, each with sha256).
+For native
 release confidence, also build/run the
 Tauri app on WebKitGTK and smoke: account onboarding, cached opening, sync/reconnect, search,
 compose/send/outbox, tray restore/quit, external links, remote-content controls, keyboard

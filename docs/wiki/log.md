@@ -448,3 +448,10 @@ Tag `v0.5.0` (commit `8d28139`) published the four-asset set in run 40931739272:
 a persisted font scale, the Playwright e2e suite with axe accessibility gates and the
 contrast/ARIA fixes they drove, plus npm and RustSec dependency updates. Distilled into
 [[release-readiness]].
+
+## [2026-10-29] release | v0.5.1 published
+Tag `v0.5.1` (commit `7306f72`) published the four-asset set in run 40935229136:
+`origami-0.5.1-8-x86_64.pkg.tar.zst` (9.9 MB) + sha256 and
+`Origami_0.5.1_x64-setup.exe` (8.0 MB) + sha256. Adds the unread-page fix (SQL predicate,
+partial index, list commands off the IPC thread) and undo send with the keyboard shortcut
+sheet on top of `v0.5.0`. Distilled into [[release-readiness]].
