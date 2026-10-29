@@ -2,7 +2,7 @@
 title: Known drift
 type: status
 status: current
-updated: 2026-10-29
+updated: 2026-10-30
 sources:
   - MEMORY.md
   - docs/PLAN.md
@@ -26,7 +26,7 @@ trusted. Precedence is defined in [[SCHEMA]]: code wins for *current*, plans win
 | Release checkboxes | `docs/PLAN.md` and `docs/IMPROVEMENT_PLAN.md` checkboxes | Checkbox state is **not** release evidence | Only real build/provider/package/native-smoke evidence updates release status |
 | File permissions | Audit found `0755` dirs and `0644` files | PR #1 landed the existing-data smoke: real app open paths tighten dirs/files (incl. WAL sidecars and blob shards) to `0700`/`0600` with contents unchanged; symlink-safe | [[store-and-search]], [[release-readiness]] |
 | SMTP E2E | Send/receive E2E expected | GreenMail round-trip tolerates an `io-smtp` greeting bug via diagnostic skip | [[test-suite-md]], [[backend-seam]] |
-| Version surfaces | Tag version must match four files | `Cargo.toml`, `tauri.conf.json`, `ui/package.json`, `PKGBUILD` all report `0.5.1` (verified 2026-10-29) | [[github-cicd-md]] |
+| Version surfaces | Tag version must match four files | `Cargo.toml`, `tauri.conf.json`, `ui/package.json`, `PKGBUILD` all report `0.6.0` (verified 2026-10-30) | [[github-cicd-md]] |
 | Gmail onboarding | Overview previously listed "Gmail/Microsoft OAuth"; `provider_hints` still maps Gmail to `Xoauth2`; config still has `oauth.google_client_id` | The add-account wizard uses a Gmail **app password** and does not offer Google OAuth. Microsoft OAuth remains the wizard's OAuth path. | [[accounts-and-secrets]], [[sidebar-folders-tags-onboarding]] |
 
 ## Open follow-ups

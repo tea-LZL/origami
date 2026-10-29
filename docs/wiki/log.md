@@ -499,3 +499,8 @@ only for checkbox/⌘/Shift selections; single-message triage falls back to the 
 Reader-header Archive/Trash/Junk/Star target the open envelope explicitly so checked rows
 cannot hijack them, and listbox `aria-selected` now reflects checks only (focus marks the
 open row). Recorded in [[ui-state-and-rendering]].
+
+## [2026-10-30] release | Prepare v0.6.0
+Bumped all four version surfaces to 0.6.0 (neon themes, snappier chrome, independent pane
+collapse, checkbox-only bulk selection) and refreshed the Cargo and npm lockfiles. Tag
+pipeline and asset verification recorded in [[release-readiness]] after publication.
