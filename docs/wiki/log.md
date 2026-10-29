@@ -414,6 +414,22 @@ Visual-regression baselines remain open because they need a container-pinned ren
 Recorded in [[build-and-verification]], [[ui-state-and-rendering]], and
 [[release-readiness]].
 
+## [2026-10-28] fix | Unread pages filter in SQL and leave the IPC thread
+An unread envelope page used to scan every row in each folder and hydrate label copies
+before discarding `Seen` rows in Rust, and `list_envelopes` / `list_unified_inbox` ran as
+sync commands inline in the IPC handler. With mostly-read mail a sparse unread page (the real
+account had 0 unread Inbox rows out of 38k messages) meant seconds of work on the UI thread:
+7.8 s debug / ~650 ms release at 20k read rows, enough to freeze the window ("Not
+responding") when Unread was toggled on Unified Inbox.
+The predicate now rides the per-folder scan (`instr(flags_json, '"Seen"') = 0`), schema
+migration 13 adds the matching partial index (`idx_messages_unread_scan`), and both list
+commands run on the blocking pool via `spawn_blocking`. The same unified unread page is
+~40 ms debug / ~9 ms release on the synthetic 20k set and ~0.2 ms against the real 38k
+database. Copy-merge semantics are unchanged; the Rust-side filter still runs after
+hydration. Regression: `sparse_unread_unified_page_budget` in
+`crates/origami-core/tests/perf_budget.rs` (fails at 7.8 s without the SQL predicate).
+Recorded in [[store-and-search]].
+
 ## [2026-10-29] release | v0.5.0 published
 Tag `v0.5.0` (commit `8d28139`) published the four-asset set in run 40931739272:
 `origami-0.5.0-8-x86_64.pkg.tar.zst` (9.9 MB) + sha256 and

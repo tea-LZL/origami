@@ -335,31 +335,39 @@ pub async fn delete_folder(state: State<'_, AppState>, folder_id: String) -> Cmd
 }
 
 #[tauri::command]
-pub fn list_envelopes(
+pub async fn list_envelopes(
     state: State<'_, AppState>,
     folder_id: String,
     page: u32,
     page_size: u32,
     unread_only: Option<bool>,
 ) -> CmdResult<Vec<Envelope>> {
-    let source_ids = state.store.folder_source_ids(&folder_id).map_err(err)?;
-    state
-        .store
-        .list_envelopes_in_folders(&source_ids, page, page_size, unread_only.unwrap_or(false))
-        .map_err(err)
+    // Sync commands run inline in the IPC handler; a large folder scan must
+    // not block the webview/GTK loop.
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let source_ids = store.folder_source_ids(&folder_id)?;
+        store.list_envelopes_in_folders(&source_ids, page, page_size, unread_only.unwrap_or(false))
+    })
+    .await
+    .map_err(err)?
+    .map_err(err)
 }
 
 #[tauri::command]
-pub fn list_unified_inbox(
+pub async fn list_unified_inbox(
     state: State<'_, AppState>,
     page: u32,
     page_size: u32,
     unread_only: Option<bool>,
 ) -> CmdResult<Vec<Envelope>> {
-    state
-        .store
-        .list_unified_inbox(page, page_size, unread_only.unwrap_or(false))
-        .map_err(err)
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        store.list_unified_inbox(page, page_size, unread_only.unwrap_or(false))
+    })
+    .await
+    .map_err(err)?
+    .map_err(err)
 }
 
 #[derive(Serialize)]

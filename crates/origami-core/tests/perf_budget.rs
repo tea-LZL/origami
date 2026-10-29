@@ -4,7 +4,7 @@
 //! not to measure absolute speed.
 
 use origami_core::message::ParsedMessage;
-use origami_core::model::{Address, Envelope, Flag, MailboxRole};
+use origami_core::model::{Address, Envelope, EnvelopeSource, Flag, MailboxRole};
 use origami_core::store::Store;
 use std::time::{Duration, Instant};
 
@@ -322,4 +322,102 @@ fn ten_thousand_row_budgets() {
         start.elapsed(),
         Duration::from_secs(2),
     );
+}
+
+/// Mostly-read mail must not take a full Rust-side scan to prove a sparse
+/// unread page is empty: the filter belongs in SQL. Before the filter moved
+/// into the folder scan, a 20k all-Seen inbox took ~650 ms in release because
+/// every envelope was parsed and label copies hydrated, then discarded.
+#[test]
+fn sparse_unread_unified_page_budget() {
+    let store = Store::open_in_memory().unwrap();
+    let account = store
+        .upsert_account("sparse", "Sparse", "sparse@example.org")
+        .unwrap();
+    let folder = store
+        .upsert_folder(&account, "INBOX", MailboxRole::Inbox)
+        .unwrap();
+
+    const TOTAL: u32 = 20_000;
+    const PAGE: usize = 500;
+    let mut batch = Vec::with_capacity(PAGE);
+    for uid in 1..=TOTAL {
+        batch.push(Envelope {
+            id: format!("sparse-{uid}"),
+            mailbox_id: folder.clone(),
+            subject: format!("read message {uid}"),
+            from: vec![Address {
+                name: None,
+                addr: "reader@example.org".into(),
+            }],
+            to: vec![],
+            date: None,
+            received_at: Some(uid as i64),
+            flags: vec![Flag::Seen],
+            keywords: vec![],
+            has_attachment: false,
+            size: 1_024,
+            server_uid: Some(uid),
+            message_id: Some(format!("<sparse-{uid}@example.org>")),
+            thread_id: None,
+            sources: vec![EnvelopeSource {
+                mailbox_id: folder.clone(),
+                server_uid: uid,
+            }],
+        });
+        if batch.len() == PAGE {
+            store.upsert_envelopes(&folder, &batch).unwrap();
+            batch.clear();
+        }
+    }
+    if !batch.is_empty() {
+        store.upsert_envelopes(&folder, &batch).unwrap();
+    }
+
+    let start = Instant::now();
+    let page = store.list_unified_inbox(1, 50, true).unwrap();
+    within(
+        "sparse unread unified page",
+        start.elapsed(),
+        Duration::from_millis(500),
+    );
+    assert!(page.is_empty(), "every seeded envelope is read");
+
+    // One unread row is found without scanning the read backlog.
+    let uid = TOTAL + 1;
+    store
+        .upsert_envelopes(
+            &folder,
+            &[Envelope {
+                id: format!("sparse-{uid}"),
+                mailbox_id: folder.clone(),
+                subject: "one unread".into(),
+                from: vec![],
+                to: vec![],
+                date: None,
+                received_at: Some(uid as i64),
+                flags: vec![],
+                keywords: vec![],
+                has_attachment: false,
+                size: 1_024,
+                server_uid: Some(uid),
+                message_id: Some(format!("<sparse-{uid}@example.org>")),
+                thread_id: None,
+                sources: vec![EnvelopeSource {
+                    mailbox_id: folder.clone(),
+                    server_uid: uid,
+                }],
+            }],
+        )
+        .unwrap();
+
+    let start = Instant::now();
+    let page = store.list_unified_inbox(1, 50, true).unwrap();
+    within(
+        "sparse unread page with one hit",
+        start.elapsed(),
+        Duration::from_millis(500),
+    );
+    assert_eq!(page.len(), 1);
+    assert_eq!(page[0].subject, "one unread");
 }

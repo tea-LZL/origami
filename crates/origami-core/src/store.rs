@@ -310,6 +310,17 @@ impl Store {
             )?;
             conn.pragma_update(None, "user_version", 12)?;
         }
+        if version < 13 {
+            // Unread-only pages filter in SQL. The partial index keeps the
+            // scan proportional to unread mail instead of the folder size,
+            // so mostly-read accounts (the common case) stay instant.
+            conn.execute_batch(
+                r#"CREATE INDEX IF NOT EXISTS idx_messages_unread_scan
+                     ON messages(folder_id, received_at DESC)
+                     WHERE instr(flags_json, '"Seen"') = 0;"#,
+            )?;
+            conn.pragma_update(None, "user_version", 13)?;
+        }
         Ok(())
     }
 
@@ -1093,6 +1104,7 @@ impl Store {
             &tx,
             folder_ids,
             (target / folder_ids.len()).saturating_add(1),
+            unread_only,
         );
         // Copy hydration accumulates across chunks so deep pages never repeat
         // the same folder-wide lookups.
@@ -2320,10 +2332,11 @@ struct EnvelopeScanner<'a> {
     conn: &'a Connection,
     cursors: Vec<FolderCursor>,
     batch: usize,
+    unread_only: bool,
 }
 
 impl<'a> EnvelopeScanner<'a> {
-    fn new(conn: &'a Connection, folder_ids: &[String], batch: usize) -> Self {
+    fn new(conn: &'a Connection, folder_ids: &[String], batch: usize, unread_only: bool) -> Self {
         Self {
             conn,
             cursors: folder_ids
@@ -2336,6 +2349,7 @@ impl<'a> EnvelopeScanner<'a> {
                 })
                 .collect(),
             batch: batch.clamp(1, ENVELOPE_SCAN_CHUNK),
+            unread_only,
         }
     }
 
@@ -2343,8 +2357,13 @@ impl<'a> EnvelopeScanner<'a> {
         let mut refilled = false;
         for cursor in &mut self.cursors {
             if cursor.buffer.is_empty() && !cursor.exhausted {
-                let rows =
-                    scan_folder_chunk(self.conn, &cursor.folder_id, self.batch, cursor.row_offset)?;
+                let rows = scan_folder_chunk(
+                    self.conn,
+                    &cursor.folder_id,
+                    self.batch,
+                    cursor.row_offset,
+                    self.unread_only,
+                )?;
                 cursor.row_offset = cursor.row_offset.saturating_add(rows.len());
                 if rows.is_empty() {
                     cursor.exhausted = true;
@@ -2379,17 +2398,33 @@ fn scan_folder_chunk(
     folder_id: &str,
     limit: usize,
     offset: usize,
+    unread_only: bool,
 ) -> Result<Vec<ScannedEnvelope>> {
-    let mut stmt = conn.prepare_cached(
-        "SELECT m.id, m.folder_id, m.server_uid, m.message_id, m.thread_id, m.subject,
-                m.from_json, m.to_json, m.date, m.received_at, m.size, m.flags_json,
-                m.keywords_json, m.has_attachment, f.account_id, m.rowid
-           FROM messages m
-           JOIN folders f ON f.id = m.folder_id
-          WHERE m.folder_id = ?
-          ORDER BY m.received_at DESC, m.rowid DESC
-          LIMIT ? OFFSET ?",
-    )?;
+    // Push the unread filter into SQL. Without it a sparse-unread page scans
+    // every envelope in the folder and hydrates label copies for rows that
+    // are then discarded (hundreds of ms at 20k rows; enough to stall the
+    // UI thread).
+    let sql = if unread_only {
+        r#"SELECT m.id, m.folder_id, m.server_uid, m.message_id, m.thread_id, m.subject,
+                  m.from_json, m.to_json, m.date, m.received_at, m.size, m.flags_json,
+                  m.keywords_json, m.has_attachment, f.account_id, m.rowid
+             FROM messages m
+             JOIN folders f ON f.id = m.folder_id
+            WHERE m.folder_id = ?
+              AND instr(m.flags_json, '"Seen"') = 0
+            ORDER BY m.received_at DESC, m.rowid DESC
+            LIMIT ? OFFSET ?"#
+    } else {
+        r#"SELECT m.id, m.folder_id, m.server_uid, m.message_id, m.thread_id, m.subject,
+                  m.from_json, m.to_json, m.date, m.received_at, m.size, m.flags_json,
+                  m.keywords_json, m.has_attachment, f.account_id, m.rowid
+             FROM messages m
+             JOIN folders f ON f.id = m.folder_id
+            WHERE m.folder_id = ?
+            ORDER BY m.received_at DESC, m.rowid DESC
+            LIMIT ? OFFSET ?"#
+    };
+    let mut stmt = conn.prepare_cached(sql)?;
     let rows = stmt.query_map(
         params![folder_id, limit as i64, offset as i64],
         read_envelope_row,
