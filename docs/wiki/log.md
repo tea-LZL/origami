@@ -508,5 +508,5 @@ pipeline and asset verification recorded in [[release-readiness]] after publicat
 ## [2026-10-30] release | v0.6.0 published
 GitHub published `v0.6.0` at 2026-10-29T22:23Z from tag run 40963935760 (`package_arch`,
 `package_windows`, `publish` green). Assets: `origami-0.6.0-8-x86_64.pkg.tar.zst` (9.9 MB),
-`Origami_0.6.0_x64-setup.exe` (8.0 MB, unsigned), and both sha256 files. The master CI run
-for the same push is recorded green; this entry is the post-release verification.
+`Origami_0.6.0_x64-setup.exe` (8.0 MB, unsigned), and both sha256 files. The parallel
+master-branch run for the bump push reported `skipped`; the tag run is the release evidence.
