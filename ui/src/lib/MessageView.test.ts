@@ -27,13 +27,13 @@ const mocks = vi.hoisted(() => ({
     },
   },
   clearMessageView: vi.fn(),
-  moveSelectedToRole: vi.fn(),
-  deleteSelectedPermanently: vi.fn(),
+  moveEnvelopeToRole: vi.fn(),
+  deleteEnvelopePermanently: vi.fn(),
   openReplyComposer: vi.fn(),
   forwardMessage: vi.fn(),
   selectEnvelopeExclusive: vi.fn(),
-  setLayout: vi.fn(),
-  setSelectedFlag: vi.fn(),
+  toggleList: vi.fn(),
+  setEnvelopeFlag: vi.fn(),
   getAttachment: vi.fn(),
   openAttachment: vi.fn(),
 }));
@@ -133,8 +133,9 @@ describe("MessageView", () => {
     };
     mocks.getAttachment.mockReset();
     mocks.openAttachment.mockReset();
-    mocks.deleteSelectedPermanently.mockReset();
-    mocks.moveSelectedToRole.mockReset();
+    mocks.deleteEnvelopePermanently.mockReset();
+    mocks.moveEnvelopeToRole.mockReset();
+    mocks.setEnvelopeFlag.mockReset();
   });
 
   it("offers a one-message remote image override", async () => {
@@ -259,8 +260,10 @@ describe("MessageView", () => {
     const button = screen.getByRole("button", { name: "Delete permanently" });
     expect(button).toHaveAttribute("title", "Delete permanently (⌫)");
     await fireEvent.click(button);
-    expect(mocks.deleteSelectedPermanently).toHaveBeenCalled();
-    expect(mocks.moveSelectedToRole).not.toHaveBeenCalled();
+    expect(mocks.deleteEnvelopePermanently).toHaveBeenCalledWith(
+      expect.objectContaining({ id: message.envelope.id }),
+    );
+    expect(mocks.moveEnvelopeToRole).not.toHaveBeenCalled();
   });
 
   it("routes icon actions to their message handlers", async () => {
@@ -274,11 +277,20 @@ describe("MessageView", () => {
     expect(mocks.forwardMessage).toHaveBeenCalled();
 
     await fireEvent.click(screen.getByRole("button", { name: "Archive" }));
-    expect(mocks.moveSelectedToRole).toHaveBeenCalledWith("Archive");
+    expect(mocks.moveEnvelopeToRole).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: message.envelope.id }),
+      "Archive",
+    );
     await fireEvent.click(screen.getByRole("button", { name: "Trash" }));
-    expect(mocks.moveSelectedToRole).toHaveBeenCalledWith("Trash");
+    expect(mocks.moveEnvelopeToRole).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: message.envelope.id }),
+      "Trash",
+    );
     await fireEvent.click(screen.getByRole("button", { name: "Junk" }));
-    expect(mocks.moveSelectedToRole).toHaveBeenCalledWith("Junk");
+    expect(mocks.moveEnvelopeToRole).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: message.envelope.id }),
+      "Junk",
+    );
   });
 
   it("keeps the star name stable and reports its state with aria-pressed", async () => {
@@ -288,7 +300,11 @@ describe("MessageView", () => {
     expect(star).toHaveAttribute("aria-pressed", "false");
 
     await fireEvent.click(star);
-    expect(mocks.setSelectedFlag).toHaveBeenCalledWith("Flagged", true);
+    expect(mocks.setEnvelopeFlag).toHaveBeenCalledWith(
+      expect.objectContaining({ id: message.envelope.id }),
+      "Flagged",
+      true,
+    );
   });
 
   it("marks a flagged message's star as pressed and filled", () => {

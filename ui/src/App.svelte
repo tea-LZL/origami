@@ -136,13 +136,13 @@
     {:else}
       <div
         class="pane-row"
-        class:two-pane={app.value.layout === "two-pane"}
-        class:reading={app.value.layout === "reading"}
+        class:two-pane={app.value.sidebarCollapsed}
+        class:reading={app.value.listCollapsed}
         class:message-active={app.value.selectedEnvelope !== null}
         class:composer-active={activeComposer !== null}
         style={`--sidebar-width: ${app.value.sidebarWidth}px; --thread-width: ${app.value.threadListWidth}px;`}
       >
-        {#if app.value.layout === "three-pane"}
+        {#if !app.value.sidebarCollapsed}
           <Sidebar onadd={() => addAccount?.show()} />
           <PaneSplitter
             value={app.value.sidebarWidth}
@@ -153,7 +153,7 @@
             onResizeEnd={commitPaneWidth}
           />
         {/if}
-        {#if app.value.layout !== "reading"}
+        {#if !app.value.listCollapsed}
           <ThreadList />
           <PaneSplitter
             value={app.value.threadListWidth}

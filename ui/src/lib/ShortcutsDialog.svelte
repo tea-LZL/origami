@@ -97,8 +97,6 @@
     display: grid;
     gap: 18px;
     background: var(--glass-strong);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
     box-shadow: var(--shadow-float);
     color: var(--fg);
   }

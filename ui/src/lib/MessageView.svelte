@@ -5,13 +5,13 @@
     clearMessageView,
     forwardMessage,
     minimizeComposer,
-    deleteSelectedPermanently,
-    moveSelectedToRole,
+    deleteEnvelopePermanently,
+    moveEnvelopeToRole,
     openReplyComposer,
     selectEnvelopeExclusive,
-    setLayout,
+    setEnvelopeFlag,
     setPreferences,
-    setSelectedFlag,
+    toggleList,
   } from "./stores.svelte";
   import { commandChordLabel, dispatchCommand } from "./commands";
   import { api } from "./api";
@@ -239,7 +239,7 @@
   function backToMessages() {
     if (app.value.activeComposerId !== null) minimizeComposer();
     clearMessageView();
-    if (app.value.layout === "reading") setLayout("two-pane");
+    if (app.value.listCollapsed) toggleList();
   }
 
   async function startForward() {
@@ -392,7 +392,7 @@
             <ActionIcon name="forward" />
           </button>
           <span class="sep" aria-hidden="true"></span>
-          <button type="button" class="icon" aria-label="Archive" title={titled("archive", "Archive")} onclick={() => moveSelectedToRole("Archive")}>
+          <button type="button" class="icon" aria-label="Archive" title={titled("archive", "Archive")} onclick={() => moveEnvelopeToRole(env, "Archive")}>
             <ActionIcon name="archive" />
           </button>
           <button
@@ -400,11 +400,11 @@
             class="icon"
             aria-label={inTrashFolder ? "Delete permanently" : "Trash"}
             title={titled(inTrashFolder ? "delete-permanent" : "trash", inTrashFolder ? "Delete permanently" : "Trash")}
-            onclick={() => inTrashFolder ? deleteSelectedPermanently() : moveSelectedToRole("Trash")}
+            onclick={() => inTrashFolder ? deleteEnvelopePermanently(env) : moveEnvelopeToRole(env, "Trash")}
           >
             <ActionIcon name="trash" />
           </button>
-          <button type="button" class="icon" aria-label="Junk" title={titled("junk", "Junk")} onclick={() => moveSelectedToRole("Junk")}>
+          <button type="button" class="icon" aria-label="Junk" title={titled("junk", "Junk")} onclick={() => moveEnvelopeToRole(env, "Junk")}>
             <ActionIcon name="junk" />
           </button>
           <span class="sep" aria-hidden="true"></span>
@@ -415,7 +415,7 @@
             aria-label="Star"
             title={titled("star", "Star")}
             aria-pressed={env.flags.includes("Flagged")}
-            onclick={() => setSelectedFlag("Flagged", !env.flags.includes("Flagged"))}
+            onclick={() => setEnvelopeFlag(env, "Flagged", !env.flags.includes("Flagged"))}
           >
             <ActionIcon name="star" filled={env.flags.includes("Flagged")} />
           </button>
@@ -610,8 +610,6 @@
     border-bottom-color: var(--glass-border);
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     background: var(--glass-strong);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
     box-shadow: var(--shadow-sheet), inset 0 1px var(--paper-highlight);
   }
   .message > .body {
@@ -629,8 +627,6 @@
     border-bottom: 1px solid var(--glass-border);
     border-radius: 0 0 var(--radius-lg) var(--radius-lg);
     background: var(--glass-strong);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
     box-shadow: inset 0 1px var(--paper-highlight);
     animation: fade-in var(--transition-fast) both;
   }
@@ -723,15 +719,17 @@
     flex-shrink: 0;
     width: 100%;
     max-width: min(100%, var(--message-measure));
-    margin: 0 auto 12px;
-    padding: 9px 12px;
-    border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--paper-rule));
-    border-radius: var(--radius-md);
+    margin: 0 auto;
+    padding: 9px 30px;
+    border: 0;
+    border-inline: 1px solid var(--glass-border);
+    border-bottom: 1px solid var(--glass-border);
+    border-radius: 0;
     display: flex;
     flex-wrap: wrap;
     gap: 6px 12px;
     align-items: baseline;
-    background: color-mix(in oklab, var(--accent) 6%, var(--bg-raised));
+    background: color-mix(in oklab, var(--accent) 7%, var(--glass-strong));
     box-shadow: inset 0 1px var(--paper-highlight);
     color: var(--fg-muted);
     font-size: var(--fs-11);
@@ -762,7 +760,10 @@
     background: color-mix(in oklab, var(--warning) 18%, var(--bg-raised));
     color: var(--warning);
   }
-  .parse-warning { border-color: color-mix(in oklab, var(--danger) 38%, var(--border)); }
+  .parse-warning {
+    background: color-mix(in oklab, var(--danger) 7%, var(--glass-strong));
+    border-bottom-color: color-mix(in oklab, var(--danger) 38%, var(--glass-border));
+  }
   .conversation {
     margin: -8px 0 18px;
     padding: 7px;
@@ -820,8 +821,6 @@
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg);
     background: var(--glass-strong);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
     box-shadow: var(--shadow-sheet), inset 0 1px var(--paper-highlight);
   }
   footer h2 { font-size: var(--fs-13); text-transform: uppercase; color: var(--fg-muted); margin: 0 0 8px; }

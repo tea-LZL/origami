@@ -469,3 +469,33 @@ Apple-like 6/10/18/28 px radii. The reading sheet always rounds the body bottom,
 attachments card is fully rounded, and the email HTML sits in a clipped `.frame-wrap`
 paper card so the message is rounded on all four corners. Recorded in
 [[ui-state-and-rendering]].
+
+## [2026-10-29] change | Near-opaque glass and a connected remote-content band
+Tuned the glass pass: the coloured radial backdrop was replaced by the original paper-grain
+background and the surface tokens now mix at 98 %, keeping a heavy backdrop blur so the
+frost reads without turning panes into see-through sheets. The blocked-remote-content notice
+became a full-width segment of the reading sheet (side/bottom hairline, no radius) instead of
+a floating rounded card, so head, notice, and body connect. Recorded in
+[[ui-state-and-rendering]].
+
+## [2026-10-29] change | Instant hover, snappy scrolling, pinned Preferences header
+Hover no longer animates `background-color`/`color`: interactive surfaces transition only
+`border-color`, `opacity`, and `transform`, so the fill snaps under the pointer. Backdrop
+blur is now titlebar-only; the message sheet, attachment card, and dialogs keep the 98 %
+tint without `backdrop-filter`, which removes a per-frame WebKitGTK repaint from every
+scroll and hover. `VirtualList` suppresses hover prefetch for 200 ms after scrolling because
+WebKit re-reports hover as rows slide under a stationary pointer. Preferences became a
+fixed header / scrollable body / fixed version footer, so the close button stays clickable
+at any scroll offset. Recorded in [[ui-state-and-rendering]] and
+[[display-cache-and-prefetch]].
+
+## [2026-10-29] change | Independent pane collapses and checkbox-only bulk selection
+The titlebar's layout-cycle button became two independent pane buttons: one collapses the
+sidebar, one collapses the message list, and either can be hidden without the other.
+`State.sidebarCollapsed` / `State.listCollapsed` drive rendering; `layout` remains the
+Preferences preset label, with old saved layouts deriving the flags. Opening a message now
+sets only the reader selection (`selectedEnvelope` + anchor), so the "N selected" bar appears
+only for checkbox/⌘/Shift selections; single-message triage falls back to the open envelope.
+Reader-header Archive/Trash/Junk/Star target the open envelope explicitly so checked rows
+cannot hijack them, and listbox `aria-selected` now reflects checks only (focus marks the
+open row). Recorded in [[ui-state-and-rendering]].

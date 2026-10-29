@@ -45,8 +45,8 @@ sources:
 ## State
 
 `ui/src/lib/stores.svelte.ts` owns UI state: requests to the shell, optimistic actions, and
-persisted UI preferences (themes, density, motion, layout widths, the unread-only list flag,
-notification settings). Preferences live in `localStorage` key `origami-preferences`.
+persisted UI preferences (themes, density, motion, pane visibility and widths, the
+unread-only list flag, notification settings). Preferences live in `localStorage` key `origami-preferences`.
 `ui/src/lib/api.ts` wraps the typed Tauri commands; `ui/src/lib/types.ts` mirrors the DTOs.
 The UI reads normalized DTOs only and must not contain provider-specific logic
 ([[backend-seam]]).
@@ -234,6 +234,26 @@ the command palette; `?` opens the **Keyboard shortcuts** sheet
 Enter, Space, `t`, Alt+1/2/3, Esc). Both are focus-trapped dialogs; the palette adds folder
 jumps and moves to the catalog.
 
+## Workspace panes and selection
+
+`State.layout` is a persisted preset label (`three-pane`, `two-pane`, `reading`) surfaced in
+Preferences, but App renders the panes from independent flags: `sidebarCollapsed` and
+`listCollapsed`. The titlebar's two pane buttons toggle those flags separately, so the list
+can collapse while the sidebar stays visible. Preferences saves both flags; preferences
+written before they existed derive them from the saved layout. `Back to messages` in the
+reader expands a collapsed list.
+
+Opening a message is not a bulk selection. `selectEnvelopeExclusive` loads the message and
+moves `selectionAnchorId`, but leaves `selectedMessageIds` empty, so the "N selected" toolbar
+appears only for checkbox clicks, Space, Ctrl/Shift range gestures, and Select all. Single-
+message actions keep working without checkboxes because `selectedTargets()` — and the
+command catalog's `hasSelection` / `selectedEnvelopes` — fall back to the open envelope;
+reply/forward availability compares the loaded message with `selectedEnvelope`. The reader
+header's Archive/Trash/Junk/Star call envelope-targeted helpers (`moveEnvelopeToRole`,
+`deleteEnvelopePermanently`, `setEnvelopeFlag`), so rows checked while another message is
+open never hijack those buttons. `VirtualList`'s `aria-selected` reflects checked rows
+only; the open row is conveyed by focus and the `.active` row class.
+
 ## Themes and the palette system
 
 Theme preference (`State.theme`) is one of
@@ -248,22 +268,27 @@ paper-light and midnight-blue defaults; **cyberpunk** is acid yellow + electric 
 near-black with a faint scanline grid, and **synthwave** is hot magenta + electric blue over
 deep violet. `<OrigamiArtwork>` treats both neon schemes as dark surfaces.
 
-The window is layered like frosted paper over coloured light. Every scheme paints four
-soft radial lights from its own palette (`--accent`, `--accent-2`, `--warning`, `--info`
-over `--bg`); cyberpunk adds a faint scanline layer. Sidebar, thread list, titlebar,
-message head/body, attachment card, and every dialog use the glass tokens
-(`--glass-bg` / `--glass-strong`, `--glass-border`). The tall scrolling panes (sidebar,
-thread list) stay tinted but skip `backdrop-filter` because WebKitGTK charges for blurring
-them every frame; the titlebar, message sheet, attachment card, and dialogs add
-`backdrop-filter: var(--glass-blur)` (plus the `-webkit-` prefix). `VirtualList` keeps its
-surface transparent so the tint reaches the rows' background. Geometry is Apple-like:
+The window keeps the original paper-grain backdrop (two dot layers over `--bg`); the
+earlier coloured radial lights were removed because they read as a bright synthetic
+wallpaper. Surfaces are near-opaque frosted glass: `--glass-bg` / `--glass-strong` mix the
+raised colour at 98%, so only a hint of the backdrop shows. Only the static titlebar keeps
+`backdrop-filter: var(--glass-blur)` (blur 22 px, saturate 160 %); the message sheet,
+attachment card, scrolling panes, and dialogs rely on the 98% tint alone. Blurring a
+scrolling or hovered surface costs WebKitGTK a repaint per frame, and at 98% opacity the
+blur is invisible anyway. Hover fills are instant - interactive surfaces transition only
+`border-color`, `opacity`, and `transform`, never `background-color`/`color`. `VirtualList`
+keeps its surface transparent so the surface tint reaches the rows, and it ignores hover
+prefetch for 200 ms after a scroll because WebKit re-reports hover as rows slide under a
+stationary pointer. Geometry is Apple-like:
 `--radius-sm/md/lg/xl` are 6/10/18/28 px.
 
-The reading sheet is one continuous glass panel: the head keeps its top radius, the body
-always rounds its bottom (`border-bottom` + `0 0 var(--radius-lg) var(--radius-lg)`), the
+The reading sheet is one continuous panel: the head keeps its top radius, the body always
+rounds its bottom (`border-bottom` + `0 0 var(--radius-lg) var(--radius-lg)`), the
 attachments footer is a separate rounded card below it, and the email HTML lives in a
 `.frame-wrap` card (`overflow: hidden`, `--radius-md`, sheet shadow) so the paper is clipped
-on all four corners.
+on all four corners. The blocked-remote-content band is not a floating card: it takes the
+sheet's side borders, no radius, and sits flush between the head and the body, so the three
+segments read as one surface.
 
 Tokens live in `ui/src/app.css`: surfaces, text, borders, accent scales, status hues
 (`--success` / `--warning` / `--info` / `--danger` with `-fg` pairs), and twelve

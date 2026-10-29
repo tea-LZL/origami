@@ -191,8 +191,6 @@
     grid-template-rows: auto minmax(0, 1fr) auto;
     gap: 10px;
     background: var(--glass-strong);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
     box-shadow: var(--shadow-float);
     color: var(--fg);
   }

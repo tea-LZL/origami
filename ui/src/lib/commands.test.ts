@@ -319,6 +319,7 @@ describe("paletteItems", () => {
 
   it("empty_query_is_cheat_sheet_without_folder_rows_or_open_palette", () => {
     app.value.selectedMessageIds = [];
+    app.value.selectedEnvelope = null;
     const items = paletteItems("");
     const titles = items.map((item) => item.title);
     expect(titles).toContain("Archive");

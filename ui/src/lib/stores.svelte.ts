@@ -170,6 +170,9 @@ export interface State {
   density: "comfortable" | "compact";
   motion: "system" | "full" | "reduced";
   layout: WorkspaceLayout;
+  /** Panes collapse independently; `layout` is the persisted preset label. */
+  sidebarCollapsed: boolean;
+  listCollapsed: boolean;
   sidebarWidth: number;
   threadListWidth: number;
   undoAction: { message: string; token: number } | null;
@@ -223,6 +226,8 @@ const initial: State = {
   density: "comfortable",
   motion: "system",
   layout: "three-pane",
+  sidebarCollapsed: false,
+  listCollapsed: false,
   sidebarWidth: 260,
   threadListWidth: 360,
   undoAction: null,
@@ -375,14 +380,19 @@ function bounded(value: unknown, fallback: number, min: number, max: number): nu
 function loadPreferences() {
   try {
     const saved = JSON.parse(localStorage.getItem("origami-preferences") ?? "{}") as Partial<State>;
+    const savedLayout = ["three-pane", "two-pane", "reading"].includes(saved.layout ?? "")
+      ? saved.layout as WorkspaceLayout : "three-pane";
     patch({
       theme: normalizeThemePref(saved.theme),
       density: ["comfortable", "compact"].includes(saved.density ?? "")
         ? saved.density as State["density"] : "comfortable",
       motion: ["system", "full", "reduced"].includes(saved.motion ?? "")
         ? saved.motion as State["motion"] : "system",
-      layout: ["three-pane", "two-pane", "reading"].includes(saved.layout ?? "")
-        ? saved.layout as WorkspaceLayout : "three-pane",
+      layout: savedLayout,
+      sidebarCollapsed: typeof saved.sidebarCollapsed === "boolean"
+        ? saved.sidebarCollapsed : savedLayout !== "three-pane",
+      listCollapsed: typeof saved.listCollapsed === "boolean"
+        ? saved.listCollapsed : savedLayout === "reading",
       sidebarWidth: bounded(saved.sidebarWidth, 260, 200, 420),
       threadListWidth: bounded(saved.threadListWidth, 360, 280, 520),
       unreadOnly: typeof saved.unreadOnly === "boolean" ? saved.unreadOnly : false,
@@ -402,6 +412,8 @@ function savePreferences() {
     density: app.value.density,
     motion: app.value.motion,
     layout: app.value.layout,
+    sidebarCollapsed: app.value.sidebarCollapsed,
+    listCollapsed: app.value.listCollapsed,
     sidebarWidth: app.value.sidebarWidth,
     threadListWidth: app.value.threadListWidth,
     unreadOnly: app.value.unreadOnly,
@@ -436,14 +448,31 @@ export function setPreferences(
 }
 
 export function setLayout(layout: WorkspaceLayout) {
-  patch({ layout });
+  patch({
+    layout,
+    sidebarCollapsed: layout !== "three-pane",
+    listCollapsed: layout === "reading",
+  });
   savePreferences();
 }
 
-export function cycleLayout() {
-  const layouts: WorkspaceLayout[] = ["three-pane", "two-pane", "reading"];
-  const next = layouts[(layouts.indexOf(app.value.layout) + 1) % layouts.length];
-  setLayout(next);
+function syncLayoutPreset() {
+  const layout: WorkspaceLayout = app.value.listCollapsed
+    ? "reading"
+    : app.value.sidebarCollapsed ? "two-pane" : "three-pane";
+  patch({ layout });
+}
+
+export function toggleSidebar() {
+  patch({ sidebarCollapsed: !app.value.sidebarCollapsed });
+  syncLayoutPreset();
+  savePreferences();
+}
+
+export function toggleList() {
+  patch({ listCollapsed: !app.value.listCollapsed });
+  syncLayoutPreset();
+  savePreferences();
 }
 
 export function updatePaneWidth(kind: "sidebar" | "threadList", width: number) {
@@ -1022,7 +1051,9 @@ export async function removeSavedSearch(id: string) {
 }
 
 export function selectEnvelopeExclusive(envelope: Envelope) {
-  patch({ selectedMessageIds: [envelope.id], selectionAnchorId: envelope.id });
+  // Opening a message is not a bulk selection: the action bar belongs to the
+  // checkboxes, while the anchor keeps shift-click ranges starting here.
+  patch({ selectionAnchorId: envelope.id });
   return selectEnvelope(envelope);
 }
 
@@ -1113,17 +1144,13 @@ export async function selectAllMessages() {
   }
 }
 
-export async function setSelectedFlag(flag: Flag, enabled: boolean) {
-  const selected = new Set(app.value.selectedMessageIds);
-  if (selected.size === 0) return;
+async function applyFlag(targets: Envelope[], flag: Flag, enabled: boolean) {
   if (flag === "Seen" && !enabled && markReadTimer !== null) {
     clearTimeout(markReadTimer);
     markReadTimer = null;
   }
-
-  const targets = app.value.envelopes.filter(
-    (envelope) => selected.has(envelope.id) && envelopeSources(envelope).length > 0,
-  );
+  if (targets.length === 0) return;
+  const affected = new Set(targets.map((envelope) => envelope.id));
   const nextFlags = (envelope: Envelope): Flag[] => enabled
     ? Array.from(new Set([...envelope.flags, flag]))
     : envelope.flags.filter((item) => item !== flag);
@@ -1136,9 +1163,9 @@ export async function setSelectedFlag(flag: Flag, enabled: boolean) {
     }
   }
   const envelopes = retainForUnreadFilter(app.value.envelopes.map((envelope) =>
-    selected.has(envelope.id) ? { ...envelope, flags: nextFlags(envelope) } : envelope
+    affected.has(envelope.id) ? { ...envelope, flags: nextFlags(envelope) } : envelope
   ));
-  const message = app.value.message && selected.has(app.value.message.envelope.id)
+  const message = app.value.message && affected.has(app.value.message.envelope.id)
     ? {
         ...app.value.message,
         envelope: {
@@ -1162,6 +1189,15 @@ export async function setSelectedFlag(flag: Flag, enabled: boolean) {
       await loadEnvelopes(app.value.selectedFolderId);
     }
   }
+}
+
+export async function setSelectedFlag(flag: Flag, enabled: boolean) {
+  return applyFlag(selectedTargets(), flag, enabled);
+}
+
+/** Header actions act on the open message even when other rows are checked. */
+export async function setEnvelopeFlag(envelope: Envelope, flag: Flag, enabled: boolean) {
+  return applyFlag([envelope], flag, enabled);
 }
 
 export async function setSelectedKeyword(rawKeyword: string, enabled: boolean) {
@@ -1311,7 +1347,7 @@ function scheduleMessageAction(message: string, targets: Envelope[], execute: ()
     const request = envelopeRequest;
     void loadMoreEnvelopes().then(() => {
       if (request !== envelopeRequest) return;
-      if (app.value.selectedMessageIds.length > 0) return;
+      if (app.value.selectedMessageIds.length > 0 || app.value.selectedEnvelope !== null) return;
       const first = app.value.envelopes[0];
       if (first) void selectEnvelopeExclusive(first);
     });
@@ -1332,6 +1368,10 @@ export function undoLastMessageAction() {
 
 function selectedTargets(): Envelope[] {
   const selected = new Set(app.value.selectedMessageIds);
+  if (selected.size === 0) {
+    const open = app.value.selectedEnvelope;
+    return open && envelopeSources(open).length > 0 ? [open] : [];
+  }
   return app.value.envelopes.filter(
     (envelope) => selected.has(envelope.id) && envelopeSources(envelope).length > 0,
   );
@@ -1383,8 +1423,9 @@ export async function moveSelectedToFolder(destinationFolderId: string) {
   });
 }
 
-export async function moveSelectedToRole(role: Extract<MailboxRole, "Archive" | "Trash" | "Junk">) {
-  const targets = selectedTargets();
+type DestructiveRole = Extract<MailboxRole, "Archive" | "Trash" | "Junk">;
+
+async function moveTargetsToRole(targets: Envelope[], role: DestructiveRole) {
   if (targets.length === 0) return;
   const byFolder = new Map<string, Set<number>>();
   for (const target of targets) {
@@ -1426,8 +1467,16 @@ export async function moveSelectedToRole(role: Extract<MailboxRole, "Archive" | 
   });
 }
 
-export async function deleteSelectedPermanently() {
-  const targets = selectedTargets();
+export async function moveSelectedToRole(role: DestructiveRole) {
+  return moveTargetsToRole(selectedTargets(), role);
+}
+
+/** Header actions act on the open message even when other rows are checked. */
+export async function moveEnvelopeToRole(envelope: Envelope, role: DestructiveRole) {
+  return moveTargetsToRole([envelope], role);
+}
+
+async function deleteTargetsPermanently(targets: Envelope[]) {
   if (targets.length === 0) return;
   const byFolder = new Map<string, Set<number>>();
   for (const target of targets) {
@@ -1450,6 +1499,15 @@ export async function deleteSelectedPermanently() {
       else if (app.value.selectedFolderId) await loadEnvelopes(app.value.selectedFolderId);
     }
   });
+}
+
+export async function deleteSelectedPermanently() {
+  return deleteTargetsPermanently(selectedTargets());
+}
+
+/** Header actions act on the open message even when other rows are checked. */
+export async function deleteEnvelopePermanently(envelope: Envelope) {
+  return deleteTargetsPermanently([envelope]);
 }
 
 function blankDraft(): ComposerSession["draft"] {

@@ -91,7 +91,8 @@ navigation, and both themes.
 - Automated: `npm test --prefix ui` (91 tests incl. theme resolution, ember warmth,
   folder-role hues, outbox chips), `npm run check --prefix ui` (0 errors),
   `node ui/scripts/check-contrast.mjs` (WCAG AA gate over light/dark/ember token
-  pairs — `npm run check:contrast`).
+  pairs — `npm run check:contrast`). The gate now covers five themes (adding cyberpunk and
+  synthwave); axe scans cover the message list in all five.
 - `forced-colors` paths unchanged by the palette work (app.css + component blocks
   intact); pip/tint rules verified by inspection only.
 - **Manual pass still owed** (GUI not runnable in the automated environment): open

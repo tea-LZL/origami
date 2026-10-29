@@ -113,6 +113,7 @@
         <button type="button" onclick={() => app.value.preferencesOpen = false} aria-label="Close preferences">×</button>
       </div>
 
+      <div class="pref-body">
       <section aria-labelledby="appearance-title">
         <h3 id="appearance-title">Appearance</h3>
         <label>
@@ -340,6 +341,7 @@
         {/if}
         {#if error}<p class="error" role="alert">{error}</p>{/if}
       </section>
+      </div>
 
       {#if appVersion}
         <footer class="version">Origami {appVersion}</footer>
@@ -361,21 +363,33 @@
     position: static;
     width: min(440px, calc(100vw - 32px));
     max-height: min(720px, calc(100vh - 32px));
-    overflow-y: auto;
+    overflow: hidden;
     margin: 0;
     padding: 20px;
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg);
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 14px;
     background: var(--glass-strong);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
     box-shadow: var(--shadow-float);
     animation: surface-in var(--transition-med) both;
     color: var(--fg);
   }
-  .pref-header { display: flex; align-items: flex-start; justify-content: space-between; }
+  .pref-header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+  .pref-body {
+    min-height: 0;
+    overflow-y: auto;
+    display: grid;
+    gap: 14px;
+    padding-right: 2px;
+    scrollbar-gutter: stable;
+  }
   .pref-header span {
     color: var(--accent);
     font-size: var(--fs-9);
@@ -436,12 +450,11 @@
     position: sticky;
     bottom: -20px;
     z-index: 1;
-    margin: -2px -20px -20px;
+    flex-shrink: 0;
+    margin: 0 -20px -20px;
     padding: 10px 20px 12px;
     border-top: 1px solid var(--glass-border);
-    background: var(--glass-strong);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
+    background: var(--bg-raised);
     color: var(--fg-subtle);
     font-size: var(--fs-10);
     text-align: center;

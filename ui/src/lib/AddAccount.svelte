@@ -360,8 +360,6 @@
     background: var(--glass-strong);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
     padding: 28px;
     box-shadow: var(--shadow-panel);
     animation: surface-in var(--transition-med) both;

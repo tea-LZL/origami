@@ -23,7 +23,12 @@ import { api } from "./api";
 import type { MessageDto } from "./api";
 import {
   app,
+  moveEnvelopeToRole,
   moveSelectedToRole,
+  selectEnvelopeExclusive,
+  setEnvelopeFlag,
+  toggleList,
+  toggleSidebar,
   undoLastMessageAction,
 } from "./stores.svelte";
 import type { Envelope, Mailbox } from "./types";
@@ -150,7 +155,8 @@ describe("auto-advance after destructive actions", () => {
     await moveSelectedToRole("Archive");
     expect(app.value.envelopes.map((e) => e.id)).toEqual(["b", "c"]);
     expect(app.value.selectedEnvelope?.id).toBe("b");
-    expect(app.value.selectedMessageIds).toEqual(["b"]);
+    // Advancing opens the next row; bulk selection belongs to the checkboxes.
+    expect(app.value.selectedMessageIds).toEqual([]);
   });
 
   it("archive_last_row_selects_previous", async () => {
@@ -160,7 +166,7 @@ describe("auto-advance after destructive actions", () => {
     await moveSelectedToRole("Archive");
     expect(app.value.envelopes.map((e) => e.id)).toEqual(["a"]);
     expect(app.value.selectedEnvelope?.id).toBe("a");
-    expect(app.value.selectedMessageIds).toEqual(["a"]);
+    expect(app.value.selectedMessageIds).toEqual([]);
   });
 
   it("archive_last_remaining_row_empties_the_pane", async () => {
@@ -192,7 +198,7 @@ describe("auto-advance after destructive actions", () => {
     app.value.selectedMessageIds = ["a"];
     await moveSelectedToRole("Archive");
     expect(app.value.selectedEnvelope?.id).toBe("c");
-    expect(app.value.selectedMessageIds).toEqual(["c"]);
+    expect(app.value.selectedMessageIds).toEqual([]);
   });
 
   it("null_open_row_with_selected_ids_does_not_throw", async () => {
@@ -213,7 +219,7 @@ describe("auto-advance after destructive actions", () => {
     await moveSelectedToRole("Archive");
     await flush();
     expect(app.value.selectedEnvelope?.id).toBe("page2");
-    expect(app.value.selectedMessageIds).toEqual(["page2"]);
+    expect(app.value.selectedMessageIds).toEqual([]);
   });
 
   it("undo_restores_envelopes_and_selection_and_drops_inflight_loadMore", async () => {
@@ -235,5 +241,42 @@ describe("auto-advance after destructive actions", () => {
     await flush();
     expect(app.value.envelopes.map((e) => e.id)).toEqual(["only"]);
     expect(app.value.selectedMessageIds).toEqual(["only"]);
+  });
+
+  it("opening_a_row_does_not_enter_bulk_selection", async () => {
+    app.value.envelopes = [env("a"), env("b")];
+    app.value.selectedMessageIds = [];
+    await selectEnvelopeExclusive(app.value.envelopes[0]!);
+    expect(app.value.selectedEnvelope?.id).toBe("a");
+    expect(app.value.selectedMessageIds).toEqual([]);
+  });
+
+  it("open_message_actions_ignore_checked_rows", async () => {
+    app.value.envelopes = [env("a"), env("b")];
+    app.value.selectedEnvelope = app.value.envelopes[1]!;
+    app.value.selectedMessageIds = ["a"];
+    await moveEnvelopeToRole(app.value.selectedEnvelope, "Archive");
+    expect(app.value.envelopes.map((e) => e.id)).toEqual(["a"]);
+  });
+
+  it("open_message_star_ignores_checked_rows", async () => {
+    app.value.envelopes = [env("a"), env("b")];
+    app.value.selectedEnvelope = app.value.envelopes[1]!;
+    app.value.selectedMessageIds = ["a"];
+    await setEnvelopeFlag(app.value.selectedEnvelope, "Flagged", true);
+    expect(app.value.envelopes.find((e) => e.id === "a")?.flags).toEqual([]);
+    expect(app.value.envelopes.find((e) => e.id === "b")?.flags).toContain("Flagged");
+  });
+
+  it("sidebar_and_list_collapse_independently", () => {
+    app.value.sidebarCollapsed = false;
+    app.value.listCollapsed = false;
+    toggleSidebar();
+    expect(app.value.sidebarCollapsed).toBe(true);
+    toggleList();
+    expect(app.value.listCollapsed).toBe(true);
+    toggleSidebar();
+    expect(app.value.sidebarCollapsed).toBe(false);
+    expect(app.value.listCollapsed).toBe(true);
   });
 });

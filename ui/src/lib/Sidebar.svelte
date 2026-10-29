@@ -450,7 +450,7 @@
     font-size: var(--fs-12);
     font-weight: 750;
     min-height: 36px;
-    transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+    transition: transform var(--transition-fast);
   }
   .unified:hover { background: color-mix(in oklab, var(--bg-sunken) 86%, var(--accent)); color: var(--fg); }
   .unified.selected {
@@ -539,7 +539,7 @@
     border-radius: var(--radius-sm);
     font-size: var(--fs-11);
     opacity: 0;
-    transition: opacity var(--transition-fast), background-color var(--transition-fast), transform var(--transition-fast);
+    transition: opacity var(--transition-fast), transform var(--transition-fast);
   }
   .account-header:hover .gear { opacity: 0.7; }
   .gear:focus-visible { opacity: 1; }
@@ -558,7 +558,7 @@
     color: var(--fg);
     font-size: var(--fs-12);
     min-height: 32px;
-    transition: background-color var(--transition-fast), color var(--transition-fast);
+    transition: none;
   }
   .folder.virtual { color: var(--fg-muted); }
   .twist, .twist-spacer {

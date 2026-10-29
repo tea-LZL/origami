@@ -197,8 +197,6 @@
     background: var(--glass-strong);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
     padding: 24px;
     max-width: 440px;
     width: 90vw;

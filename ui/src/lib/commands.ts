@@ -25,7 +25,7 @@ const LETTER_BLOCK =
   "input, textarea, select, [contenteditable], [role='dialog'], [role='menu'], [popover], [aria-haspopup='listbox']";
 
 function hasSelection(): boolean {
-  return app.value.selectedMessageIds.length > 0;
+  return app.value.selectedMessageIds.length > 0 || app.value.selectedEnvelope !== null;
 }
 
 function selectedFolder() {
@@ -39,7 +39,7 @@ function searching(): boolean {
 function loadedMessageMatches(): boolean {
   const message = app.value.message;
   if (!message) return false;
-  return app.value.selectedMessageIds.includes(message.envelope.id);
+  return app.value.selectedEnvelope?.id === message.envelope.id;
 }
 
 function paletteHostAllowed(): boolean {
@@ -50,6 +50,9 @@ function paletteHostAllowed(): boolean {
 
 function selectedEnvelopes() {
   const selected = new Set(app.value.selectedMessageIds);
+  if (selected.size === 0) {
+    return app.value.selectedEnvelope ? [app.value.selectedEnvelope] : [];
+  }
   return app.value.envelopes.filter((envelope) => selected.has(envelope.id));
 }
 

@@ -86,8 +86,8 @@
   --radius-md: 10px;
   --radius-lg: 18px;
   --radius-xl: 28px;
-  --glass-bg: color-mix(in oklab, var(--bg-raised) 46%, transparent);
-  --glass-strong: color-mix(in oklab, var(--bg-raised) 64%, transparent);
+  --glass-bg: color-mix(in oklab, var(--bg-raised) 98%, transparent);
+  --glass-strong: color-mix(in oklab, var(--bg-raised) 98%, transparent);
   --glass-border: color-mix(in oklab, var(--fg) 13%, transparent);
   --glass-blur: blur(22px) saturate(160%);
   --glass-shadow: 0 26px 64px rgba(0, 0, 0, 0.3);
@@ -410,11 +410,8 @@ body {
   line-height: 1.5;
   color: var(--fg);
   background:
-    radial-gradient(62% 52% at 18% 18%, color-mix(in oklab, var(--accent) 68%, transparent), transparent 72%),
-    radial-gradient(58% 48% at 86% 22%, color-mix(in oklab, var(--accent-2) 62%, transparent), transparent 72%),
-    radial-gradient(52% 46% at 72% 92%, color-mix(in oklab, var(--warning) 34%, transparent), transparent 72%),
-    radial-gradient(68% 52% at 20% 102%, color-mix(in oklab, var(--info) 48%, transparent), transparent 74%),
-    radial-gradient(46% 38% at 45% 55%, color-mix(in oklab, var(--accent-2) 30%, transparent), transparent 72%),
+    radial-gradient(circle at 18% 12%, var(--paper-grain) 0 0.6px, transparent 0.8px) 0 0 / 17px 17px,
+    radial-gradient(circle at 72% 68%, var(--paper-grain) 0 0.5px, transparent 0.75px) 5px 9px / 23px 23px,
     var(--bg);
   -webkit-font-smoothing: antialiased;
   user-select: none;
@@ -422,15 +419,13 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* Cyberpunk keeps a faint city grid over the shared ambient wash. */
+/* Cyberpunk keeps its faint city grid; the rest of the backdrop is the shared
+   paper grain, since the bright radial lights were removed. */
 :root[data-theme="cyberpunk"] body {
   background:
     repeating-linear-gradient(0deg, rgba(0, 240, 255, 0.03) 0 1px, transparent 1px 4px),
-    radial-gradient(62% 52% at 18% 18%, color-mix(in oklab, var(--accent) 34%, transparent), transparent 72%),
-    radial-gradient(58% 48% at 86% 22%, color-mix(in oklab, var(--accent-2) 62%, transparent), transparent 72%),
-    radial-gradient(52% 46% at 72% 92%, color-mix(in oklab, var(--warning) 26%, transparent), transparent 72%),
-    radial-gradient(68% 52% at 20% 102%, color-mix(in oklab, var(--info) 48%, transparent), transparent 74%),
-    radial-gradient(46% 38% at 45% 55%, color-mix(in oklab, var(--accent-2) 30%, transparent), transparent 72%),
+    radial-gradient(circle at 18% 12%, var(--paper-grain) 0 0.6px, transparent 0.8px) 0 0 / 17px 17px,
+    radial-gradient(circle at 72% 68%, var(--paper-grain) 0 0.5px, transparent 0.75px) 5px 9px / 23px 23px,
     var(--bg);
 }
 
@@ -443,11 +438,8 @@ button {
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition:
-    background-color var(--transition-fast),
     border-color var(--transition-fast),
-    color var(--transition-fast),
     opacity var(--transition-fast),
-    box-shadow var(--transition-fast),
     transform var(--transition-fast);
 }
 

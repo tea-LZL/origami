@@ -43,6 +43,7 @@
   let scrollTop = $state(0);
   let viewportHeight = $state(0);
   let scrollFrame: number | null = null;
+  let lastScrollAt = 0;
 
   const overscan = 6;
 
@@ -79,6 +80,7 @@
     scrollFrame = requestAnimationFrame(() => {
       scrollFrame = null;
       if (!scroller) return;
+      lastScrollAt = performance.now();
       scrollTop = scroller.scrollTop;
       onScrollPosition?.(scrollTop);
       if (scrollTop + scroller.clientHeight >= scroller.scrollHeight - itemHeight * 4) {
@@ -116,6 +118,13 @@
     }
   }
 
+  function hoverGuard(item: T) {
+    // WebKit re-reports hover as content scrolls under a stationary pointer;
+    // prefetching then turns a wheel gesture into a burst of IPC work.
+    if (performance.now() - lastScrollAt < 200) return;
+    onHover?.(item);
+  }
+
   function onRowKeydown(event: KeyboardEvent, item: T) {
     if (event.key !== "Enter") return;
     event.preventDefault();
@@ -148,7 +157,7 @@
           aria-selected={isSelected?.(item) ?? false}
           tabindex={activeId != null && selectedId?.(item) === activeId ? 0 : -1}
           onclick={(event) => onSelect?.(item, event)}
-          onmouseenter={() => onHover?.(item)}
+          onmouseenter={() => hoverGuard(item)}
           onkeydown={(event) => onRowKeydown(event, item)}
         >
           {@render render(item, startIndex + i)}
@@ -189,7 +198,6 @@
     padding: 8px 12px;
     color: var(--fg);
     cursor: pointer;
-    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
   }
   .row:hover {
     background: color-mix(in oklab, var(--bg-sunken) 84%, var(--accent));

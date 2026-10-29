@@ -44,6 +44,13 @@ Invalidation: message delete/move removes per-source entries; account removal cl
 whole LRU. Stale responses after navigation are rejected via the existing request
 generation in `stores.svelte.ts`.
 
+A hover prefetch triggered while the list is still moving is skipped for 200 ms after the
+last scroll event; WebKit re-fires `mouseenter` as rows pass under a stationary pointer,
+and honouring those would turn a wheel gesture into a burst of IPC work. Pending work is
+keyed by `folderId:serverUid` (higher priority wins), and each viewport update replaces the
+previous viewport window rather than appending to it, so a long sweep queues only the
+window where it settles and never grows with scroll distance.
+
 `AppState.display_fetch_gates` gives each display key one async gate shared by
 `get_message` and the prefetch worker. A click that lands while hover prefetch is already
 fetching waits on the gate, re-checks the LRU/SQLite cache, and returns the cached body

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { app, cycleLayout } from "./stores.svelte";
+  import { app, toggleList, toggleSidebar } from "./stores.svelte";
   import OrigamiBird from "./OrigamiBird.svelte";
 
   const win = getCurrentWindow();
@@ -20,14 +20,6 @@
         ? "Syncing"
         : statuses.length ? "Online" : "Local",
   );
-  let layoutLabel = $derived(
-    app.value.layout === "three-pane"
-      ? "Three-pane"
-      : app.value.layout === "two-pane"
-        ? "Two-pane"
-        : "Reading focus",
-  );
-
   async function minimize() {
     await win.minimize();
   }
@@ -57,15 +49,31 @@
   <div class="controls">
     <button
       type="button"
-      class="ctrl layout"
-      onclick={cycleLayout}
-      aria-label={`Workspace layout: ${layoutLabel}`}
-      title={`Workspace layout: ${layoutLabel}`}
+      class="ctrl"
+      onclick={toggleSidebar}
+      aria-label={app.value.sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+      title={app.value.sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
     >
       <svg viewBox="0 0 12 12">
-        <rect x="1" y="2" width="3" height="8" rx=".5" />
-        <rect x="5" y="2" width="3" height="8" rx=".5" />
-        <rect x="9" y="2" width="2" height="8" rx=".5" />
+        <rect x="1" y="2" width="10" height="8" rx="1" />
+        <line x1="4.5" y1="2" x2="4.5" y2="10" />
+      </svg>
+    </button>
+    <button
+      type="button"
+      class="ctrl"
+      onclick={toggleList}
+      disabled={!app.value.listCollapsed && !app.value.selectedEnvelope}
+      aria-label={app.value.listCollapsed ? "Show message list" : "Hide message list"}
+      title={app.value.listCollapsed
+        ? "Show message list"
+        : app.value.selectedEnvelope
+        ? "Hide message list"
+        : "Open a message to focus it"}
+    >
+      <svg viewBox="0 0 12 12">
+        <rect x="1" y="2" width="10" height="8" rx="1" />
+        <line x1="7.5" y1="2" x2="7.5" y2="10" />
       </svg>
     </button>
     <button
@@ -168,10 +176,9 @@
     display: grid;
     place-items: center;
     color: var(--fg-muted);
-    transition:
-      background var(--transition-fast),
-      color var(--transition-fast);
   }
+
+  .ctrl:disabled { opacity: 0.45; cursor: default; background: none; color: var(--fg-muted); }
 
   .ctrl:hover {
     background: color-mix(in oklab, var(--bg-sunken) 88%, var(--accent));

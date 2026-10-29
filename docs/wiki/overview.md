@@ -65,9 +65,11 @@ flag/move/delete/send with replay, a poison-safe Outbox inspector, and per-row r
 reply/reply-all/forward, attachments, drafts, duplicate-send protection; logical
 cross-label deduplication with all physical sources retained; chronological ordering by
 normalized server-received time; isolated HTML rendering with DOMPurify, restrictive CSP,
-link interception, and remote images blocked by default; themes (paper light, midnight
-blue, **ember** warm dark) with a WCAG contrast gate, density, motion preferences,
-resizable layouts, tray lifecycle, notifications, and keyboard list navigation.
+link interception, and remote images blocked by default; five themes (paper light,
+midnight blue, **ember** warm dark, **cyberpunk** neon, **synthwave** sunset) with a
+five-theme WCAG contrast gate and near-opaque frosted glass surfaces, density, motion
+preferences, resizable layouts, tray lifecycle, notifications, and keyboard list
+navigation.
 
 Hardening landed in PR #1 (2026-09-27): `0700`/`0600` existing-data smoke, `cargo-audit` +
 `cargo-deny` CI gates, secret redaction, hostile-MIME caps and corpus, blob-hash traversal

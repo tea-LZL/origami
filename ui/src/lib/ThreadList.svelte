@@ -12,7 +12,6 @@
     searchMessages,
     saveCurrentSearch,
     removeSavedSearch,
-    setLayout,
     setSelectedFlag,
     setSelectedKeyword,
     setUnreadOnly,
@@ -227,20 +226,6 @@
         : app.value.unifiedInbox ? "Unified Inbox" : selectedFolder?.name ?? "Messages"}</h1>
     </div>
     <div class="header-actions">
-      {#if app.value.layout === "two-pane"}
-        <button type="button" class="layout-button" onclick={() => setLayout("three-pane")} title="Show folders">
-          Folders
-        </button>
-      {/if}
-      <button
-        type="button"
-        class="layout-button"
-        onclick={() => setLayout("reading")}
-        disabled={!app.value.selectedEnvelope}
-        title="Focus reading"
-      >
-        Focus
-      </button>
       <button
         type="button"
         class="layout-button"

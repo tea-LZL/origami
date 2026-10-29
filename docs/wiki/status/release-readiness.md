@@ -52,7 +52,8 @@ several proof and distribution gates are absent.
 - The GreenMail SMTP round-trip tolerates a known `io-smtp` greeting-parser incompatibility
   ([[test-suite-md]]).
 - Playwright covers five UI flows — read, compose/send, search, keyboard list/dialog
-  interaction, and axe scans (list in light/dark/ember; Preferences and Compose in light) —
+  interaction, and axe scans (list in light/dark/ember/cyberpunk/synthwave; Preferences
+  and Compose in light) —
   against the built UI with a stubbed Tauri bridge (`ui/e2e`, CI job `ui-e2e`). There is
   still no automated native-WebKit workflow.
 - **Budgets landed** (2026-09-28): cached-open (mean LRU hit < 50 ms,

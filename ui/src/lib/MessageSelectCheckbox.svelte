@@ -6,10 +6,10 @@
   let { checked }: Props = $props();
 </script>
 
-<!-- Presentational check affordance. The row is the listbox option, so
-     selection is exposed there via aria-selected and toggled by the row's
-     Space handler; ThreadList also routes clicks on this box to selection
-     instead of opening the message. -->
+<!-- Presentational check affordance. The row is the listbox option and
+     exposes aria-selected for this checked state; focus marks the row that is
+     open in the reader, and the Space handler toggles the check. ThreadList
+     routes clicks on this box to selection instead of opening the message. -->
 <span class="select-control" class:checked>
   <span class="select-paper">
     <svg viewBox="0 0 20 20" focusable="false">

@@ -103,4 +103,36 @@ describe("createPrefetcher viewport", () => {
 
     expect(mocked).toHaveBeenCalledTimes(1);
   });
+
+  it("viewport_replaces_the_previous_window", async () => {
+    const prefetcher = createPrefetcher();
+    for (let i = 0; i < 18; i++) {
+      prefetcher.viewport(envelopes, { start: i, end: i + 3 });
+    }
+    await vi.advanceTimersByTimeAsync(200);
+
+    const requests = mocked.mock.calls[0][0];
+    // Only the settled window is fetched: span 3 around [17, 20) → uids 15..20.
+    expect(requests.map((r) => r.serverUid)).toEqual([15, 16, 17, 18, 19, 20]);
+    expect(new Set(requests.map((r) => r.serverUid)).size).toBe(requests.length);
+  });
+
+  it("collapses_repeated_hover", async () => {
+    const prefetcher = createPrefetcher();
+    for (let i = 0; i < 4; i++) prefetcher.hover(envelope("a", 1));
+    await vi.advanceTimersByTimeAsync(150);
+
+    expect(mocked.mock.calls[0][0]).toHaveLength(1);
+  });
+
+  it("keeps_predictive_priority_when_viewport_overlaps", async () => {
+    const prefetcher = createPrefetcher();
+    prefetcher.hover(envelope("e3", 4));
+    prefetcher.viewport(envelopes, { start: 2, end: 8 });
+    await vi.advanceTimersByTimeAsync(200);
+
+    const requests = mocked.mock.calls[0][0];
+    const hovered = requests.filter((r) => r.serverUid === 4);
+    expect(hovered).toEqual([{ folderId: "folder-1", serverUid: 4, priority: "predictive" }]);
+  });
 });

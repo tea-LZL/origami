@@ -15,7 +15,9 @@ test("j/k move the list selection and Enter opens the focused row", async ({ pag
   await page.keyboard.press("j");
 
   const focused = page.getByRole("option", { name: /Second message/ });
-  await expect(focused).toHaveAttribute("aria-selected", "true");
+  // Focus marks the reader row; aria-selected is reserved for checked rows.
+  await expect(focused).toHaveAttribute("aria-selected", "false");
+  await expect(focused).toHaveClass(/active/);
   await expect(focused).toBeFocused();
 
   await page.keyboard.press("Enter");
