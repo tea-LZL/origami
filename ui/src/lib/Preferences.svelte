@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { api, type NotificationSettings } from "./api";
   import {
     loadRemoteContentAllowlist,
@@ -12,6 +13,15 @@
 
   let loaded = $state(false);
   let loading = $state(false);
+  let appVersion = $state<string | null>(null);
+
+  onMount(() => {
+    api.appInfo()
+      .then((info) => {
+        appVersion = info.shellVersion;
+      })
+      .catch(() => {});
+  });
   let saving = $state(false);
   let saved = $state(false);
   let error = $state("");
@@ -326,6 +336,10 @@
         {/if}
         {#if error}<p class="error" role="alert">{error}</p>{/if}
       </section>
+
+      {#if appVersion}
+        <footer class="version">Origami {appVersion}</footer>
+      {/if}
     </dialog>
   </div>
 {/if}
@@ -412,6 +426,19 @@
   .primary:disabled { opacity: 0.55; }
   p { margin: 2px 0 0; color: var(--fg-subtle); font-size: var(--fs-11); }
   .error { color: var(--danger); }
+  .version {
+    position: sticky;
+    bottom: -20px;
+    z-index: 1;
+    margin: -2px -20px -20px;
+    padding: 10px 20px 12px;
+    border-top: 1px solid var(--paper-crease);
+    background: var(--bg-raised);
+    color: var(--fg-subtle);
+    font-size: var(--fs-10);
+    text-align: center;
+    letter-spacing: 0.02em;
+  }
   @media (max-width: 520px) {
     label { grid-template-columns: 1fr; gap: 6px; }
     input[type="checkbox"] { justify-self: start; }

@@ -36,7 +36,9 @@ test("preferences dialog passes axe", async ({ page }) => {
   await page.goto("/");
 
   await page.getByRole("button", { name: "Preferences" }).click();
-  await expect(page.getByRole("dialog", { name: "Preferences" })).toBeVisible();
+  const dialog = page.getByRole("dialog", { name: "Preferences" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText("Origami e2e")).toBeVisible();
 
   await expectNoViolations(page, "preferences");
 });
