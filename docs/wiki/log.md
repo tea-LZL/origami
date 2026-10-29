@@ -414,16 +414,6 @@ Visual-regression baselines remain open because they need a container-pinned ren
 Recorded in [[build-and-verification]], [[ui-state-and-rendering]], and
 [[release-readiness]].
 
-## [2026-10-28] change | Undo send and a keyboard shortcut sheet
-Adopts two conventions from mainstream mail clients. Sending holds the message for a
-configurable window (`State.sendDelay`: Off/5/10/20/30 s, default 5); the composer footer
-counts down and offers **Undo send**, recipients are validated before the hold and again at
-delivery, and quitting during the window cancels the hold and keeps the autosaved draft.
-`?` now opens a keyboard-shortcuts sheet (list navigation plus every catalog command and its
-chords) instead of the command palette, which stays on `Ctrl`/`Cmd`+`K`; the palette gained a
-Help group. Coverage: unit tests for the hold/undo/clamping and e2e for the countdown/undo
-flow plus an axe scan of the sheet. Recorded in [[ui-state-and-rendering]].
-
 ## [2026-10-28] fix | Unread pages filter in SQL and leave the IPC thread
 An unread envelope page used to scan every row in each folder and hydrate label copies
 before discarding `Seen` rows in Rust, and `list_envelopes` / `list_unified_inbox` ran as
@@ -439,6 +429,16 @@ database. Copy-merge semantics are unchanged; the Rust-side filter still runs af
 hydration. Regression: `sparse_unread_unified_page_budget` in
 `crates/origami-core/tests/perf_budget.rs` (fails at 7.8 s without the SQL predicate).
 Recorded in [[store-and-search]].
+
+## [2026-10-28] change | Undo send and a keyboard shortcut sheet
+Adopts two conventions from mainstream mail clients. Sending holds the message for a
+configurable window (`State.sendDelay`: Off/5/10/20/30 s, default 5); the composer footer
+counts down and offers **Undo send**, recipients are validated before the hold and again at
+delivery, and quitting during the window cancels the hold and keeps the autosaved draft.
+`?` now opens a keyboard-shortcuts sheet (list navigation plus every catalog command and its
+chords) instead of the command palette, which stays on `Ctrl`/`Cmd`+`K`; the palette gained a
+Help group. Coverage: unit tests for the hold/undo/clamping and e2e for the countdown/undo
+flow plus an axe scan of the sheet. Recorded in [[ui-state-and-rendering]].
 
 ## [2026-10-29] release | v0.5.0 published
 Tag `v0.5.0` (commit `8d28139`) published the four-asset set in run 40931739272:
