@@ -438,8 +438,10 @@
     z-index: 1;
     margin: -2px -20px -20px;
     padding: 10px 20px 12px;
-    border-top: 1px solid var(--paper-crease);
-    background: var(--bg-raised);
+    border-top: 1px solid var(--glass-border);
+    background: var(--glass-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     color: var(--fg-subtle);
     font-size: var(--fs-10);
     text-align: center;
