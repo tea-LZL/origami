@@ -2,7 +2,7 @@
 title: Overview
 type: overview
 status: current
-updated: 2026-10-15
+updated: 2026-10-28
 sources:
   - README.md
   - docs/PLAN.md
@@ -15,7 +15,7 @@ sources:
 
 Origami is a **provider-neutral, offline-first Linux desktop email client**. The product
 target is Arch Linux and Wayland/Hyprland first, while the architecture stays portable.
-Version `0.4.0`; workspace edition 2021, `rust-version` 1.85.
+Version `0.5.0`; workspace edition 2021, `rust-version` 1.85.
 
 ## Stack
 
