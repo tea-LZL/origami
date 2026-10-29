@@ -2,7 +2,7 @@
 title: Overview
 type: overview
 status: current
-updated: 2026-10-29
+updated: 2026-10-30
 sources:
   - README.md
   - docs/PLAN.md
