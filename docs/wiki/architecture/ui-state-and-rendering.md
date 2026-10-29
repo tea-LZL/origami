@@ -2,7 +2,7 @@
 title: UI state and rendering
 type: architecture
 status: current
-updated: 2026-10-27
+updated: 2026-10-28
 sources:
   - ui/src/lib/ComposePane.svelte
   - ui/src/lib/ComposeTabs.svelte
@@ -199,9 +199,14 @@ header block, sanitized original HTML (remote `http(s)` images preserved, inline
 images fetched and inlined as `data:` URLs up to 5 MB), and copied non-inline attachments.
 Parts that cannot be fetched are reported and skipped.
 
-**Send is backgrounded.** `send_message` builds the raw message, durably queues it
-(`queue_send_message`), and returns immediately (`SendResultDto { accepted }`); the
-composer closes at once. `SyncEngine::spawn_send_flush` delivers it in the background
+**Undo send, then background delivery.** Send first holds the message for the configured
+window (`State.sendDelay`, Off/5/10/20/30 s, default 5): the footer counts down and offers
+**Undo send**, and the session stays editable. Recipients are validated before the hold and
+again at delivery, so edits inside the window are honoured; quitting during the hold cancels
+it and leaves the autosaved draft. After the window `send_message` builds the raw message,
+durably queues it (`queue_send_message`), and returns immediately
+(`SendResultDto { accepted }`), and the composer closes. `SyncEngine::spawn_send_flush`
+delivers it in the background
 (SMTP first, then a Sent copy — local Sent lookup before any `LIST`), serialized on a
 per-account send lock against the sync loop's `replay_outbox` so a message can never be
 sent twice. A `sendFinished` sync event carries the outcome (toast / Outbox). Deleting a
@@ -219,6 +224,15 @@ Recipient chips flag invalid addresses, Cc/Bcc collapse, attachments support dra
 with image thumbnails, and the footer reports local save and server-sync state per session.
 The server Drafts copy is replaced via APPENDUID per draft; server-side draft rows remain
 read-only messages (reopening them into a session is not built).
+
+## Keyboard commands
+
+`ui/src/lib/commands.ts` is the single catalog for triage, compose, folder, and help
+commands (id, title, group, chords, availability predicate, action). `Ctrl`/`Cmd`+`K` opens
+the command palette; `?` opens the **Keyboard shortcuts** sheet
+(`ShortcutsDialog.svelte`), which renders the catalog's chords plus list navigation (`j`/`k`,
+Enter, Space, `t`, Alt+1/2/3, Esc). Both are focus-trapped dialogs; the palette adds folder
+jumps and moves to the catalog.
 
 ## Themes and the palette system
 

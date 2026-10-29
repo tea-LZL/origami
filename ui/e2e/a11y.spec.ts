@@ -85,3 +85,12 @@ for (const theme of ["light", "dark", "ember"] as const) {
     await expectNoViolations(page, `threaded conversation (${theme})`);
   });
 }
+
+test("keyboard shortcuts sheet passes axe", async ({ page }) => {
+  await installTauri(page);
+  await page.goto("/");
+
+  await page.keyboard.type("?");
+  await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeVisible();
+  await expectNoViolations(page, "keyboard shortcuts");
+});

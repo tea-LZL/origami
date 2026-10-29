@@ -215,6 +215,25 @@
         </label>
       </section>
 
+      <section aria-labelledby="sending-title">
+        <h3 id="sending-title">Sending</h3>
+        <label>
+          Undo send
+          <Select
+            value={String(app.value.sendDelay)}
+            ariaLabel="Undo send"
+            options={[
+              { value: "0", label: "Off" },
+              { value: "5", label: "5 seconds" },
+              { value: "10", label: "10 seconds" },
+              { value: "20", label: "20 seconds" },
+              { value: "30", label: "30 seconds" },
+            ]}
+            onValueChange={(seconds) => setPreferences({ sendDelay: Number(seconds) })}
+          />
+        </label>
+      </section>
+
       <section aria-labelledby="remote-content-title">
         <h3 id="remote-content-title">Remote content</h3>
         <p class="help">Remote images are blocked by default. Saved permissions apply to future messages.</p>

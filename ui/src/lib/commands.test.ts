@@ -103,6 +103,7 @@ function resetMail() {
   app.value.preferencesOpen = false;
   app.value.outboxAccountId = null;
   app.value.commandPaletteOpen = false;
+  app.value.shortcutsOpen = false;
   app.value.undoAction = null;
 }
 
@@ -209,6 +210,12 @@ describe("dispatchCommand", () => {
     expect(undo).toHaveBeenCalledTimes(1);
   });
 
+  it("opens_composer_with_n", () => {
+    const compose = vi.spyOn(stores, "openComposer");
+    expect(dispatchCommand(keyEvent({ key: "n" }))).toBe(true);
+    expect(compose).toHaveBeenCalledTimes(1);
+  });
+
   it("opens_palette_with_ctrl_k_or_meta_k_but_not_both", () => {
     expect(dispatchCommand(keyEvent({ key: "k", ctrlKey: true }))).toBe(true);
     expect(app.value.commandPaletteOpen).toBe(true);
@@ -220,9 +227,10 @@ describe("dispatchCommand", () => {
     expect(app.value.commandPaletteOpen).toBe(false);
   });
 
-  it("opens_palette_with_question_mark", () => {
+  it("opens_shortcuts_with_question_mark", () => {
     expect(dispatchCommand(keyEvent({ key: "?" }))).toBe(true);
-    expect(app.value.commandPaletteOpen).toBe(true);
+    expect(app.value.shortcutsOpen).toBe(true);
+    expect(app.value.commandPaletteOpen).toBe(false);
   });
 
   it("ignores_key_repeat", () => {

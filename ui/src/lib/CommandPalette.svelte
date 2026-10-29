@@ -3,7 +3,7 @@
   import { app } from "./stores.svelte";
   import { trapFocus } from "./trapFocus";
 
-  const GROUPS = ["Triage", "Compose", "Folders"] as const;
+  const GROUPS = ["Triage", "Compose", "Folders", "Help"] as const;
   const uid = $props.id();
   const listId = `command-palette-${uid}`;
 

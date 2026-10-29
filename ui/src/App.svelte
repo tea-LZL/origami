@@ -23,6 +23,7 @@
   import Preferences from "./lib/Preferences.svelte";
   import Outbox from "./lib/Outbox.svelte";
   import CommandPalette from "./lib/CommandPalette.svelte";
+  import ShortcutsDialog from "./lib/ShortcutsDialog.svelte";
   import PaneSplitter from "./lib/PaneSplitter.svelte";
   import { dispatchCommand } from "./lib/commands";
 
@@ -73,6 +74,11 @@
         app.value.commandPaletteOpen = false;
         return;
       }
+      if (app.value.shortcutsOpen) {
+        e.preventDefault();
+        app.value.shortcutsOpen = false;
+        return;
+      }
       if (app.value.preferencesOpen) {
         e.preventDefault();
         app.value.preferencesOpen = false;
@@ -105,17 +111,6 @@
       e.preventDefault();
       focusNavigationTarget(e.key as NavigationShortcut, app.value.selectedEnvelope?.id ?? null);
       return;
-    }
-    if (
-      e.defaultPrevented
-      || e.metaKey
-      || e.ctrlKey
-      || e.altKey
-      || target?.closest("input, textarea, select, button, [contenteditable='true'], [role='dialog'], [role='menu']")
-    ) return;
-    if (e.key === "n") {
-      e.preventDefault();
-      openComposer();
     }
   }
 </script>
@@ -196,6 +191,7 @@
   <Preferences />
   <Outbox />
   <CommandPalette />
+  <ShortcutsDialog />
 
   {#if app.value.lastError}
     <button class="toast" type="button" aria-live="assertive" onclick={() => (app.value.lastError = null)}>

@@ -24,6 +24,7 @@ import {
   scheduleComposerSave,
   sendComposer,
   syncComposerNow,
+  undoSend,
 } from "./stores.svelte";
 
 function seedAccount() {
@@ -80,6 +81,8 @@ describe("composer sessions", () => {
       composerSessions: [],
       activeComposerId: null,
       sendingComposerId: null,
+      heldSends: {},
+      sendDelay: 0,
       discardConfirmId: null,
       lastError: null,
       lastNotice: null,
@@ -286,6 +289,43 @@ describe("composer sessions", () => {
     expect(app.value.composerSessions).toEqual([]);
     expect(app.value.lastNotice).toBe("Sending message…");
     releaseDelete?.();
+  });
+
+  it("send_holds_for_the_undo_window_then_delivers", async () => {
+    vi.useFakeTimers();
+    seedAccount();
+    app.value.sendDelay = 5;
+    openComposer({ to: "a@example.org" });
+    const id = app.value.composerSessions[0].id;
+
+    await sendComposer(id);
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(app.value.heldSends[id]).toBeTypeOf("number");
+    expect(app.value.composerSessions).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(app.value.composerSessions).toEqual([]);
+    expect(app.value.heldSends[id]).toBeUndefined();
+  });
+
+  it("undo_send_cancels_the_hold", async () => {
+    vi.useFakeTimers();
+    seedAccount();
+    app.value.sendDelay = 5;
+    openComposer({ to: "a@example.org" });
+    const id = app.value.composerSessions[0].id;
+
+    await sendComposer(id);
+    undoSend(id);
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(app.value.composerSessions).toHaveLength(1);
+    expect(app.value.heldSends[id]).toBeUndefined();
+    expect(app.value.lastNotice).toBe("Send undone");
   });
 
   it("send_blocks_invalid_recipient", async () => {
