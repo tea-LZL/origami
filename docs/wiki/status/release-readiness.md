@@ -2,7 +2,7 @@
 title: Release readiness
 type: status
 status: current
-updated: 2026-10-30
+updated: 2026-11-03
 sources:
   - docs/superpowers/specs/2026-09-26-hardening-caching-palette-design.md
   - MEMORY.md
@@ -35,7 +35,9 @@ several proof and distribution gates are absent.
   send), `v0.5.0` 2026-10-29T18:44Z (command palette and keyboard triage, persisted font
   scale, Playwright/axe gates, sync latency fixes), `v0.5.1` 2026-10-29T19:06Z (unread-page
   fix, undo send and shortcut sheet), `v0.6.0` 2026-10-29T22:23Z (neon themes, instant
-  hover/scroll, independent pane collapse, checkbox-only bulk bar; run 40963935760).
+  hover/scroll, independent pane collapse, checkbox-only bulk bar; run 40963935760),
+  `v0.6.1` 2026-11-03T16:58Z (mail links open in the system browser; run 41677593878,
+  assets 9.9 MB Arch package and 8.0 MB installer).
 - `packaging/arch/PKGBUILD` is tracked and installs the native binary, desktop entry, and
   hicolor icons.
 - The Tauri `deb` target remains, while Arch distribution uses the tracked PKGBUILD.

@@ -530,3 +530,10 @@ a relative href would resolve against the app origin and navigate the webview. R
 Bumped the four version surfaces to 0.6.1 for the mail-link fix (system-browser handoff in
 the navigation guard) and refreshed `Cargo.lock` and `ui/package-lock.json`. Tag pipeline run
 and asset verification recorded in [[release-readiness]] after publication.
+
+## [2026-11-03] release | v0.6.1 published
+GitHub published `v0.6.1` at 2026-11-03T16:58:15Z from tag run 41677593878 (`package_arch`,
+`package_windows`, `publish` green). Assets: `origami-0.6.1-8-x86_64.pkg.tar.zst` (9.9 MB),
+`Origami_0.6.1_x64-setup.exe` (8.0 MB, unsigned), and both sha256 files. The parallel
+master-branch run for the two fix commits reported `skipped`; the tag run is the release
+evidence.
