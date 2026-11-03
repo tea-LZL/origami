@@ -549,3 +549,9 @@ interceptor (`allowedLinkHref` then `openUrl`, `preventDefault`), and the Tauri 
 guard stays as the backstop for keyboard activation and modifier clicks. Email markup is
 still inert: the document's own CSP keeps `script-src 'none'` and DOMPurify strips scripts,
 handlers, and non-absolute hrefs. Recorded in [[ui-state-and-rendering]].
+
+## [2026-11-03] release | Prepare v0.6.2
+Bumped the four version surfaces to 0.6.2 for the mail-link click fix (frame scripting flag
+plus the restored interceptor, navigation guard as backstop) and refreshed `Cargo.lock` and
+`ui/package-lock.json`. Tag pipeline run and asset verification recorded in
+[[release-readiness]] after publication.
