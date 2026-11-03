@@ -37,7 +37,8 @@ several proof and distribution gates are absent.
   fix, undo send and shortcut sheet), `v0.6.0` 2026-10-29T22:23Z (neon themes, instant
   hover/scroll, independent pane collapse, checkbox-only bulk bar; run 40963935760),
   `v0.6.1` 2026-11-03T16:58Z (mail links open in the system browser; run 41677593878,
-  assets 9.9 MB Arch package and 8.0 MB installer).
+  assets 9.9 MB Arch package and 8.0 MB installer), `v0.6.2` 2026-11-03T18:47Z (mail link
+  clicks intercepted in the email frame; run 41695322844).
 - `packaging/arch/PKGBUILD` is tracked and installs the native binary, desktop entry, and
   hicolor icons.
 - The Tauri `deb` target remains, while Arch distribution uses the tracked PKGBUILD.

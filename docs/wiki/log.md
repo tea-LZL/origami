@@ -555,3 +555,9 @@ Bumped the four version surfaces to 0.6.2 for the mail-link click fix (frame scr
 plus the restored interceptor, navigation guard as backstop) and refreshed `Cargo.lock` and
 `ui/package-lock.json`. Tag pipeline run and asset verification recorded in
 [[release-readiness]] after publication.
+
+## [2026-11-03] release | v0.6.2 published
+GitHub published `v0.6.2` at 2026-11-03T18:47:50Z from tag run 41695322844 (`package_arch`,
+`package_windows`, `publish` green). Assets: `origami-0.6.2-8-x86_64.pkg.tar.zst` (9.9 MB),
+`Origami_0.6.2_x64-setup.exe` (8.0 MB, unsigned), and both sha256 files. This supersedes
+`v0.6.1`, whose guard-only link path did not fire in packaged builds.
