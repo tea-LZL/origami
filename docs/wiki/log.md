@@ -537,3 +537,15 @@ GitHub published `v0.6.1` at 2026-11-03T16:58:15Z from tag run 41677593878 (`pac
 `Origami_0.6.1_x64-setup.exe` (8.0 MB, unsigned), and both sha256 files. The parallel
 master-branch run for the two fix commits reported `skipped`; the tag run is the release
 evidence.
+
+## [2026-11-03] fix | Mail link clicks: restore the frame interceptor
+The v0.6.1 build did not open links, while `cargo tauri dev` did. The guard-only path
+depended on a click inside a `sandbox="allow-same-origin"` frame surfacing as a navigation
+attempt; the packaged build produced none, so nothing reached the guard. The frame now uses
+`sandbox="allow-same-origin allow-scripts"`, which makes WebKitGTK dispatch the parent-side
+click interceptor on the frame document (verified in a webkit2gtk 2.54 probe: a trusted
+click reaches the interceptor and also raises `decide-policy`). `MessageView` restores that
+interceptor (`allowedLinkHref` then `openUrl`, `preventDefault`), and the Tauri navigation
+guard stays as the backstop for keyboard activation and modifier clicks. Email markup is
+still inert: the document's own CSP keeps `script-src 'none'` and DOMPurify strips scripts,
+handlers, and non-absolute hrefs. Recorded in [[ui-state-and-rendering]].

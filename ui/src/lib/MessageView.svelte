@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { openUrl } from "@tauri-apps/plugin-opener";
   import {
     app,
     clearMessageView,
@@ -15,7 +16,7 @@
   import { commandChordLabel, dispatchCommand } from "./commands";
   import { api } from "./api";
   import { attachmentAction, imageDataUrl, previewText } from "./attachmentOpen";
-  import { sanitizeMessageHtml } from "./messageHtml";
+  import { allowedLinkHref, sanitizeMessageHtml } from "./messageHtml";
   import {
     allowRemoteOrigins,
     allowRemoteSender,
@@ -156,6 +157,30 @@
     ),
   );
 
+  function openExternalLink(event: MouseEvent) {
+    const target = event.target;
+    if (!target || typeof (target as Element).closest !== "function") return;
+    const anchor = (target as Element).closest("a");
+    if (!anchor) return;
+
+    const href = anchor.getAttribute("href");
+    if (!href) return;
+
+    const normalized = allowedLinkHref(href);
+    if (!normalized) {
+      event.preventDefault();
+      app.value.lastError = `Could not open link: Unsupported link type: ${href}`;
+      return;
+    }
+
+    // The frame's sandbox enables scripting so this listener runs; the email
+    // document's own CSP (`script-src 'none'`) still blocks mail scripts.
+    event.preventDefault();
+    openUrl(normalized).catch((error) => {
+      app.value.lastError = `Could not open link: ${String(error)}`;
+    });
+  }
+
   function bindEmailFrame(event: Event) {
     const frame = event.currentTarget;
     if (!(frame instanceof HTMLIFrameElement)) return;
@@ -164,6 +189,7 @@
     emailFrame = frame;
     document.documentElement.style.fontSize = `${app.value.messageZoom}%`;
 
+    document.addEventListener("click", openExternalLink);
     document.addEventListener("keydown", (keyEvent) => {
       if (dispatchCommand(keyEvent)) return;
       onBodyKeydown(keyEvent);
@@ -489,7 +515,7 @@
             <iframe
               class="email-frame"
               title="Email HTML body"
-              sandbox="allow-same-origin"
+              sandbox="allow-same-origin allow-scripts"
               referrerpolicy="no-referrer"
               srcdoc={safeHtml.srcdoc}
               onload={bindEmailFrame}

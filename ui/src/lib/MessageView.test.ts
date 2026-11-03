@@ -155,9 +155,13 @@ describe("MessageView", () => {
 
     const frame = screen.getByTitle("Email HTML body");
     expect(frame.tagName).toBe("IFRAME");
-    expect(frame).toHaveAttribute("sandbox", "allow-same-origin");
-    expect(frame.getAttribute("srcdoc")).toContain("<p>Body</p>");
-    expect(frame.getAttribute("srcdoc")).toContain("Content-Security-Policy");
+    // `allow-scripts` is required for WebKitGTK to dispatch the parent-side
+    // click interceptor; the document CSP keeps `script-src 'none'`.
+    expect(frame).toHaveAttribute("sandbox", "allow-same-origin allow-scripts");
+    const srcdoc = frame.getAttribute("srcdoc") ?? "";
+    expect(srcdoc).toContain("<p>Body</p>");
+    expect(srcdoc).toContain("Content-Security-Policy");
+    expect(srcdoc).toContain("script-src 'none'");
   });
 
   it("forwards wheel over the pane chrome to the email frame", async () => {
