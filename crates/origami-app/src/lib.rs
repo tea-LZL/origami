@@ -26,11 +26,12 @@ fn is_navigation_allowed(url: &url::Url) -> bool {
 
 /// Link protocols a page is allowed to hand to the desktop.
 ///
-/// Mail links arrive as navigation attempts, never as click events: the email
-/// document's sandbox disables scripting, so a listener registered by the app
-/// frame never runs (WebKitGTK drops JS listeners on script-disabled
-/// documents). The navigation guard is therefore the only hook between a mail
-/// anchor and the outside world.
+/// The email frame's sandbox enables scripting so the parent-side click
+/// interceptor (`MessageView`) runs — WebKitGTK drops JS listeners on a
+/// script-disabled document. Email scripts stay dead because the frame's own
+/// CSP keeps `script-src 'none'`. This guard is the backstop for activations
+/// the interceptor does not see: keyboard activation, modifier clicks, and
+/// anything that still resolves to a frame navigation.
 fn is_external_link(url: &url::Url) -> bool {
     matches!(url.scheme(), "http" | "https" | "mailto")
 }

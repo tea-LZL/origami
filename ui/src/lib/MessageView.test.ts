@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -175,6 +176,25 @@ describe("MessageView", () => {
     await fireEvent.wheel(container.querySelector(".message")!, { deltaY: 120 });
 
     expect(scrollBy).toHaveBeenCalledWith({ top: 120, left: 0 });
+  });
+
+  it("opens a clicked mail link through the system handler", async () => {
+    vi.mocked(openUrl).mockResolvedValue(undefined);
+    render(MessageView);
+    const frame = screen.getByTitle("Email HTML body") as HTMLIFrameElement;
+
+    await fireEvent.load(frame);
+    const document = frame.contentDocument;
+    expect(document).toBeTruthy();
+    const link = document!.createElement("a");
+    link.setAttribute("href", "https://example.org/read");
+    link.textContent = "Read more";
+    document!.body.appendChild(link);
+
+    await fireEvent.click(link);
+
+    expect(vi.mocked(openUrl)).toHaveBeenCalledWith("https://example.org/read");
+    expect(mocks.app.value.lastError).toBeNull();
   });
 
   it("shows the sender address in the message metadata", () => {

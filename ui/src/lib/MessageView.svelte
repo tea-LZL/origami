@@ -176,9 +176,13 @@
     // The frame's sandbox enables scripting so this listener runs; the email
     // document's own CSP (`script-src 'none'`) still blocks mail scripts.
     event.preventDefault();
-    openUrl(normalized).catch((error) => {
+    try {
+      openUrl(normalized).catch((error) => {
+        app.value.lastError = `Could not open link: ${String(error)}`;
+      });
+    } catch (error) {
       app.value.lastError = `Could not open link: ${String(error)}`;
-    });
+    }
   }
 
   function bindEmailFrame(event: Event) {
