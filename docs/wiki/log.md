@@ -510,3 +510,18 @@ GitHub published `v0.6.0` at 2026-10-29T22:23Z from tag run 40963935760 (`packag
 `package_windows`, `publish` green). Assets: `origami-0.6.0-8-x86_64.pkg.tar.zst` (9.9 MB),
 `Origami_0.6.0_x64-setup.exe` (8.0 MB, unsigned), and both sha256 files. The parallel
 master-branch run for the bump push reported `skipped`; the tag run is the release evidence.
+
+## [2026-11-03] fix | Email links open in the default browser
+Clicking a link in HTML mail did nothing. Two layers were involved: `MessageView` registered
+its click interceptor on the sandboxed frame's document, and WebKitGTK never dispatches JS
+listeners on a script-disabled document (`sandbox` omits `allow-scripts`), so the interceptor
+never ran; the click then reached the Tauri navigation guard as a navigation attempt, which
+denied it. The guard now hands `http`, `https`, and `mailto` attempts to the opener plugin and
+denies the navigation, so the link opens in the desktop handler while the webview keeps
+showing the message. Two facts pin the mechanism: on webkit2gtk 2.54 a JS listener attached to
+a script-disabled `srcdoc` document never fires, and wry's `decide-policy` hook is not
+main-frame-filtered, so a frame anchor surfaces only as a navigation attempt. The dead click
+listener is gone from
+`MessageView`; the sanitizer now drops hrefs that are not absolute http/https/mailto, because
+a relative href would resolve against the app origin and navigate the webview. Recorded in
+[[ui-state-and-rendering]].

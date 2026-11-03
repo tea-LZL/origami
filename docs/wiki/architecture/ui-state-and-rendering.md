@@ -158,7 +158,13 @@ with **DOMPurify** (a production dependency) and rendered under a restrictive CS
   section fetch of this mailbox and UID. Filenames are reduced to one path
   segment before the write;
 - intercept links, validate external URLs, open them through the **system** handler, and
-  never navigate the app webview;
+  never navigate the app webview. The interception point is the Tauri navigation guard
+  (`crates/origami-app/src/lib.rs`), not a click listener: the frame's `sandbox` omits
+  `allow-scripts`, and WebKitGTK never dispatches JS listeners on a script-disabled
+  document, so a mail anchor only ever surfaces as a navigation attempt. `http`,
+  `https`, and `mailto` navigations are handed to the opener and denied; anything else
+  is denied outright. The sanitizer drops hrefs that are not absolute http/https/mailto
+  so a relative mail link cannot resolve against the app origin;
 - serve `cid:` through a Tauri custom protocol scoped per message.
 
 Sanitized output is cached per message id and remote-content policy (bounded entry and

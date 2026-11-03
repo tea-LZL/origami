@@ -186,6 +186,14 @@ export function sanitizeMessageHtml(
     }
   }
 
+  // Links leave through the app shell, which only forwards absolute
+  // http/https/mailto URLs. A relative or fragment href would resolve against
+  // the app's own origin and navigate the webview away from the message.
+  for (const anchor of container.querySelectorAll<HTMLAnchorElement>("a[href]")) {
+    const href = anchor.getAttribute("href");
+    if (href !== null && allowedLinkHref(href) === null) anchor.removeAttribute("href");
+  }
+
   const html = container.innerHTML;
   const result: SanitizedMessageHtml = {
     html,

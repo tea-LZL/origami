@@ -22,6 +22,22 @@ describe("sanitizeMessageHtml", () => {
     expect(result.srcdoc).toContain("img-src data: cid:");
   });
 
+  it("keeps only absolute openable hrefs so a mail link cannot navigate the app", () => {
+    const result = sanitizeMessageHtml(
+      '<a href="https://example.org/read">https</a>'
+        + '<a href="mailto:team@example.org">mail</a>'
+        + '<a href="/app/relative">relative</a>'
+        + '<a href="#section">fragment</a>'
+        + '<a href="javascript:alert(1)">script</a>',
+    );
+
+    expect(result.html).toContain('<a href="https://example.org/read">https</a>');
+    expect(result.html).toContain('<a href="mailto:team@example.org">mail</a>');
+    expect(result.html).toContain("<a>relative</a>");
+    expect(result.html).toContain("<a>fragment</a>");
+    expect(result.html).toContain("<a>script</a>");
+  });
+
   it("preserves presentation CSS used by HTML email layouts", () => {
     const result = sanitizeMessageHtml(
       '<style>.preheader{display:none}.copy{color:#333}</style>'

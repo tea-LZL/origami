@@ -6,6 +6,7 @@ mod state;
 
 use origami_core::model::Flag;
 use tauri::Manager;
+use tauri_plugin_opener::OpenerExt;
 
 #[cfg(desktop)]
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -21,6 +22,28 @@ fn is_navigation_allowed(url: &url::Url) -> bool {
             && matches!(url.host_str(), Some("localhost" | "127.0.0.1")))
         // Sandboxed email `srcdoc` documents navigate as about:srcdoc.
         || url.as_str() == "about:srcdoc"
+}
+
+/// Link protocols a page is allowed to hand to the desktop.
+///
+/// Mail links arrive as navigation attempts, never as click events: the email
+/// document's sandbox disables scripting, so a listener registered by the app
+/// frame never runs (WebKitGTK drops JS listeners on script-disabled
+/// documents). The navigation guard is therefore the only hook between a mail
+/// anchor and the outside world.
+fn is_external_link(url: &url::Url) -> bool {
+    matches!(url.scheme(), "http" | "https" | "mailto")
+}
+
+/// Hand an external link to the system handler; the app webview stays put.
+fn open_external_link<R: tauri::Runtime>(app: &tauri::AppHandle<R>, url: &url::Url) {
+    match app
+        .opener()
+        .open_url(url.as_str().to_owned(), None::<String>)
+    {
+        Ok(()) => tracing::info!(%url, "opened external link"),
+        Err(error) => tracing::warn!("cannot open external link {url}: {error}"),
+    }
 }
 
 /// Minimum gap between tray badge refreshes during a new-mail burst. The
@@ -73,7 +96,17 @@ pub fn run() {
                     if webview.label() != "main" {
                         return true;
                     }
-                    is_navigation_allowed(url)
+                    tracing::debug!(%url, "webview navigation request");
+                    if is_navigation_allowed(url) {
+                        return true;
+                    }
+                    // A mail anchor click lands here. Open it in the desktop
+                    // handler, then refuse the navigation so the webview keeps
+                    // showing the message.
+                    if is_external_link(url) {
+                        open_external_link(webview.app_handle(), url);
+                    }
+                    false
                 })
                 .build(),
         )
@@ -365,7 +398,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{badge_update_due, is_navigation_allowed, BADGE_MIN_INTERVAL};
+    use super::{badge_update_due, is_external_link, is_navigation_allowed, BADGE_MIN_INTERVAL};
     use std::time::{Duration, Instant};
 
     #[test]
@@ -396,5 +429,35 @@ mod tests {
         assert!(!is_navigation_allowed(
             &url::Url::parse("https://example.com").unwrap()
         ));
+    }
+
+    #[test]
+    fn classifies_external_link_targets() {
+        for target in [
+            "http://example.com/a",
+            "https://example.com/a?b=1#c",
+            "mailto:someone@example.com",
+        ] {
+            assert!(
+                is_external_link(&url::Url::parse(target).unwrap()),
+                "{target} should open outside the app"
+            );
+            assert!(
+                !is_navigation_allowed(&url::Url::parse(target).unwrap()),
+                "{target} must not navigate the webview"
+            );
+        }
+        for target in [
+            "javascript:alert(1)",
+            "data:text/html,<p>x</p>",
+            "file:///etc/passwd",
+            "about:srcdoc",
+            "tauri://localhost/index.html",
+        ] {
+            assert!(
+                !is_external_link(&url::Url::parse(target).unwrap()),
+                "{target} is not a desktop link target"
+            );
+        }
     }
 }
