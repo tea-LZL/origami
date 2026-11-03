@@ -525,3 +525,8 @@ listener is gone from
 `MessageView`; the sanitizer now drops hrefs that are not absolute http/https/mailto, because
 a relative href would resolve against the app origin and navigate the webview. Recorded in
 [[ui-state-and-rendering]].
+
+## [2026-11-03] release | Prepare v0.6.1
+Bumped the four version surfaces to 0.6.1 for the mail-link fix (system-browser handoff in
+the navigation guard) and refreshed `Cargo.lock` and `ui/package-lock.json`. Tag pipeline run
+and asset verification recorded in [[release-readiness]] after publication.
