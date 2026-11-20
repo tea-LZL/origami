@@ -561,3 +561,24 @@ GitHub published `v0.6.2` at 2026-11-03T18:47:50Z from tag run 41695322844 (`pac
 `package_windows`, `publish` green). Assets: `origami-0.6.2-8-x86_64.pkg.tar.zst` (9.9 MB),
 `Origami_0.6.2_x64-setup.exe` (8.0 MB, unsigned), and both sha256 files. This supersedes
 `v0.6.1`, whose guard-only link path did not fire in packaged builds.
+
+## [2026-11-20] fix | Bulk flag writes batched to two commands
+Marking 208 unread messages read took >5 minutes because `store_flags_batch` issued
+SELECT + FETCH + STORE per message. `ImapBackend::store_flags_many` now diffs the desired
+flags against one `FETCH FLAGS` and writes each distinct `+FLAGS`/`-FLAGS` delta with a
+single `UID STORE`; keyword-free outbox flag runs coalesce into one call on replay.
+`tests/flags_batch_wire.rs` (in-process IMAP server) pins 208 messages to one FETCH plus
+one STORE, keyword preservation, divergent-delta grouping, and batched replay. Recorded in
+[[sync-engine]].
+
+## [2026-11-20] update | Bulk flag store is intent-based
+`store_flags_batch` now takes `{flag, enabled}` alongside the per-row desired sets:
+the wire op is one `SELECT` + one `UID STORE +FLAGS`/`-FLAGS` per 500-UID chunk with no
+`FETCH`, so flags another device set are not stripped from a stale local set. The
+delta-based `store_flags_many` remains for outbox replay, where only desired sets are
+stored. Wire test covers both paths. Recorded in [[sync-engine]].
+
+## [2026-11-20] release | Prepare v0.6.3
+Bumped the four version surfaces to 0.6.3 (patch: bulk-flag batching is a fix) and
+refreshed `Cargo.lock` and `ui/package-lock.json`. Carries the batched bulk flag store
+([[sync-engine]] § Bulk flag writes).
