@@ -582,3 +582,10 @@ stored. Wire test covers both paths. Recorded in [[sync-engine]].
 Bumped the four version surfaces to 0.6.3 (patch: bulk-flag batching is a fix) and
 refreshed `Cargo.lock` and `ui/package-lock.json`. Carries the batched bulk flag store
 ([[sync-engine]] § Bulk flag writes).
+
+## [2026-11-20] release | v0.6.3 published
+GitHub published `v0.6.3` at 2026-11-20T17:49:33Z from tag run 44785086593 (`package_arch`,
+`package_windows`, `publish` green; `rust`/`ui`/`ui-e2e` skipped on the tag ref as usual).
+Assets: `origami-0.6.3-8-x86_64.pkg.tar.zst` (9.5 MB), `Origami_0.6.3_x64-setup.exe`
+(7.7 MB, unsigned), and both sha256 files. Carries the batched bulk flag store
+([[sync-engine]] § Bulk flag writes).

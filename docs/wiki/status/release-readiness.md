@@ -2,7 +2,7 @@
 title: Release readiness
 type: status
 status: current
-updated: 2026-11-03
+updated: 2026-11-20
 sources:
   - docs/superpowers/specs/2026-09-26-hardening-caching-palette-design.md
   - MEMORY.md
@@ -38,7 +38,9 @@ several proof and distribution gates are absent.
   hover/scroll, independent pane collapse, checkbox-only bulk bar; run 40963935760),
   `v0.6.1` 2026-11-03T16:58Z (mail links open in the system browser; run 41677593878,
   assets 9.9 MB Arch package and 8.0 MB installer), `v0.6.2` 2026-11-03T18:47Z (mail link
-  clicks intercepted in the email frame; run 41695322844).
+  clicks intercepted in the email frame; run 41695322844), `v0.6.3` 2026-11-20T17:49Z
+  (bulk flag writes batched into one IMAP store; run 44785086593, assets 9.5 MB Arch
+  package and 7.7 MB installer).
 - `packaging/arch/PKGBUILD` is tracked and installs the native binary, desktop entry, and
   hicolor icons.
 - The Tauri `deb` target remains, while Arch distribution uses the tracked PKGBUILD.
