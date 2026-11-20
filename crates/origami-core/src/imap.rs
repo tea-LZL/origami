@@ -6,7 +6,7 @@
 //! engine (M2) will replace this single-session pool with per-purpose
 //! sessions (IDLE + fetch pool).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::{Arc, Mutex};
 
@@ -465,6 +465,102 @@ impl ImapBackend {
                     ImapMessageStoreOptions { uid: true },
                 )
                 .map_err(backend_err)?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Replace system flags on many messages with a bounded number of round
+    /// trips: one `FETCH FLAGS` per chunk of UIDs, then one `STORE` per
+    /// distinct add/remove delta inside that chunk. Bulk triage over a few
+    /// hundred messages costs one or two commands instead of the
+    /// per-message SELECT + FETCH + STORE of [`Self::store_flags_and_keywords`].
+    ///
+    /// Deltas are used (never `Replace`) so keywords are left untouched.
+    pub async fn store_flags_many(
+        &self,
+        mailbox: &str,
+        updates: &[(u32, Vec<Flag>)],
+    ) -> Result<()> {
+        if updates.is_empty() {
+            return Ok(());
+        }
+        let mut desired: HashMap<u32, Vec<Flag>> = HashMap::with_capacity(updates.len());
+        for (server_uid, flags) in updates {
+            if *server_uid == 0 {
+                return Err(Error::Backend("UID 0 is invalid".into()));
+            }
+            desired.insert(*server_uid, flags.clone());
+        }
+        let mailbox = mailbox.to_string();
+        self.run(move |client| {
+            select_blocking(client, &mailbox)?;
+            let mut uids: Vec<u32> = desired.keys().copied().collect();
+            uids.sort_unstable();
+            for chunk in uids.chunks(FLAG_BATCH_CHUNK) {
+                let current = fetch_system_flags(client, chunk)?;
+                for ((add, remove), uids) in flag_delta_groups(&desired, &current, chunk) {
+                    let set = uid_set(&uids)?;
+                    if add != 0 {
+                        client
+                            .store(
+                                set,
+                                StoreType::Add,
+                                imap_flags_from_mask(add),
+                                ImapMessageStoreOptions { uid: true },
+                            )
+                            .map_err(backend_err)?;
+                    }
+                    if remove != 0 {
+                        client
+                            .store(
+                                uid_set(&uids)?,
+                                StoreType::Remove,
+                                imap_flags_from_mask(remove),
+                                ImapMessageStoreOptions { uid: true },
+                            )
+                            .map_err(backend_err)?;
+                    }
+                }
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    /// Apply one flag intent (`enabled` = add, otherwise remove) to many
+    /// messages: one `SELECT` and one `UID STORE` per 500-UID chunk, no flag
+    /// fetch. Only `flag` is touched, so flags another device set are never
+    /// stripped the way a `Replace` of a stale local set would.
+    pub async fn store_flag_batch(
+        &self,
+        mailbox: &str,
+        server_uids: &[u32],
+        flag: Flag,
+        enabled: bool,
+    ) -> Result<()> {
+        if server_uids.is_empty() {
+            return Ok(());
+        }
+        let mailbox = mailbox.to_string();
+        let uids = server_uids.to_vec();
+        self.run(move |client| {
+            select_blocking(client, &mailbox)?;
+            let store_type = if enabled {
+                StoreType::Add
+            } else {
+                StoreType::Remove
+            };
+            for chunk in uids.chunks(FLAG_BATCH_CHUNK) {
+                client
+                    .store(
+                        uid_set(chunk)?,
+                        store_type,
+                        imap_flags_from_mask(flag_mask(&[flag])),
+                        ImapMessageStoreOptions { uid: true },
+                    )
+                    .map_err(backend_err)?;
+            }
             Ok(())
         })
         .await
@@ -1345,6 +1441,114 @@ fn imap_flag_from(flag: &Flag) -> ImapFlag<'static> {
     }
 }
 
+/// UIDs per `FETCH`/`STORE` in [`ImapBackend::store_flags_many`]; bounds the
+/// command line length and the reply size.
+const FLAG_BATCH_CHUNK: usize = 500;
+
+/// System flags in bit order, shared by the mask helpers below.
+const SYSTEM_FLAGS: [Flag; 5] = [
+    Flag::Seen,
+    Flag::Answered,
+    Flag::Flagged,
+    Flag::Deleted,
+    Flag::Draft,
+];
+
+fn flag_mask(flags: &[Flag]) -> u8 {
+    let mut mask = 0;
+    for (index, flag) in SYSTEM_FLAGS.iter().enumerate() {
+        if flags.contains(flag) {
+            mask |= 1 << index;
+        }
+    }
+    mask
+}
+
+/// `(add, remove)` bit masks taking `current` to `desired`.
+fn flag_delta(desired: &[Flag], current: u8) -> (u8, u8) {
+    let desired = flag_mask(desired);
+    (desired & !current, current & !desired)
+}
+
+/// Group a chunk by identical `(add, remove)` delta so each group is one
+/// `STORE`. UIDs missing from `current` (expunged) and no-op UIDs are dropped.
+fn flag_delta_groups(
+    desired: &HashMap<u32, Vec<Flag>>,
+    current: &HashMap<u32, u8>,
+    chunk: &[u32],
+) -> BTreeMap<(u8, u8), Vec<u32>> {
+    let mut groups: BTreeMap<(u8, u8), Vec<u32>> = BTreeMap::new();
+    for server_uid in chunk {
+        let Some(before) = current.get(server_uid).copied() else {
+            continue;
+        };
+        let Some(flags) = desired.get(server_uid) else {
+            continue;
+        };
+        let (add, remove) = flag_delta(flags, before);
+        if add != 0 || remove != 0 {
+            groups.entry((add, remove)).or_default().push(*server_uid);
+        }
+    }
+    groups
+}
+
+fn imap_flags_from_mask(mask: u8) -> Vec<ImapFlag<'static>> {
+    SYSTEM_FLAGS
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| mask & (1 << index) != 0)
+        .map(|(_, flag)| imap_flag_from(flag))
+        .collect()
+}
+
+/// Sequence set from an arbitrary UID list (never empty when called).
+fn uid_set(uids: &[u32]) -> Result<SequenceSet> {
+    let list: Vec<NonZeroU32> = uids
+        .iter()
+        .filter_map(|uid| NonZeroU32::new(*uid))
+        .collect();
+    SequenceSet::try_from(list).map_err(|_| Error::Backend("invalid UID set".into()))
+}
+
+/// Current system flags, as bit masks, for every UID that still exists.
+fn fetch_system_flags(client: &mut ImapClientStd, uids: &[u32]) -> Result<HashMap<u32, u8>> {
+    let items = MacroOrMessageDataItemNames::MessageDataItemNames(vec![
+        MessageDataItemName::Uid,
+        MessageDataItemName::Flags,
+    ]);
+    let rows = client
+        .fetch(uid_set(uids)?, items, peek_fetch_options())
+        .map_err(backend_err)?;
+    let mut flags_by_uid = HashMap::with_capacity(uids.len());
+    for (_, items) in rows {
+        let mut server_uid = None;
+        let mut flags = Vec::new();
+        for item in items {
+            match item {
+                MessageDataItem::Uid(uid) => server_uid = Some(uid.get()),
+                MessageDataItem::Flags(fetched) => {
+                    for flag in fetched {
+                        match flag {
+                            FlagFetch::Flag(ImapFlag::Seen) => flags.push(Flag::Seen),
+                            FlagFetch::Flag(ImapFlag::Answered) => flags.push(Flag::Answered),
+                            FlagFetch::Flag(ImapFlag::Flagged) => flags.push(Flag::Flagged),
+                            FlagFetch::Flag(ImapFlag::Deleted) => flags.push(Flag::Deleted),
+                            FlagFetch::Flag(ImapFlag::Draft) => flags.push(Flag::Draft),
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let Some(server_uid) = server_uid {
+            flags_by_uid.insert(server_uid, flag_mask(&flags));
+        }
+    }
+    Ok(flags_by_uid)
+}
+
 fn role_from_name(name: &str) -> MailboxRole {
     match name.to_ascii_lowercase().as_str() {
         "inbox" => MailboxRole::Inbox,
@@ -1397,5 +1601,58 @@ mod tests {
             Capability::Idle,
             Capability::QResync,
         ]));
+    }
+
+    /// Bulk "mark all read" must collapse to one `STORE`: a single add-mask
+    /// group covering every unread UID in the chunk.
+    #[test]
+    fn bulk_mark_read_collapses_to_one_delta_group() {
+        let uids: Vec<u32> = (1..=208).collect();
+        let desired: HashMap<u32, Vec<Flag>> =
+            uids.iter().map(|uid| (*uid, vec![Flag::Seen])).collect();
+        let current: HashMap<u32, u8> = uids.iter().map(|uid| (*uid, 0)).collect();
+
+        let groups = flag_delta_groups(&desired, &current, &uids);
+
+        assert_eq!(groups.len(), 1, "one STORE for the whole batch");
+        let ((add, remove), grouped) = groups.iter().next().unwrap();
+        assert_eq!(*add, flag_mask(&[Flag::Seen]));
+        assert_eq!(*remove, 0);
+        assert_eq!(grouped, &uids);
+    }
+
+    #[test]
+    fn delta_groups_split_by_divergent_flags_and_skip_noops() {
+        let desired = HashMap::from([
+            (1u32, vec![Flag::Seen]),
+            (2u32, vec![Flag::Seen, Flag::Flagged]),
+            (3u32, vec![Flag::Seen]),
+        ]);
+        let current = HashMap::from([
+            (1u32, flag_mask(&[Flag::Seen])),    // already read: no-op
+            (2u32, flag_mask(&[Flag::Flagged])), // add Seen only
+            (3u32, flag_mask(&[Flag::Seen, Flag::Answered])), // remove Answered
+        ]);
+
+        let groups = flag_delta_groups(&desired, &current, &[1, 2, 3]);
+
+        assert_eq!(groups.len(), 2);
+        assert_eq!(
+            groups.get(&(flag_mask(&[Flag::Seen]), 0)),
+            Some(&vec![2u32]),
+            "the flagged row groups alone"
+        );
+        let remove_answered = groups
+            .get(&(0, flag_mask(&[Flag::Answered])))
+            .expect("Answered is cleared for UID 3");
+        assert_eq!(remove_answered, &vec![3]);
+    }
+
+    #[test]
+    fn expunged_uids_are_not_stored() {
+        let desired = HashMap::from([(7u32, vec![Flag::Seen])]);
+        let current = HashMap::new();
+
+        assert!(flag_delta_groups(&desired, &current, &[7]).is_empty());
     }
 }

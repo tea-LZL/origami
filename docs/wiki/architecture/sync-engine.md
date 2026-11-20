@@ -2,7 +2,7 @@
 title: Sync engine
 type: architecture
 status: current
-updated: 2026-10-26
+updated: 2026-11-20
 sources:
   - docs/adr/0003-sync-algorithm.md
   - docs/PLAN.md
@@ -84,6 +84,27 @@ a terminal `failed_at` state that replay skips; the Outbox inspector surfaces th
 per-row **Retry** that reopens the op (`outbox_reopen` resets attempts). Details:
 [[offline-outbox]].
 
+Adjacent keyword-free `StoreFlags` entries for the same mailbox replay as **one**
+`store_flags_many` call — one `FETCH FLAGS` plus one `STORE` per distinct delta — instead
+of one `SELECT` + `FETCH` + `STORE` per message. Ordering is preserved because only
+contiguous flag runs coalesce; moves, deletes, and sends break the run.
+
+## Bulk flag writes
+
+`setSelectedFlag` is a single-flag intent, so `store_flags_batch` sends
+`{folderId, flag, enabled, updates}` and the wire op is
+`ImapBackend::store_flag_batch` (`crates/origami-core/src/imap.rs`): one `SELECT` and
+one `UID STORE +FLAGS`/`-FLAGS` per 500-UID chunk, **no `FETCH`**. Only the named flag is
+touched, so `\Answered` or `\Flagged` set on another device — absent from a stale local
+envelope — is never stripped the way a `Replace` of the local set would. The app layer
+still mirrors the resulting full flag sets into SQLite (`update_flags_batch`) and only
+falls back to per-message outbox rows when the store fails.
+
+Queued replay has no intent, just stored desired sets, so it uses
+`ImapBackend::store_flags_many`: one `FETCH FLAGS` over the chunk, then one
+`STORE` per distinct `(add, remove)` delta. Measured effect: marking 208 messages read
+went from ~600 serialized round trips (minutes) to one store.
+
 ## Consequences
 
 - Convergence is O(delta), not O(folder).
@@ -103,7 +124,11 @@ the queued-display write path. Wake-scope decisions are unit-tested in `sync.rs`
 `sync_non_inbox` skips INBOX against Dovecot in the harness. The end-to-end wake path against
 Dovecot is covered by the harness only when Docker is available. Retry primitives
 (`is_transient`, `backoff_delay`, `ReconnectLimiter`, `retry_wait_for`, `acquire_bounded`)
-have in-module unit tests. The failure-isolation and poison-replay **end-to-end** runs
+have in-module unit tests. `tests/flags_batch_wire.rs` runs an in-process IMAP server and
+pins the direct bulk intent to one `STORE` and no `FETCH` (208 messages, add and remove),
+queued replay to one `FETCH` + one `STORE` with keyword preservation and divergent-delta
+grouping, so it runs without Docker. The
+failure-isolation and poison-replay **end-to-end** runs
 against Docker are still owed — see [[release-readiness]]. See also [[test-suite-md]].
 
 ## Related

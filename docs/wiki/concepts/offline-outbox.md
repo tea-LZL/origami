@@ -2,7 +2,7 @@
 title: Offline outbox
 type: concept
 status: current
-updated: 2026-09-27
+updated: 2026-11-20
 sources:
   - docs/adr/0003-sync-algorithm.md
   - docs/IMPROVEMENT_PLAN.md
@@ -27,6 +27,9 @@ while the server state converges later ([[adr-0003-sync-algorithm]]).
 - Irreversible mail actions go through guarded commands with offline replay and a six-second
   optimistic **undo** window for destructive operations.
 - Failed flag changes are queued rather than dropped.
+- Adjacent keyword-free flag changes for one mailbox replay as a single batched store
+  ([[sync-engine]] § Outbox replay), so a bulk triage queued offline converges in two
+  commands instead of one round trip per message.
 - Outbox contents are inspectable through a sanitized **Outbox inspector** with retry
   controls; pending operations are surfaced in the status area.
 

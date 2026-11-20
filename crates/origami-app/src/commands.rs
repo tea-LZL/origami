@@ -764,48 +764,45 @@ pub struct FlagUpdateDto {
     flags: Vec<Flag>,
 }
 
-/// Apply a same-folder batch using one backend session. Retryable
-/// failures are queued individually and reflected in SQLite immediately.
+/// Apply a same-folder flag intent with one network store, then mirror the
+/// resulting flag sets locally. Retryable failures are queued individually.
 #[tauri::command]
 pub async fn store_flags_batch(
     state: State<'_, AppState>,
     folder_id: String,
+    flag: Flag,
+    enabled: bool,
     updates: Vec<FlagUpdateDto>,
 ) -> CmdResult<()> {
     let (account_config_id, account_db_id, mailbox) =
         state.resolve_folder(&folder_id).map_err(err)?;
-    let backend = state.backend(&account_config_id).await.ok();
-    let mut local_updates: Vec<(u32, Vec<Flag>)> = Vec::new();
+    let batch: Vec<(u32, Vec<Flag>)> = updates
+        .into_iter()
+        .map(|update| (update.server_uid, update.flags))
+        .collect();
+    if batch.is_empty() {
+        return Ok(());
+    }
 
-    for update in updates {
-        let stored = if let Some(backend) = &backend {
-            backend
-                .store_flags(&mailbox, update.server_uid, &update.flags)
-                .await
-                .is_ok()
-        } else {
-            false
-        };
-
-        if stored {
-            local_updates.push((update.server_uid, update.flags));
-        } else {
+    if let Ok(backend) = state.backend(&account_config_id).await {
+        let server_uids: Vec<u32> = batch.iter().map(|(server_uid, _)| *server_uid).collect();
+        if backend
+            .store_flag_batch(&mailbox, &server_uids, flag, enabled)
+            .await
+            .is_ok()
+        {
             state
-                .engine
-                .queue_store_flags(
-                    &account_db_id,
-                    &folder_id,
-                    &mailbox,
-                    update.server_uid,
-                    &update.flags,
-                )
+                .store
+                .update_flags_batch(&folder_id, &batch)
                 .map_err(err)?;
+            return Ok(());
         }
     }
-    if !local_updates.is_empty() {
+
+    for (server_uid, flags) in &batch {
         state
-            .store
-            .update_flags_batch(&folder_id, &local_updates)
+            .engine
+            .queue_store_flags(&account_db_id, &folder_id, &mailbox, *server_uid, flags)
             .map_err(err)?;
     }
     Ok(())

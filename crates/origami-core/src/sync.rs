@@ -1121,8 +1121,56 @@ impl SyncEngine {
         account_db_id: &str,
         config: &AccountConfig,
     ) {
-        for entry in self.store.outbox_list(account_db_id).unwrap_or_default() {
+        let entries = self.store.outbox_list(account_db_id).unwrap_or_default();
+        let mut index = 0;
+        while index < entries.len() {
+            let entry = &entries[index];
             if entry.failed_at.is_some() {
+                index += 1;
+                continue;
+            }
+            // Coalesce an adjacent run of keyword-free flag writes for one
+            // mailbox: a bulk triage queues hundreds of rows, and replaying
+            // them one SELECT + FETCH + STORE at a time takes minutes.
+            if let OutboxOp::StoreFlags {
+                mailbox,
+                keywords: None,
+                ..
+            } = &entry.op
+            {
+                let start = index;
+                let mut updates: Vec<(u32, Vec<Flag>)> = Vec::new();
+                while let Some(queued) = entries.get(index) {
+                    if queued.failed_at.is_some() {
+                        break;
+                    }
+                    match &queued.op {
+                        OutboxOp::StoreFlags {
+                            mailbox: queued_mailbox,
+                            server_uid,
+                            flags,
+                            keywords: None,
+                        } if queued_mailbox == mailbox => {
+                            updates.push((*server_uid, flags.clone()));
+                            index += 1;
+                        }
+                        _ => break,
+                    }
+                }
+                let result =
+                    with_network_timeout(backend.store_flags_many(mailbox, &updates)).await;
+                match result {
+                    Ok(()) => {
+                        for queued in &entries[start..index] {
+                            let _ = self.store.outbox_remove(queued.id);
+                        }
+                    }
+                    Err(error) => {
+                        for queued in &entries[start..index] {
+                            self.record_outbox_failure(queued, &error, config);
+                        }
+                    }
+                }
                 continue;
             }
             let result = match &entry.op {
@@ -1192,17 +1240,27 @@ impl SyncEngine {
                 Ok(()) => {
                     let _ = self.store.outbox_remove(entry.id);
                 }
-                Err(error) => {
-                    let message = self.redacted_error(&error, config);
-                    if outbox_failure_is_terminal(&error, entry.attempts + 1) {
-                        let _ = self.store.outbox_fail_permanent(entry.id, &message);
-                    } else {
-                        let _ = self.store.outbox_mark_failed(entry.id, &message);
-                    }
-                }
+                Err(error) => self.record_outbox_failure(entry, &error, config),
             }
+            index += 1;
         }
         self.emit_outbox_changed(account_db_id);
+    }
+
+    /// Persist a replay failure: terminal errors poison the row, retryable ones
+    /// bump the attempt counter.
+    fn record_outbox_failure(
+        &self,
+        entry: &crate::model::OutboxEntry,
+        error: &Error,
+        config: &AccountConfig,
+    ) {
+        let message = self.redacted_error(error, config);
+        if outbox_failure_is_terminal(error, entry.attempts + 1) {
+            let _ = self.store.outbox_fail_permanent(entry.id, &message);
+        } else {
+            let _ = self.store.outbox_mark_failed(entry.id, &message);
+        }
     }
 
     /// Deliver one queued send: SMTP first, then copy to Sent. On success the

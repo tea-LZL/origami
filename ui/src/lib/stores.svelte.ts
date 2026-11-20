@@ -1178,7 +1178,9 @@ async function applyFlag(targets: Envelope[], flag: Flag, enabled: boolean) {
 
   try {
     await Promise.all(
-      [...updatesByFolder].map(([folderId, folderUpdates]) => api.storeFlagsBatch(folderId, folderUpdates)),
+      [...updatesByFolder].map(([folderId, folderUpdates]) =>
+        api.storeFlagsBatch(folderId, flag, enabled, folderUpdates),
+      ),
     );
     await refreshAfterMessageAction();
   } catch (error) {

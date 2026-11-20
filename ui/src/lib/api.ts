@@ -176,8 +176,12 @@ export const api = {
     invoke<void>("open_attachment", { folderId, serverUid, index }),
   storeFlags: (folderId: string, serverUid: number, flags: Flag[]) =>
     invoke<void>("store_flags", { folderId, serverUid, flags }),
-  storeFlagsBatch: (folderId: string, updates: { serverUid: number; flags: Flag[] }[]) =>
-    invoke<void>("store_flags_batch", { folderId, updates }),
+  storeFlagsBatch: (
+    folderId: string,
+    flag: Flag,
+    enabled: boolean,
+    updates: { serverUid: number; flags: Flag[] }[],
+  ) => invoke<void>("store_flags_batch", { folderId, flag, enabled, updates }),
   storeKeywordsBatch: (
     folderId: string,
     updates: { serverUid: number; flags: Flag[]; keywords: string[] }[],

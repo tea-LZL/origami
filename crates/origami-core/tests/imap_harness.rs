@@ -190,6 +190,81 @@ async fn store_flags_roundtrip() {
 }
 
 #[tokio::test]
+async fn store_flags_many_marks_every_message_read() {
+    if !enabled() {
+        return;
+    }
+    let backend = ImapBackend::connect("test", &test_config())
+        .await
+        .expect("connect");
+
+    let before = backend.list_envelopes("INBOX", 1, 50).await.unwrap();
+    let unread: Vec<u32> = before
+        .iter()
+        .filter(|envelope| !envelope.flags.contains(&Flag::Seen))
+        .filter_map(|envelope| envelope.server_uid)
+        .collect();
+    assert!(!unread.is_empty(), "fixture must seed unread mail");
+
+    // A keyword on one target must survive a bulk flag write.
+    let keyword_uid = unread[0];
+    backend
+        .store_flags_many("INBOX", &[(keyword_uid, vec![Flag::Seen])])
+        .await
+        .expect("seed read flag");
+    backend
+        .store_flags_and_keywords(
+            "INBOX",
+            keyword_uid,
+            &[Flag::Seen],
+            Some(&["OrigamiBulk".to_string()]),
+        )
+        .await
+        .expect("seed keyword");
+
+    let updates: Vec<(u32, Vec<Flag>)> = before
+        .iter()
+        .filter_map(|envelope| envelope.server_uid)
+        .map(|uid| (uid, vec![Flag::Seen]))
+        .collect();
+    backend
+        .store_flags_many("INBOX", &updates)
+        .await
+        .expect("bulk store");
+
+    let after = backend.list_envelopes("INBOX", 1, 50).await.unwrap();
+    for envelope in &after {
+        assert!(
+            envelope.flags.contains(&Flag::Seen),
+            "UID {:?} still unread after bulk store",
+            envelope.server_uid
+        );
+    }
+    let authored = after
+        .iter()
+        .find(|envelope| envelope.server_uid == Some(keyword_uid))
+        .expect("keyword message survives");
+    assert!(
+        authored
+            .keywords
+            .iter()
+            .any(|keyword| keyword == "OrigamiBulk"),
+        "bulk store must not clobber keywords: {:?}",
+        authored.keywords
+    );
+
+    // Restore the fixture: original flags per message, keyword gone.
+    for envelope in &before {
+        if let Some(uid) = envelope.server_uid {
+            backend
+                .store_flags_and_keywords("INBOX", uid, &envelope.flags, Some(&[]))
+                .await
+                .expect("restore flags");
+        }
+    }
+}
+
+#[tokio::test]
 async fn move_and_delete_message_batches() {
     if !enabled() {
         return;
